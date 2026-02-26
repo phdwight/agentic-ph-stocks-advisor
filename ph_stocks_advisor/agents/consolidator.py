@@ -7,6 +7,8 @@ Principle: this module only handles report consolidation logic.
 
 from __future__ import annotations
 
+import re
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
@@ -52,14 +54,53 @@ class ConsolidatorAgent:
 
     @staticmethod
     def _extract_verdict(text: str) -> Verdict:
-        """Parse the verdict from the LLM consolidation output."""
-        upper = text.upper()
-        # Search backwards – the verdict is typically at the end
-        not_buy_pos = upper.rfind("NOT BUY")
-        buy_pos = upper.rfind("BUY")
-        if not_buy_pos != -1 and not_buy_pos >= buy_pos - 4:
-            return Verdict.NOT_BUY
-        if buy_pos != -1:
-            return Verdict.BUY
-        # Default conservative stance if parsing fails
+        """Parse the verdict from the LLM consolidation output.
+
+        Strategy (most-specific → least-specific):
+        1. Look for the structured verdict pattern the prompt requests:
+           ``**Verdict: NOT BUY**`` or ``**Verdict: BUY**``
+        2. Fall back to a word-boundary search for ``NOT BUY`` / ``BUY``
+           (avoids false positives from words like "buyers" or "buyback").
+        3. Default to NOT_BUY (conservative) if nothing matches.
+        """
+        # --- 1. Structured verdict line (most reliable) ---
+        # Matches:  **Verdict: NOT BUY**  |  **Verdict:** NOT BUY
+        #           Verdict: NOT BUY      |  **Verdict: BUY**
+        structured = re.search(
+            r"\*{0,2}Verdict:?\*{0,2}\s*(NOT\s+BUY|BUY)",
+            text,
+            re.IGNORECASE,
+        )
+        if structured:
+            return (
+                Verdict.NOT_BUY
+                if "NOT" in structured.group(1).upper()
+                else Verdict.BUY
+            )
+
+        # --- 2. Word-boundary fallback (handles free-form text) ---
+        # Search backwards by scanning all matches and taking the last one.
+        not_buy_matches = list(re.finditer(r"\bNOT\s+BUY\b", text, re.IGNORECASE))
+        buy_matches = list(re.finditer(r"\bBUY\b", text, re.IGNORECASE))
+
+        if not_buy_matches or buy_matches:
+            last_not_buy = not_buy_matches[-1].start() if not_buy_matches else -1
+            last_buy = buy_matches[-1].start() if buy_matches else -1
+
+            # If the last "NOT BUY" is at or after the last standalone "BUY",
+            # the overall signal is NOT_BUY.  Note: a "NOT BUY" match also
+            # contains "BUY", so last_buy >= last_not_buy is common —
+            # we need to check whether the last "BUY" *is* part of a "NOT BUY".
+            if last_not_buy != -1:
+                # Check if the last BUY match is inside the last NOT BUY match
+                last_not_buy_end = not_buy_matches[-1].end()
+                if last_buy <= last_not_buy_end:
+                    return Verdict.NOT_BUY
+                # There's a standalone BUY after the last NOT BUY
+                return Verdict.BUY
+
+            if last_buy != -1:
+                return Verdict.BUY
+
+        # --- 3. Conservative default ---
         return Verdict.NOT_BUY
