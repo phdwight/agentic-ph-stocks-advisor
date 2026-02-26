@@ -24,6 +24,9 @@ class Settings:
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
 
+    # Tavily web search
+    tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
+
     # Database — "sqlite" (dev) or "postgres" (prod)
     db_backend: str = os.getenv("DB_BACKEND", "sqlite")
     sqlite_path: str = os.getenv("SQLITE_PATH", "reports.db")

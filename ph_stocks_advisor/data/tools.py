@@ -24,11 +24,23 @@ import yfinance as yf
 
 from ph_stocks_advisor.data.dragonfi import (
     SymbolNotFoundError,
+    fetch_annual_cashflow_trends,
+    fetch_annual_income_trends,
     fetch_security_metrics,
     fetch_security_valuation,
     fetch_stock_news,
     fetch_stock_profile,
     validate_pse_symbol,
+)
+from ph_stocks_advisor.data.candlestick import analyse_candlesticks
+from ph_stocks_advisor.data.tradingview import (
+    fetch_tradingview_snapshot,
+    format_tv_performance_summary,
+)
+from ph_stocks_advisor.data.tavily_search import (
+    search_dividend_news,
+    search_stock_controversies,
+    search_stock_news,
 )
 from ph_stocks_advisor.data.models import (
     ControversyInfo,
@@ -101,6 +113,68 @@ def validate_symbol(symbol: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Price catalyst detection
+# ---------------------------------------------------------------------------
+
+def _detect_price_catalysts(profile: dict[str, Any]) -> list[str]:
+    """Infer likely price catalysts from DragonFi profile data.
+
+    Cross-references dividend yield, REIT status, and price position
+    relative to the 52-week range to identify what may be driving price.
+    """
+    catalysts: list[str] = []
+    if not profile:
+        return catalysts
+
+    div_yield = float(profile.get("dividendYield", 0) or 0)
+    is_reit = bool(profile.get("isREIT", False))
+    price = float(profile.get("price", 0) or 0)
+    high52 = float(profile.get("weekHigh52", 0) or 0)
+    low52 = float(profile.get("weekLow52", 0) or 0)
+    prev_close = float(profile.get("prevDayClosePrice", 0) or 0)
+
+    # How close is the price to the 52-week high? (0-100%)
+    range_52 = high52 - low52
+    pct_of_range = ((price - low52) / range_52 * 100) if range_52 > 0 else 50.0
+
+    # Detect dividend-driven price movement
+    if div_yield > 3.0 and pct_of_range > 65:
+        if is_reit:
+            catalysts.append(
+                f"REIT with {div_yield:.1f}% dividend yield trading in the upper "
+                f"portion of its 52-week range — price is likely being driven by "
+                f"investors accumulating shares ahead of the next dividend payout "
+                f"(\"dividend play\"). Philippine REITs distribute dividends quarterly."
+            )
+        else:
+            catalysts.append(
+                f"High-dividend stock ({div_yield:.1f}% yield) trading near its "
+                f"52-week high — the upward price movement may be driven by "
+                f"investors buying ahead of an expected dividend declaration."
+            )
+
+    # Detect recent upward momentum vs. previous close
+    if prev_close > 0 and price > prev_close:
+        day_change_pct = ((price - prev_close) / prev_close) * 100
+        if day_change_pct > 0.5 and div_yield > 3.0:
+            catalysts.append(
+                f"Price rose {day_change_pct:.2f}% from the previous close, "
+                f"which may reflect continued demand from dividend-seeking investors."
+            )
+
+    # Approaching 52-week high
+    if high52 > 0 and price > 0:
+        gap_to_high = ((high52 - price) / high52) * 100
+        if gap_to_high < 5:
+            catalysts.append(
+                f"Price is within {gap_to_high:.1f}% of its 52-week high "
+                f"(₱{high52}), indicating strong buying pressure."
+            )
+
+    return catalysts
+
+
+# ---------------------------------------------------------------------------
 # Public tool functions
 # ---------------------------------------------------------------------------
 
@@ -113,6 +187,7 @@ def fetch_stock_price(symbol: str) -> StockPrice:
     profile = fetch_stock_profile(symbol)
 
     if profile and profile.get("price"):
+        catalysts = _detect_price_catalysts(profile)
         return StockPrice(
             symbol=symbol,
             current_price=float(profile.get("price", 0)),
@@ -120,6 +195,7 @@ def fetch_stock_price(symbol: str) -> StockPrice:
             fifty_two_week_high=float(profile.get("weekHigh52", 0) or 0),
             fifty_two_week_low=float(profile.get("weekLow52", 0) or 0),
             previous_close=float(profile.get("prevDayClosePrice", 0) or 0),
+            price_catalysts=catalysts,
         )
 
     # Fallback: yfinance
@@ -140,28 +216,98 @@ def fetch_stock_price(symbol: str) -> StockPrice:
 def fetch_dividend_info(symbol: str) -> DividendInfo:
     """Fetch dividend data for a PSE-listed stock.
 
-    Primary: DragonFi  |  Fallback: yfinance
+    Primary: DragonFi (profile + financials)  |  Fallback: yfinance
+
+    Computes:
+    - ``dividend_rate`` from yield × price (per-share annual dividend)
+    - ``payout_ratio`` from estimated total dividends vs. net income
+    - ``is_reit`` flag (Philippine REITs must distribute ≥90% distributable income)
+    - ``net_income_trend`` / ``revenue_trend`` / ``free_cash_flow_trend`` — multi-year
+    - ``dividend_sustainability_note`` — auto-generated note about sustainability
     """
     symbol = symbol.upper().replace(".PS", "")
     profile = fetch_stock_profile(symbol)
-    metrics = fetch_security_metrics(symbol)
 
-    div_yield = float(profile.get("dividendYield", 0) or 0) if profile else 0.0
+    div_yield_raw = float(profile.get("dividendYield", 0) or 0) if profile else 0.0
 
-    # DragonFi dividend yield is already a percentage (e.g. 5.54)
-    # Normalise to decimal for consistency with our model (0.0554)
-    div_yield_decimal = div_yield / 100.0 if div_yield > 1 else div_yield
+    if div_yield_raw > 0 and profile:
+        # DragonFi dividend yield is a percentage (e.g. 5.54) → normalise to decimal
+        div_yield = div_yield_raw / 100.0 if div_yield_raw > 1 else div_yield_raw
 
-    payout_ratio = 0.0
+        current_price = float(profile.get("price", 0) or 0)
+        shares_outstanding = float(profile.get("sharesOutstanding", 0) or 0)
+        is_reit = bool(profile.get("isREIT", False))
 
-    if div_yield > 0:
+        # Compute per-share annual dividend rate from yield × price
+        dividend_rate = round(current_price * div_yield, 4) if current_price else 0.0
+
+        # Fetch financial trends
+        income_trends = fetch_annual_income_trends(symbol)
+        cf_trends = fetch_annual_cashflow_trends(symbol)
+
+        net_income_trend = income_trends.get("net_income", {})
+        revenue_trend = income_trends.get("revenue", {})
+        fcf_trend = cf_trends.get("fcf", {})
+
+        # Estimate payout ratio: total dividends / net income (latest year)
+        payout_ratio = 0.0
+        if dividend_rate > 0 and shares_outstanding > 0 and net_income_trend:
+            latest_year = max(net_income_trend.keys())
+            latest_ni = net_income_trend[latest_year]
+            if latest_ni > 0:
+                total_dividends = dividend_rate * shares_outstanding
+                payout_ratio = round(total_dividends / latest_ni, 4)
+
+        # Build a sustainability note
+        sustainability_parts: list[str] = []
+        if is_reit:
+            sustainability_parts.append(
+                "This is a Philippine REIT, legally required to distribute "
+                "at least 90% of its distributable income as dividends."
+            )
+        if len(net_income_trend) >= 3:
+            years_sorted = sorted(net_income_trend.keys())
+            first_ni = net_income_trend[years_sorted[0]]
+            last_ni = net_income_trend[years_sorted[-1]]
+            if first_ni > 0 and last_ni > first_ni:
+                growth = ((last_ni - first_ni) / first_ni) * 100
+                sustainability_parts.append(
+                    f"Net income grew ~{growth:.0f}% from {years_sorted[0]} to "
+                    f"{years_sorted[-1]} ({first_ni/1e9:.2f}B → {last_ni/1e9:.2f}B PHP), "
+                    "supporting the dividend."
+                )
+            elif last_ni > 0:
+                sustainability_parts.append(
+                    f"Net income in {years_sorted[-1]}: {last_ni/1e9:.2f}B PHP."
+                )
+        if payout_ratio > 0:
+            sustainability_parts.append(
+                f"Estimated payout ratio: {payout_ratio*100:.1f}%."
+            )
+        if fcf_trend:
+            latest_fcf_year = max(fcf_trend.keys())
+            latest_fcf = fcf_trend[latest_fcf_year]
+            if latest_fcf > 0:
+                sustainability_parts.append(
+                    f"Free cash flow in {latest_fcf_year}: {latest_fcf/1e9:.2f}B PHP (positive)."
+                )
+
         return DividendInfo(
             symbol=symbol,
-            dividend_rate=0.0,  # DragonFi doesn't expose per-share rate directly
-            dividend_yield=div_yield_decimal,
+            dividend_rate=dividend_rate,
+            dividend_yield=div_yield,
             payout_ratio=payout_ratio,
             ex_dividend_date=None,
             five_year_avg_yield=0.0,
+            is_reit=is_reit,
+            annual_dividend_per_share=dividend_rate,
+            net_income_trend=net_income_trend,
+            revenue_trend=revenue_trend,
+            free_cash_flow_trend=fcf_trend,
+            dividend_sustainability_note=" ".join(sustainability_parts),
+            recent_dividend_news=search_dividend_news(
+                symbol, company_name=str(profile.get("companyName", "")),
+            ),
         )
 
     # Fallback: yfinance
@@ -196,6 +342,14 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
     symbol = symbol.upper().replace(".PS", "")
     hist = _yf_history(symbol)
 
+    # Fetch profile once — used for catalysts in all branches
+    profile = fetch_stock_profile(symbol)
+    catalysts = _detect_price_catalysts(profile) if profile else []
+
+    # Tavily web news for movement context
+    company_name = profile.get("companyName", "") if profile else ""
+    web_news = search_stock_news(symbol, company_name=company_name)
+
     if not hist.empty:
         closes = hist["Close"].tolist()
         year_start = closes[0]
@@ -206,6 +360,15 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
 
         returns = hist["Close"].pct_change().dropna()
         volatility = float(returns.std() * 100) if len(returns) > 1 else 0.0
+
+        # Max drawdown: largest peak-to-trough decline
+        cummax = hist["Close"].cummax()
+        drawdown = (hist["Close"] - cummax) / cummax * 100
+        max_drawdown_pct = round(float(drawdown.min()), 2) if len(drawdown) > 0 else 0.0
+
+        # Candlestick pattern analysis (uses full OHLCV)
+        candle_summary = analyse_candlesticks(hist)
+        candlestick_patterns = candle_summary.to_text()
 
         monthly = hist["Close"].resample("ME").mean()
         monthly_prices = [round(float(p), 2) for p in monthly.tolist()]
@@ -225,20 +388,36 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
             max_price=round(max_price, 2),
             min_price=round(min_price, 2),
             volatility=round(volatility, 4),
+            max_drawdown_pct=max_drawdown_pct,
             trend=trend,
             monthly_prices=monthly_prices,
+            price_catalysts=catalysts,
+            candlestick_patterns=candlestick_patterns,
+            web_news=web_news,
         )
 
-    # Fallback: use DragonFi 52-week range for a rough estimate
-    logger.info("yfinance history unavailable for %s — using DragonFi 52-week range", symbol)
-    profile = fetch_stock_profile(symbol)
+    # Fallback: use DragonFi 52-week range + TradingView performance data
+    logger.info("yfinance history unavailable for %s — using DragonFi + TradingView", symbol)
+
+    # TradingView gives accurate multi-period performance & volatility
+    tv = fetch_tradingview_snapshot(symbol)
+    perf_summary = format_tv_performance_summary(tv)
+
     if profile:
         high52 = float(profile.get("weekHigh52", 0) or 0)
         low52 = float(profile.get("weekLow52", 0) or 0)
         current = float(profile.get("price", 0) or 0)
-        change_pct = (
-            round(((current - low52) / low52) * 100, 2) if low52 > 0 else 0.0
-        )
+
+        # Use TradingView's 1-year performance if available (more accurate
+        # than computing from 52-week low which is misleading)
+        tv_year_pct = tv.get("perf_year", 0.0)
+        if tv_year_pct:
+            change_pct = round(tv_year_pct, 2)
+        else:
+            change_pct = (
+                round(((current - low52) / low52) * 100, 2) if low52 > 0 else 0.0
+            )
+
         if change_pct > 5:
             trend = TrendDirection.UPTREND
         elif change_pct < -5:
@@ -246,16 +425,23 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
         else:
             trend = TrendDirection.SIDEWAYS
 
+        # Use TradingView monthly volatility if available
+        tv_volatility = tv.get("volatility_monthly", 0.0)
+
         return PriceMovement(
             symbol=symbol,
-            year_start_price=low52,
+            year_start_price=round(current / (1 + tv_year_pct / 100), 2) if tv_year_pct else low52,
             year_end_price=current,
             year_change_pct=change_pct,
             max_price=high52,
             min_price=low52,
-            volatility=0.0,
+            volatility=round(tv_volatility, 4),
+            max_drawdown_pct=round(((low52 - high52) / high52) * 100, 2) if high52 > 0 else 0.0,
             trend=trend,
             monthly_prices=[],
+            price_catalysts=catalysts,
+            performance_summary=perf_summary,
+            web_news=web_news,
         )
 
     return PriceMovement(symbol=symbol)
@@ -399,9 +585,25 @@ def fetch_controversy_info(symbol: str) -> ControversyInfo:
     else:
         news_summary = "No recent news available from DragonFi."
 
+    # Web search via Tavily for richer news coverage
+    profile = fetch_stock_profile(symbol)
+    company_name = str(profile.get("companyName", "")) if profile else ""
+    web_general = search_stock_news(symbol, company_name=company_name)
+    web_controversy = search_stock_controversies(symbol, company_name=company_name)
+    web_news = ""
+    if web_general and not web_general.startswith("No "):
+        web_news += f"**Recent Web News:**\n{web_general}"
+    if web_controversy and not web_controversy.startswith("No "):
+        if web_news:
+            web_news += "\n\n"
+        web_news += f"**Controversy Search:**\n{web_controversy}"
+    if not web_news:
+        web_news = "No web news available (Tavily API key may not be configured)."
+
     return ControversyInfo(
         symbol=symbol,
         sudden_spikes=spikes,
         risk_factors=risk_factors,
         recent_news_summary=news_summary,
+        web_news=web_news,
     )

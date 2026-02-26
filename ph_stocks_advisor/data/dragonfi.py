@@ -164,3 +164,70 @@ def fetch_stock_news(symbol: str, page_size: int = 5) -> list[dict[str, Any]]:
     if isinstance(data, list):
         return data[:page_size]
     return []
+
+
+# ---------------------------------------------------------------------------
+# Financial trend helpers
+# ---------------------------------------------------------------------------
+
+def _extract_annual_values(series_data: dict[str, Any] | None) -> dict[str, float]:
+    """Extract {year: value} from a DragonFi annual series dict.
+
+    DragonFi annual metrics use keys like ``"2020"``, ``"2021"``, etc.
+    for the raw values and ``"2020_YoY"`` for YoY change strings.
+    We only return the raw-value keys.
+    """
+    if not series_data or not isinstance(series_data, dict):
+        return {}
+    result: dict[str, float] = {}
+    for key, val in series_data.items():
+        # Skip non-year keys (Symbol, Item) and YoY keys
+        if "_" in key or not key.isdigit() or val is None:
+            continue
+        try:
+            result[key] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def fetch_annual_income_trends(symbol: str) -> dict[str, dict[str, float]]:
+    """Return multi-year revenue, net income, and operating income trends.
+
+    Returns a dict with keys ``"revenue"``, ``"net_income"``,
+    ``"operation_income"`` each mapping to ``{year: value}``.
+    """
+    stmts = fetch_stock_financials(symbol)
+    if not stmts:
+        return {}
+
+    annual_is = stmts.get("incomeStatementAnnual", {})
+    return {
+        "revenue": _extract_annual_values(annual_is.get("revenue")),
+        "net_income": _extract_annual_values(annual_is.get("netIncome")),
+        "operation_income": _extract_annual_values(annual_is.get("operationIncome")),
+    }
+
+
+def fetch_annual_cashflow_trends(symbol: str) -> dict[str, dict[str, float]]:
+    """Return multi-year cash-flow trends (CFO, CFI, CFF, FCF).
+
+    Returns a dict with keys ``"cfo"``, ``"cfi"``, ``"cff"`` from cash-flow
+    statements and ``"fcf"`` from security metrics.
+    """
+    stmts = fetch_stock_financials(symbol)
+    cf_annual = stmts.get("cashFlowAnnual", {}) if stmts else {}
+
+    metrics = fetch_security_metrics(symbol)
+    fcf_annual = {}
+    if metrics:
+        cf_metrics = metrics.get("cashFlowAnnual", {})
+        fcf_data = cf_metrics.get("fcf", {})
+        fcf_annual = _extract_annual_values(fcf_data)
+
+    return {
+        "cfo": _extract_annual_values(cf_annual.get("cfo")),
+        "cfi": _extract_annual_values(cf_annual.get("cfi")),
+        "cff": _extract_annual_values(cf_annual.get("cff")),
+        "fcf": fcf_annual,
+    }

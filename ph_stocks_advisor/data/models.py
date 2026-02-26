@@ -43,6 +43,10 @@ class StockPrice(BaseModel):
     fifty_two_week_high: float = 0.0
     fifty_two_week_low: float = 0.0
     previous_close: float = 0.0
+    price_catalysts: list[str] = Field(
+        default_factory=list,
+        description="Detected factors likely driving the current price (e.g. dividend announcement, REIT yield play).",
+    )
 
 
 class DividendInfo(BaseModel):
@@ -54,6 +58,26 @@ class DividendInfo(BaseModel):
     payout_ratio: float = 0.0
     ex_dividend_date: Optional[str] = None
     five_year_avg_yield: float = 0.0
+    # Enriched fields from DragonFi financials
+    is_reit: bool = False
+    annual_dividend_per_share: float = 0.0
+    net_income_trend: dict[str, float] = Field(
+        default_factory=dict,
+        description="Annual net income (PHP) keyed by year, e.g. {'2022': 2.89e9}",
+    )
+    revenue_trend: dict[str, float] = Field(
+        default_factory=dict,
+        description="Annual revenue (PHP) keyed by year",
+    )
+    free_cash_flow_trend: dict[str, float] = Field(
+        default_factory=dict,
+        description="Annual free cash flow (PHP) keyed by year",
+    )
+    dividend_sustainability_note: str = ""
+    recent_dividend_news: str = Field(
+        default="",
+        description="Recent dividend-related web news from Tavily search.",
+    )
 
 
 class PriceMovement(BaseModel):
@@ -66,8 +90,31 @@ class PriceMovement(BaseModel):
     max_price: float = 0.0
     min_price: float = 0.0
     volatility: float = 0.0
+    max_drawdown_pct: float = Field(
+        default=0.0,
+        description="Largest peak-to-trough decline (%) during the year. "
+        "A value like -30.0 means the stock fell 30% from its high.",
+    )
     trend: TrendDirection = TrendDirection.SIDEWAYS
     monthly_prices: list[float] = Field(default_factory=list)
+    price_catalysts: list[str] = Field(
+        default_factory=list,
+        description="Detected factors likely driving recent price movement.",
+    )
+    candlestick_patterns: str = Field(
+        default="",
+        description="Notable candlestick chart patterns detected from OHLCV data "
+        "(large candles, gaps, volume spikes, selling/buying pressure).",
+    )
+    performance_summary: str = Field(
+        default="",
+        description="Multi-period performance summary from TradingView "
+        "(1-week, 1-month, 3-month, 6-month, 1-year, YTD % change + volatility).",
+    )
+    web_news: str = Field(
+        default="",
+        description="Recent web news about the stock from Tavily search.",
+    )
 
 
 class FairValueEstimate(BaseModel):
@@ -91,6 +138,10 @@ class ControversyInfo(BaseModel):
     sudden_spikes: list[str] = Field(default_factory=list)
     risk_factors: list[str] = Field(default_factory=list)
     recent_news_summary: str = ""
+    web_news: str = Field(
+        default="",
+        description="Recent general & controversy news from Tavily web search.",
+    )
 
 
 # ---------------------------------------------------------------------------
