@@ -25,8 +25,8 @@ postgres = [
 
 [project.scripts]
 ph-advisor = "ph_stocks_advisor.main:main"
-ph-advisor-pdf = "ph_stocks_advisor.export_pdf:main"
-ph-advisor-html = "ph_stocks_advisor.export_html:main"
+ph-advisor-pdf = "ph_stocks_advisor.export.pdf:main"
+ph-advisor-html = "ph_stocks_advisor.export.html:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

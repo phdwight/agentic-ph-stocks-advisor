@@ -39,10 +39,10 @@ The data layer cascades through multiple sources for resilience:
 ## SOLID Principles Applied
 
 - **S**ingle Responsibility – each domain service (`price_service`, `dividend_service`, etc.) handles one data concern; `tools.py` is a thin re-export façade
-- **O**pen/Closed – new agents are added via `AGENT_REGISTRY` in `workflow.py`; existing node factories need no changes
-- **L**iskov Substitution – `get_llm()` returns `BaseChatModel`; any LangChain-compatible LLM provider works
-- **I**nterface Segregation – tool functions return narrow, typed Pydantic models; fat models are documented with clear field groupings
-- **D**ependency Inversion – LLM is injected into `build_graph(llm=...)` and closed over in nodes; repository layer uses an ABC with SQLite/Postgres implementations
+- **O**pen/Closed – new agents are added via `AGENT_REGISTRY` in `workflow.py`; new export formats are added by subclassing `OutputFormatter` and registering in `FORMATTER_REGISTRY`; existing code needs no changes
+- **L**iskov Substitution – `get_llm()` returns `BaseChatModel`; any LangChain-compatible LLM provider works. `PdfFormatter` and `HtmlFormatter` are drop-in replacements for `OutputFormatter`
+- **I**nterface Segregation – tool functions return narrow, typed Pydantic models; `OutputFormatter` exposes only `render()`, `write()`, and metadata properties
+- **D**ependency Inversion – LLM is injected into `build_graph(llm=...)` and closed over in nodes; repository layer uses an ABC with SQLite/Postgres implementations; export uses `OutputFormatter` ABC
 
 ## Setup
 
@@ -128,8 +128,11 @@ All tests run offline with mocked data sources and mocked LLM calls — no API k
 ph_stocks_advisor/
 ├── __init__.py
 ├── main.py                    # CLI entry point (ph-advisor)
-├── export_pdf.py              # PDF export (ph-advisor-pdf)
-├── export_html.py             # HTML export (ph-advisor-html)
+├── export/                    # Pluggable output formatters (Open/Closed)
+│   ├── __init__.py            #   FORMATTER_REGISTRY & get_formatter()
+│   ├── formatter.py           #   OutputFormatter ABC, parse_sections(), export_cli()
+│   ├── pdf.py                 #   PdfFormatter  (fpdf2, ph-advisor-pdf)
+│   └── html.py                #   HtmlFormatter (pure-Python, ph-advisor-html)
 ├── agents/
 │   ├── __init__.py
 │   ├── specialists.py         # 5 specialist agent classes
@@ -168,7 +171,7 @@ tests/
 ├── test_tools.py
 ├── test_agents.py
 ├── test_consolidator.py
-├── test_export_html.py            # HTML export tests
+├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py
 └── test_repository.py
 ```

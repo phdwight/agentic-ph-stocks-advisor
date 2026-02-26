@@ -10,21 +10,21 @@ Usage:
     python -m ph_stocks_advisor.main SM --html -o out.html
 
 Export only (no new analysis):
-    python -m ph_stocks_advisor.export_pdf MREIT          # latest report → PDF
-    python -m ph_stocks_advisor.export_pdf MREIT --id 26  # specific report id
-    python -m ph_stocks_advisor.export_html MREIT         # latest report → HTML
+    ph-advisor-pdf MREIT          # latest report → PDF
+    ph-advisor-html MREIT         # latest report → HTML
 """
 
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
+from pathlib import Path
 
 from ph_stocks_advisor.infra.config import get_repository
 from ph_stocks_advisor.graph.workflow import run_analysis
 from ph_stocks_advisor.data.models import FinalReport
 from ph_stocks_advisor.infra.repository import ReportRecord
+from ph_stocks_advisor.export import FORMATTER_REGISTRY, get_formatter
 
 
 
@@ -46,17 +46,17 @@ def _parse_args() -> argparse.Namespace:
         description="Agentic AI Philippine Stock Advisor",
     )
     parser.add_argument("symbol", help="PSE stock symbol (e.g. TEL, SM, MREIT)")
-    parser.add_argument(
-        "--pdf", action="store_true",
-        help="Generate a PDF report after analysis",
-    )
-    parser.add_argument(
-        "--html", action="store_true",
-        help="Generate an HTML report after analysis",
-    )
+
+    # Dynamically add --pdf, --html, … from the formatter registry
+    for name in FORMATTER_REGISTRY:
+        parser.add_argument(
+            f"--{name}", action="store_true",
+            help=f"Generate a {name.upper()} report after analysis",
+        )
+
     parser.add_argument(
         "-o", "--output", type=str, default=None,
-        help="Output path for --pdf or --html (default: <SYMBOL>_report.<ext>)",
+        help="Output path (default: <SYMBOL>_report.<ext>)",
     )
     return parser.parse_args()
 
@@ -65,20 +65,21 @@ def main(symbol: str | None = None) -> None:
     """Run the multi-agent analysis, save to DB, and print the report."""
 
     # Parse CLI args
-    generate_pdf = False
-    generate_html = False
+    requested_formats: list[str] = []
     output_path: str | None = None
 
     if symbol is None:
         args = _parse_args()
         symbol = args.symbol
-        generate_pdf = args.pdf
-        generate_html = args.html
         output_path = args.output
+        for name in FORMATTER_REGISTRY:
+            if getattr(args, name, False):
+                requested_formats.append(name)
     else:
         # Called programmatically — check leftover argv for flags
-        generate_pdf = "--pdf" in sys.argv
-        generate_html = "--html" in sys.argv
+        for name in FORMATTER_REGISTRY:
+            if f"--{name}" in sys.argv:
+                requested_formats.append(name)
 
     symbol = symbol.upper().replace(".PS", "")
     print(f"\n🔍 Analysing {symbol} — this may take a minute …\n")
@@ -123,27 +124,14 @@ def main(symbol: str | None = None) -> None:
 
     _print_report(report)
 
-    # Optionally generate a PDF
-    if generate_pdf:
-        from pathlib import Path
-        from ph_stocks_advisor.export_pdf import build_pdf
-
+    # Export to any requested output formats
+    if requested_formats:
         rec = ReportRecord.from_final_report(report)
-        pdf_bytes = build_pdf(rec)
-        out = output_path or f"{symbol}_report.pdf"
-        Path(out).write_bytes(pdf_bytes)
-        print(f"📄 PDF saved to {out}")
-
-    # Optionally generate an HTML report
-    if generate_html:
-        from pathlib import Path
-        from ph_stocks_advisor.export_html import build_html
-
-        rec = ReportRecord.from_final_report(report)
-        html_str = build_html(rec)
-        out = output_path or f"{symbol}_report.html"
-        Path(out).write_text(html_str, encoding="utf-8")
-        print(f"🌐 HTML saved to {out}")
+        for fmt_name in requested_formats:
+            formatter = get_formatter(fmt_name)
+            out = Path(output_path or f"{symbol}_report{formatter.file_extension}")
+            formatter.write(rec, out)
+            print(f"{formatter.emoji} {formatter.format_label} saved to {out}")
 
 
 if __name__ == "__main__":
