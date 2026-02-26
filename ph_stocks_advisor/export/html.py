@@ -10,7 +10,7 @@ from __future__ import annotations
 import html as _html
 import re
 
-from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections
+from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES
 from ph_stocks_advisor.infra.repository import ReportRecord
 
 
@@ -40,7 +40,9 @@ section h2{font-size:1.15rem;color:var(--accent);border-bottom:2px solid var(--a
 section p,section li{font-size:.95rem}
 section ul{padding-left:1.4rem;margin-top:.3rem}
 section li{margin-bottom:.25rem}
-footer{text-align:center;padding:1rem;font-size:.75rem;color:#aaa;border-top:1px solid #eee}
+footer{text-align:center;padding:1.2rem 2.5rem;font-size:.75rem;color:#888;border-top:1px solid #eee;line-height:1.5}
+footer .disclaimer{margin-bottom:.3rem}
+footer .sources{font-style:italic}
 @media print{body{padding:0}
   .container{box-shadow:none;border-radius:0}}
 """
@@ -150,7 +152,10 @@ class HtmlFormatter(OutputFormatter):
 <main>
 {chr(10).join(sections_html)}
 </main>
-<footer>Philippine Stock Advisor</footer>
+<footer>
+  <div class="disclaimer">{_esc(DISCLAIMER)}</div>
+  <div class="sources">{_esc(DATA_SOURCES)}</div>
+</footer>
 </div>
 </body>
 </html>

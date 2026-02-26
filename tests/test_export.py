@@ -385,7 +385,8 @@ class TestHtmlRender:
 
     def test_contains_footer(self):
         html = HtmlFormatter().render(_make_record()).decode()
-        assert "Philippine Stock Advisor" in html
+        assert "does not constitute financial advice" in html
+        assert "DragonFi" in html
 
 
 # =========================================================================

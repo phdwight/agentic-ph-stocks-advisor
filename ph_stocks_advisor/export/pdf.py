@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fpdf import FPDF
 
-from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections
+from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES
 from ph_stocks_advisor.infra.repository import ReportRecord
 
 
@@ -35,7 +35,7 @@ class _ReportPDF(FPDF):
         super().__init__(orientation="P", unit="mm", format="A4")
         self._symbol = symbol
         self._verdict = verdict
-        self.set_auto_page_break(auto=True, margin=20)
+        self.set_auto_page_break(auto=True, margin=30)
         self.set_margins(_MARGIN, _MARGIN, _MARGIN)
 
     def header(self) -> None:
@@ -48,10 +48,18 @@ class _ReportPDF(FPDF):
         self.ln(4)
 
     def footer(self) -> None:
-        self.set_y(-15)
-        self.set_font("Helvetica", "I", 8)
+        self.set_y(-28)
+        self.set_draw_color(200, 200, 200)
+        self.line(_MARGIN, self.get_y(), _PAGE_W - _MARGIN, self.get_y())
+        self.ln(2)
+        self.set_font("Helvetica", "I", 6.5)
+        self.set_text_color(140, 140, 140)
+        self.multi_cell(_BODY_W, 3, _sanitize(DISCLAIMER), align="C")
+        self.ln(0.5)
         self.set_text_color(160, 160, 160)
-        self.cell(0, 10, f"Page {self.page_no()}/{{nb}}", align="C")
+        self.multi_cell(_BODY_W, 3, _sanitize(DATA_SOURCES), align="C")
+        self.set_font("Helvetica", "I", 7)
+        self.cell(0, 4, f"Page {self.page_no()}/{{nb}}", align="C")
 
 
 # Characters outside latin-1 that appear in PH stock reports

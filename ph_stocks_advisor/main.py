@@ -25,6 +25,7 @@ from ph_stocks_advisor.graph.workflow import run_analysis
 from ph_stocks_advisor.data.models import FinalReport
 from ph_stocks_advisor.infra.repository import ReportRecord
 from ph_stocks_advisor.export import FORMATTER_REGISTRY, get_formatter
+from ph_stocks_advisor.export.formatter import DATA_SOURCES, DISCLAIMER
 
 
 
@@ -38,7 +39,9 @@ def _print_report(report: FinalReport) -> None:
     print(f"\n{report.summary}")
     print(f"\n{border}")
     print(f"  VERDICT:  {report.verdict.value}")
-    print(f"{border}\n")
+    print(f"{border}")
+    print(f"\n{DATA_SOURCES}")
+    print(f"\n{DISCLAIMER}\n")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -115,7 +118,14 @@ def _analyse_single(symbol: str, requested_formats: list[str],
         rec = ReportRecord.from_final_report(report)
         for fmt_name in requested_formats:
             formatter = get_formatter(fmt_name)
-            out = Path(output_path or f"{symbol}_report{formatter.file_extension}")
+            default_name = f"{symbol}_report{formatter.file_extension}"
+            if output_path:
+                out = Path(output_path)
+            else:
+                from ph_stocks_advisor.infra.config import get_settings
+                output_dir = get_settings().output_dir
+                out = Path(output_dir) / default_name if output_dir else Path(default_name)
+            out.parent.mkdir(parents=True, exist_ok=True)
             formatter.write(rec, out)
             print(f"{formatter.emoji} {formatter.format_label} saved to {out}")
 

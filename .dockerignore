@@ -1,0 +1,39 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.venv/
+venv/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker (avoid recursive copy)
+Dockerfile
+docker-compose.yml
+
+# Environment (secrets injected at runtime)
+.env
+
+# Test & CI artefacts
+.pytest_cache/
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database files (DB lives in the postgres container)
+*.db
+db/
+output/

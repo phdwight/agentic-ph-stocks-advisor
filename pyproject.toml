@@ -12,6 +12,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "fpdf2>=2.8",
     "tavily-python>=0.5",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]

@@ -46,6 +46,8 @@ The data layer cascades through multiple sources for resilience:
 
 ## Setup
 
+### Local (without Docker)
+
 ```bash
 # 1. Create virtual environment
 python -m venv .venv && source .venv/bin/activate
@@ -63,6 +65,30 @@ For PostgreSQL support:
 ```bash
 pip install -e ".[postgres]"
 ```
+
+### Docker (recommended for deployment)
+
+The project ships with a multi-stage `Dockerfile` and a Compose v2 file that runs the advisor alongside a dedicated PostgreSQL container.
+
+```bash
+# 1. Configure environment
+cp .env.example .env
+# Edit .env — set at least OPENAI_API_KEY
+
+# 2. Build & analyse a stock (one-shot)
+docker compose run --rm advisor TEL
+
+# 3. Analyse multiple stocks with PDF export
+docker compose run --rm advisor SM BDO TEL --pdf
+
+# 4. Stop the database when you're done
+docker compose down            # keeps data in the pgdata volume
+docker compose down -v         # removes the volume too
+```
+
+Exported files (PDF / HTML) are written to the `./output` directory on the host via a bind mount.
+
+> **Tip:** Override any env var in `.env` — the Compose file reads them automatically.
 
 ## Usage
 
@@ -133,6 +159,9 @@ All tests run offline with mocked data sources and mocked LLM calls — no API k
 ## Project Structure
 
 ```
+Dockerfile                         # Multi-stage container image
+docker-compose.yml                 # Compose v2 (app + Postgres)
+.dockerignore                      # Files excluded from Docker build context
 ph_stocks_advisor/
 ├── __init__.py
 ├── main.py                    # CLI entry point (ph-advisor)
@@ -199,10 +228,15 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `DB_BACKEND` | No | `sqlite` | `sqlite` or `postgres` |
 | `SQLITE_PATH` | No | `reports.db` | Path to the SQLite database file |
 | `POSTGRES_DSN` | No | `postgresql://localhost:5432/ph_advisor` | PostgreSQL connection string |
+| `POSTGRES_USER` | No | `ph_advisor` | Postgres user (Docker Compose only) |
+| `POSTGRES_PASSWORD` | No | `ph_advisor` | Postgres password (Docker Compose only) |
+| `POSTGRES_DB` | No | `ph_advisor` | Postgres database name (Docker Compose only) |
+| `POSTGRES_PORT` | No | `5432` | Host port for Postgres (Docker Compose only) |
 | `DRAGONFI_BASE_URL` | No | `https://api.dragonfi.ph/api/v2` | DragonFi API base URL |
 | `PSE_EDGE_BASE_URL` | No | `https://edge.pse.com.ph` | PSE EDGE base URL |
 | `TRADINGVIEW_SCANNER_URL` | No | `https://scanner.tradingview.com/philippines/scan` | TradingView scanner endpoint |
 | `HTTP_TIMEOUT` | No | `15` | HTTP request timeout (seconds) |
+| `OUTPUT_DIR` | No | _(empty — cwd)_ | Base directory for exported PDF/HTML files |
 | `TREND_UP_THRESHOLD` | No | `5` | % change above which trend = uptrend |
 | `TREND_DOWN_THRESHOLD` | No | `-5` | % change below which trend = downtrend |
 | `SPIKE_STD_MULTIPLIER` | No | `3` | × daily-return std-dev to flag a spike |

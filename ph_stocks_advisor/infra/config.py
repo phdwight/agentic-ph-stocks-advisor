@@ -57,6 +57,9 @@ class Settings:
         "https://scanner.tradingview.com/philippines/scan",
     )
 
+    # -- Output directory (used as default base for exported files) -------------
+    output_dir: str = os.getenv("OUTPUT_DIR", "")
+
     # -- HTTP timeouts (seconds) -----------------------------------------------
     http_timeout: int = int(os.getenv("HTTP_TIMEOUT", "15"))
 
