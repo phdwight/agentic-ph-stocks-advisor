@@ -180,6 +180,7 @@ class TestGetRepository:
 
     def test_postgres_import(self):
         """Verify the Postgres repo class can at least be imported."""
+        pytest.importorskip("psycopg2", reason="psycopg2 not installed")
         from ph_stocks_advisor.infra.repository_postgres import PostgresReportRepository
 
         assert issubclass(PostgresReportRepository, AbstractReportRepository)

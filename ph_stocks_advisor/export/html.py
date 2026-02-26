@@ -28,8 +28,10 @@ body{font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--b
 header{background:var(--accent);color:#fff;padding:2rem 2.5rem 1.5rem}
 header h1{font-size:1.75rem;margin-bottom:.35rem}
 header .meta{font-size:.85rem;opacity:.8}
-.badge{display:inline-block;padding:.3rem 1rem;border-radius:6px;font-weight:700;
-  font-size:1rem;margin-top:.6rem;color:#fff}
+.verdict-row{margin-top:.6rem;display:flex;align-items:center;gap:.5rem}
+.verdict-label{font-size:1rem;font-weight:700;color:#fff}
+.badge{display:inline-block;padding:.3rem 1.2rem;border-radius:999px;font-weight:700;
+  font-size:1rem;color:#fff}
 .badge.buy{background:var(--green)}.badge.not-buy{background:var(--red)}
 main{padding:2rem 2.5rem 2.5rem}
 section{margin-bottom:1.8rem}
@@ -65,6 +67,8 @@ def _body_to_html(body: str) -> str:
 
     for raw_line in body.strip().splitlines():
         line = raw_line.strip()
+        # Strip trailing dashes the LLM sometimes appends
+        line = re.sub(r"-{2,}\s*$", "", line)
         if not line:
             if in_list:
                 parts.append("</ul>")
@@ -76,7 +80,8 @@ def _body_to_html(body: str) -> str:
             if not in_list:
                 parts.append("<ul>")
                 in_list = True
-            parts.append(f"<li>{_md_bold_to_html(_esc(line[2:].strip()))}</li>")
+            bullet_text = re.sub(r"^([-*]\s+)+", "", line[2:]).strip()
+            parts.append(f"<li>{_md_bold_to_html(_esc(bullet_text))}</li>")
         else:
             if in_list:
                 parts.append("</ul>")
@@ -139,7 +144,7 @@ class HtmlFormatter(OutputFormatter):
 <div class="container">
 <header>
   <h1>{_esc(record.symbol)} Stock Analysis</h1>
-  <span class="badge {badge_cls}">Verdict: {_esc(record.verdict)}</span>
+  <div class="verdict-row"><span class="verdict-label">Verdict:</span> <span class="badge {badge_cls}">{_esc(record.verdict)}</span></div>
   <div class="meta">Generated: {_esc(ts)}</div>
 </header>
 <main>

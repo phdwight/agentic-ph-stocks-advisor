@@ -100,6 +100,92 @@ class TestParseSections:
         assert sections[0][0] == "Rating"
         assert "Strong Buy" in sections[0][1]
 
+    # --- Markdown ATX heading support ---
+
+    def test_markdown_h3_heading(self):
+        text = "### Price Analysis\n- Price is PHP 14.26\n### Dividend Analysis\n- Yield is 7%"
+        sections = parse_sections(text)
+        titles = [t for t, _ in sections]
+        assert "Price Analysis" in titles
+        assert "Dividend Analysis" in titles
+
+    def test_markdown_h2_heading(self):
+        text = "## Overview\nSome overview text."
+        sections = parse_sections(text)
+        assert sections[0][0] == "Overview"
+
+    def test_markdown_heading_with_trailing_colon(self):
+        text = "### Price Analysis:\n- Bullet"
+        sections = parse_sections(text)
+        assert sections[0][0] == "Price Analysis"
+
+    def test_mixed_heading_styles(self):
+        """LLM mixes **Bold:** and ### Markdown headings."""
+        text = (
+            "**Price Analysis:**\n- Price bullet\n"
+            "### Dividend Analysis\n- Dividend bullet"
+        )
+        sections = parse_sections(text)
+        titles = [t for t, _ in sections]
+        assert "Price Analysis" in titles
+        assert "Dividend Analysis" in titles
+
+    # --- Dash / separator stripping ---
+
+    def test_multi_dash_separator_lines_stripped(self):
+        text = "**Intro:**\nHello\n----\n**Next:**\nWorld"
+        for _, body in parse_sections(text):
+            assert "----" not in body
+
+    def test_trailing_dashes_stripped_from_body(self):
+        text = "### Analysis\n- Yield is 7%.--\n- Payout ratio is 93%.----"
+        sections = parse_sections(text)
+        body = sections[0][1]
+        assert "--" not in body
+        assert "7%." in body
+        assert "93%." in body
+
+    # --- Trailing dashes in headings (regression: MREIT PDF output) ---
+
+    def test_bold_heading_with_trailing_dashes(self):
+        """**Price Analysis:----** must become 'Price Analysis'."""
+        text = "**Price Analysis:----**\n- Bullet one"
+        sections = parse_sections(text)
+        assert sections[0][0] == "Price Analysis"
+        assert "--" not in sections[0][0]
+
+    def test_markdown_heading_with_trailing_dashes(self):
+        """### Price Analysis---- must become 'Price Analysis'."""
+        text = "### Price Analysis----\n- Bullet one"
+        sections = parse_sections(text)
+        assert sections[0][0] == "Price Analysis"
+        assert "--" not in sections[0][0]
+
+    def test_bold_heading_dashes_before_colon(self):
+        """**Price Analysis----:** must become 'Price Analysis'."""
+        text = "**Price Analysis----:**\n- Bullet one"
+        sections = parse_sections(text)
+        assert sections[0][0] == "Price Analysis"
+        assert "--" not in sections[0][0]
+
+    def test_mreit_style_multiple_sections_with_dashes(self):
+        """Regression: full MREIT-style output with dashes after every heading."""
+        text = (
+            "### Price Analysis----\n"
+            " - MREIT is at PHP 14.26\n"
+            "### Dividend Analysis----\n"
+            " - Trailing dividend yield is about 7.06%\n"
+            "### Price Movement Analysis----\n"
+            " - Over roughly a year, the stock is up about +5.6%\n"
+        )
+        sections = parse_sections(text)
+        for title, _ in sections:
+            assert "--" not in title, f"Dashes leaked into title: {title!r}"
+        titles = [t for t, _ in sections]
+        assert "Price Analysis" in titles
+        assert "Dividend Analysis" in titles
+        assert "Price Movement Analysis" in titles
+
 
 # =========================================================================
 # OutputFormatter ABC contract
@@ -209,6 +295,22 @@ class TestBodyToHtml:
         out = _body_to_html("* Item one\n* Item two")
         assert "<ul>" in out and "Item one" in out
 
+    def test_trailing_dashes_stripped_from_bullets(self):
+        out = _body_to_html("- Yield is 7%.--\n- Ratio is 93%.----")
+        assert "--" not in out
+        assert "7%." in out
+
+    def test_double_dash_bullets_collapsed(self):
+        """LLM sometimes produces '- - text'; should render as single bullet."""
+        out = _body_to_html("- - At PHP 138.50, BDO is closer\n- - The move was small")
+        # Should not contain a leftover '- ' inside the <li>
+        assert "<li>At PHP 138.50" in out
+        assert "<li>The move was small" in out
+
+    def test_triple_dash_bullets_collapsed(self):
+        out = _body_to_html("- - - deeply nested")
+        assert "<li>deeply nested" in out
+
 
 class TestHtmlRender:
     def test_returns_bytes(self):
@@ -226,11 +328,24 @@ class TestHtmlRender:
     def test_buy_verdict_badge(self):
         html = HtmlFormatter().render(_make_record(verdict="BUY")).decode()
         assert 'class="badge buy"' in html
-        assert "Verdict: BUY" in html
+        assert ">BUY<" in html
 
     def test_not_buy_verdict_badge(self):
         html = HtmlFormatter().render(_make_record(verdict="NOT BUY")).decode()
         assert 'class="badge not-buy"' in html
+
+    def test_verdict_label_outside_pill(self):
+        """'Verdict:' label should be outside the colored pill badge."""
+        html = HtmlFormatter().render(_make_record(verdict="BUY")).decode()
+        assert 'class="verdict-label"' in html
+        assert "Verdict:" in html
+        # The badge itself should only contain the verdict value
+        assert '>BUY</span>' in html
+
+    def test_badge_is_pill_shaped(self):
+        """CSS should use large border-radius for a pill shape."""
+        html = HtmlFormatter().render(_make_record()).decode()
+        assert "border-radius:999px" in html
 
     def test_excludes_verdict_section_from_body(self):
         html = HtmlFormatter().render(_make_record()).decode()
@@ -293,6 +408,49 @@ class TestPdfRender:
         PdfFormatter().write(_make_record(), out)
         assert out.exists()
         assert out.read_bytes()[:5] == b"%PDF-"
+
+    def test_markdown_headings_render_without_hashes(self, tmp_path):
+        """Regression: ### headings must not appear as raw '###' in PDF."""
+        summary = (
+            "### Price Analysis\n"
+            "- MREIT last traded at PHP 14.26.--\n"
+            "### Dividend Analysis\n"
+            "- Trailing dividend yield is about 7.06%.----\n"
+            "**Verdict: BUY**\n"
+        )
+        record = _make_record(summary=summary)
+        out = tmp_path / "report.pdf"
+        PdfFormatter().write(record, out)
+        assert out.exists()
+        assert out.stat().st_size > 500
+
+    def test_double_dash_bullets_render_without_error(self, tmp_path):
+        """Regression: LLM '- - text' bullets should render cleanly."""
+        summary = (
+            "### Price Analysis\n"
+            "- - At PHP 138.50, BDO is closer to its 52-week low.\n"
+            "- - The move from PHP 137.60 is a small gain.\n"
+            "**Verdict: BUY**\n"
+        )
+        record = _make_record(summary=summary)
+        out = tmp_path / "report.pdf"
+        PdfFormatter().write(record, out)
+        assert out.exists()
+        assert out.stat().st_size > 500
+
+    def test_pill_shaped_badge_buy(self, tmp_path):
+        """PDF should render a pill-shaped verdict badge for BUY."""
+        out = tmp_path / "report.pdf"
+        PdfFormatter().write(_make_record(verdict="BUY"), out)
+        assert out.exists()
+        assert out.stat().st_size > 500
+
+    def test_pill_shaped_badge_not_buy(self, tmp_path):
+        """PDF should render a pill-shaped verdict badge for NOT BUY."""
+        out = tmp_path / "report.pdf"
+        PdfFormatter().write(_make_record(verdict="NOT BUY"), out)
+        assert out.exists()
+        assert out.stat().st_size > 500
 
 
 # =========================================================================

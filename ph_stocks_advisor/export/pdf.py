@@ -98,10 +98,13 @@ def _write_section(pdf: _ReportPDF, title: str, body: str) -> None:
             pdf.ln(2)
             continue
 
+        # Strip leftover markdown artefacts before rendering
         clean = _sanitize(_strip_markdown_bold(line))
+        # Remove trailing dashes the LLM sometimes appends
+        clean = re.sub(r"-{2,}\s*$", "", clean)
 
         if clean.startswith("- ") or clean.startswith("* "):
-            bullet_text = clean[2:].strip()
+            bullet_text = re.sub(r"^([-*]\s+)+", "", clean[2:]).strip()
             pdf.cell(6, 5, "-")
             pdf.multi_cell(_BODY_W - 8, 5, f" {bullet_text}")
             pdf.ln(1)
@@ -142,16 +145,28 @@ class PdfFormatter(OutputFormatter):
         pdf.set_text_color(20, 40, 80)
         pdf.cell(0, 12, f"{record.symbol} Stock Analysis", new_x="LMARGIN", new_y="NEXT")
 
-        # Verdict badge
+        # Verdict label + pill-shaped badge
         is_buy = record.verdict.upper() == "BUY"
         pdf.set_font("Helvetica", "B", 14)
+        pdf.set_text_color(120, 120, 120)
+        label = "Verdict: "
+        pdf.cell(pdf.get_string_width(label), 10, label)
+
+        # Pill badge (only the verdict value)
         if is_buy:
             pdf.set_fill_color(34, 139, 34)
         else:
             pdf.set_fill_color(200, 50, 50)
         pdf.set_text_color(255, 255, 255)
-        badge = f"  Verdict: {record.verdict}  "
-        pdf.cell(pdf.get_string_width(badge) + 6, 10, badge, fill=True,
+        badge_text = f" {record.verdict} "
+        badge_w = pdf.get_string_width(badge_text) + 10
+        badge_h = 10
+        badge_x = pdf.get_x()
+        badge_y = pdf.get_y()
+        pdf.rect(badge_x, badge_y, badge_w, badge_h,
+                 style="F", round_corners=True, corner_radius=badge_h / 2)
+        pdf.set_xy(badge_x, badge_y)
+        pdf.cell(badge_w, badge_h, badge_text, align="C",
                  new_x="LMARGIN", new_y="NEXT")
 
         # Date

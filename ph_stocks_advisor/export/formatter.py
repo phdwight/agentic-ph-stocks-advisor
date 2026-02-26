@@ -27,15 +27,38 @@ from ph_stocks_advisor.infra.repository import ReportRecord
 # Shared summary parser (used by every formatter)
 # ---------------------------------------------------------------------------
 
+def _strip_trailing_dashes(line: str) -> str:
+    """Remove trailing sequences of dashes/hyphens (``--``, ``----``, …).
+
+    The LLM occasionally appends decorative dashes to the end of bullet
+    points or paragraphs.  These look fine in plain text but leak through
+    as raw characters in formatted output.
+    """
+    return re.sub(r"-{2,}\s*$", "", line)
+
+
+def _clean_title(title: str) -> str:
+    """Normalise an extracted section title.
+
+    Strips trailing colons, dashes, whitespace, and markdown bold markers
+    that the LLM occasionally mixes into headings.
+    """
+    title = re.sub(r"-{2,}", "", title)   # remove runs of 2+ dashes anywhere
+    title = re.sub(r"\*{2,}", "", title)  # remove leftover bold markers
+    return title.strip().rstrip(":")
+
+
 def parse_sections(summary: str) -> list[tuple[str, str]]:
     """Split a consolidated summary into ``(title, body)`` pairs.
 
-    Recognises two heading patterns produced by the consolidator:
+    Recognises heading patterns produced by the consolidator:
 
-    * ``**Title:**`` on its own line
+    * ``**Title:**`` on its own line  (and variants like ``**Title:----**``)
     * ``**Title:** inline content``
+    * ``### Title`` / ``## Title`` (Markdown ATX headings)
 
-    Lines containing only ``---`` are silently dropped.
+    Lines consisting solely of dashes (``---``, ``----``, …) are dropped.
+    Trailing dash sequences on content lines and titles are stripped.
     """
     sections: list[tuple[str, str]] = []
     current_title = "Executive Summary"
@@ -44,29 +67,42 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
     for line in summary.splitlines():
         stripped = line.strip()
 
-        if stripped == "---":
+        # Skip separator lines made entirely of dashes (2+)
+        if re.fullmatch(r"-{2,}", stripped):
             continue
 
-        # Heading on its own line:  **Price Analysis:**
-        heading_match = re.match(r"^\*\*(.+?):\*\*\s*$", stripped)
+        # --- Bold heading on its own line ---
+        # Matches:  **Price Analysis:**
+        #           **Price Analysis:----**
+        #           **Price Analysis----:**
+        heading_match = re.match(r"^\*\*(.+?)(?::[-\s]*\*\*|-{2,}:\*\*|:\*\*)\s*$", stripped)
         if heading_match:
             if current_lines:
                 sections.append((current_title, "\n".join(current_lines)))
                 current_lines = []
-            current_title = heading_match.group(1)
+            current_title = _clean_title(heading_match.group(1))
             continue
 
-        # Heading with inline body:  **Price Analysis:** The price is …
+        # --- Bold heading with inline body:  **Price Analysis:** text ---
         heading_inline = re.match(r"^\*\*(.+?):\*\*\s+(.+)$", stripped)
         if heading_inline:
             if current_lines:
                 sections.append((current_title, "\n".join(current_lines)))
                 current_lines = []
-            current_title = heading_inline.group(1)
-            current_lines.append(heading_inline.group(2))
+            current_title = _clean_title(heading_inline.group(1))
+            current_lines.append(_strip_trailing_dashes(heading_inline.group(2)))
             continue
 
-        current_lines.append(line)
+        # --- Markdown ATX heading:  ## Title  or  ### Title ---
+        md_heading = re.match(r"^#{1,6}\s+(.+?)\s*$", stripped)
+        if md_heading:
+            if current_lines:
+                sections.append((current_title, "\n".join(current_lines)))
+                current_lines = []
+            current_title = _clean_title(md_heading.group(1))
+            continue
+
+        current_lines.append(_strip_trailing_dashes(line))
 
     if current_lines:
         sections.append((current_title, "\n".join(current_lines)))
