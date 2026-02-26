@@ -11,13 +11,13 @@ import logging
 
 import pandas as pd
 
-from ph_stocks_advisor.data.dragonfi import (
+from ph_stocks_advisor.data.clients.dragonfi import (
     fetch_stock_news,
     fetch_stock_profile,
 )
 from ph_stocks_advisor.data.models import ControversyInfo
-from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
-from ph_stocks_advisor.data.tavily_search import (
+from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
+from ph_stocks_advisor.data.clients.tavily_search import (
     search_stock_controversies,
     search_stock_news,
 )

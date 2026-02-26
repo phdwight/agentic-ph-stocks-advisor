@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ph_stocks_advisor.data.dragonfi import fetch_stock_profile
+from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_profile
 from ph_stocks_advisor.data.models import StockPrice
 from ph_stocks_advisor.infra.config import get_settings
 

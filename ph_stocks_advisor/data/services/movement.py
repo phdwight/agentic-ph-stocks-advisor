@@ -13,13 +13,13 @@ import logging
 
 import pandas as pd
 
-from ph_stocks_advisor.data.candlestick import analyse_candlesticks
-from ph_stocks_advisor.data.dragonfi import fetch_stock_profile
+from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
+from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_profile
 from ph_stocks_advisor.data.models import PriceMovement, TrendDirection
-from ph_stocks_advisor.data.price_service import detect_price_catalysts
-from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
-from ph_stocks_advisor.data.tavily_search import search_stock_news
-from ph_stocks_advisor.data.tradingview import (
+from ph_stocks_advisor.data.services.price import detect_price_catalysts
+from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
+from ph_stocks_advisor.data.clients.tavily_search import search_stock_news
+from ph_stocks_advisor.data.clients.tradingview import (
     fetch_tradingview_snapshot,
     format_tv_performance_summary,
 )

@@ -11,7 +11,7 @@ import math
 import logging
 from typing import Any
 
-from ph_stocks_advisor.data.dragonfi import (
+from ph_stocks_advisor.data.clients.dragonfi import (
     fetch_security_valuation,
     fetch_stock_profile,
 )

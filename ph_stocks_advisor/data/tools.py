@@ -16,17 +16,17 @@ New code should import directly from the service modules when possible:
 from __future__ import annotations
 
 # Domain services (re-exports)
-from ph_stocks_advisor.data.price_service import (  # noqa: F401
+from ph_stocks_advisor.data.services.price import (  # noqa: F401
     detect_price_catalysts as _detect_price_catalysts,
     fetch_stock_price,
 )
-from ph_stocks_advisor.data.dividend_service import fetch_dividend_info  # noqa: F401
-from ph_stocks_advisor.data.movement_service import fetch_price_movement  # noqa: F401
-from ph_stocks_advisor.data.valuation_service import fetch_fair_value  # noqa: F401
-from ph_stocks_advisor.data.controversy_service import fetch_controversy_info  # noqa: F401
+from ph_stocks_advisor.data.services.dividend import fetch_dividend_info  # noqa: F401
+from ph_stocks_advisor.data.services.movement import fetch_price_movement  # noqa: F401
+from ph_stocks_advisor.data.services.valuation import fetch_fair_value  # noqa: F401
+from ph_stocks_advisor.data.services.controversy import fetch_controversy_info  # noqa: F401
 
 # Symbol validation (delegates to DragonFi)
-from ph_stocks_advisor.data.dragonfi import (  # noqa: F401
+from ph_stocks_advisor.data.clients.dragonfi import (  # noqa: F401
     SymbolNotFoundError,
     validate_pse_symbol,
 )

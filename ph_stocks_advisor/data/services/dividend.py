@@ -10,13 +10,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ph_stocks_advisor.data.dragonfi import (
+from ph_stocks_advisor.data.clients.dragonfi import (
     fetch_annual_cashflow_trends,
     fetch_annual_income_trends,
     fetch_stock_profile,
 )
 from ph_stocks_advisor.data.models import DividendInfo
-from ph_stocks_advisor.data.tavily_search import search_dividend_news
+from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news
 
 logger = logging.getLogger(__name__)
 
