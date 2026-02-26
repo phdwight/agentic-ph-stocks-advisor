@@ -11,6 +11,7 @@ dependencies = [
     "pydantic>=2.0",
     "yfinance>=0.2",
     "python-dotenv>=1.0",
+    "fpdf2>=2.8",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ postgres = [
 
 [project.scripts]
 ph-advisor = "ph_stocks_advisor.main:main"
+ph-advisor-pdf = "ph_stocks_advisor.export_pdf:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
