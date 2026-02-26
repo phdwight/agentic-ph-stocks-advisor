@@ -17,9 +17,10 @@ from __future__ import annotations
 import abc
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
-from ph_stocks_advisor.infra.config import get_repository
+from ph_stocks_advisor.infra.config import get_repository, get_settings, _parse_tz
 from ph_stocks_advisor.infra.repository import ReportRecord
 
 
@@ -37,6 +38,18 @@ DATA_SOURCES = (
     "Data Sources: DragonFi (api.dragonfi.ph), PSE EDGE (edge.pse.com.ph), "
     "TradingView Scanner, Tavily Web Search"
 )
+
+
+def format_timestamp(dt_val: datetime | None) -> str:
+    """Format a UTC datetime to the user's configured timezone.
+
+    Returns an empty string when *dt_val* is ``None``.
+    """
+    if dt_val is None:
+        return ""
+    tz = _parse_tz(get_settings().timezone)
+    local_dt = dt_val.astimezone(tz)
+    return local_dt.strftime("%B %d, %Y %I:%M %p")
 
 
 # ---------------------------------------------------------------------------

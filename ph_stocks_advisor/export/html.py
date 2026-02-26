@@ -10,7 +10,7 @@ from __future__ import annotations
 import html as _html
 import re
 
-from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES
+from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES, format_timestamp
 from ph_stocks_advisor.infra.repository import ReportRecord
 
 
@@ -118,11 +118,7 @@ class HtmlFormatter(OutputFormatter):
         """Build a complete HTML document and return UTF-8 bytes."""
         is_buy = record.verdict.upper() == "BUY"
         badge_cls = "buy" if is_buy else "not-buy"
-        ts = (
-            record.created_at.strftime("%B %d, %Y %I:%M %p")
-            if record.created_at
-            else ""
-        )
+        ts = format_timestamp(record.created_at)
 
         sections_html: list[str] = []
         for title, body in parse_sections(record.summary or ""):

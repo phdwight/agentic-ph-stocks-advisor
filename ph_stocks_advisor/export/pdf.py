@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fpdf import FPDF
 
-from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES
+from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES, format_timestamp
 from ph_stocks_advisor.infra.repository import ReportRecord
 
 
@@ -180,7 +180,7 @@ class PdfFormatter(OutputFormatter):
         # Date
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(130, 130, 130)
-        ts = record.created_at.strftime("%B %d, %Y %I:%M %p") if record.created_at else ""
+        ts = format_timestamp(record.created_at)
         pdf.cell(0, 8, f"Generated: {ts}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
 
