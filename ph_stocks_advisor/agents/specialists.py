@@ -11,6 +11,8 @@ not on a concrete OpenAI class.
 
 from __future__ import annotations
 
+import datetime as dt
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
@@ -46,7 +48,8 @@ class PriceAgent:
     def run(self, symbol: str) -> PriceAnalysis:
         data = fetch_stock_price(symbol)
         prompt = PRICE_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2)
+            symbol=symbol, data=data.model_dump_json(indent=2),
+            today=dt.date.today().isoformat(),
         )
         response = self._llm.invoke([HumanMessage(content=prompt)])
         return PriceAnalysis(data=data, analysis=str(response.content))
@@ -61,7 +64,8 @@ class DividendAgent:
     def run(self, symbol: str) -> DividendAnalysis:
         data = fetch_dividend_info(symbol)
         prompt = DIVIDEND_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2)
+            symbol=symbol, data=data.model_dump_json(indent=2),
+            today=dt.date.today().isoformat(),
         )
         response = self._llm.invoke([HumanMessage(content=prompt)])
         return DividendAnalysis(data=data, analysis=str(response.content))
@@ -76,7 +80,8 @@ class MovementAgent:
     def run(self, symbol: str) -> MovementAnalysis:
         data = fetch_price_movement(symbol)
         prompt = MOVEMENT_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2)
+            symbol=symbol, data=data.model_dump_json(indent=2),
+            today=dt.date.today().isoformat(),
         )
         response = self._llm.invoke([HumanMessage(content=prompt)])
         return MovementAnalysis(data=data, analysis=str(response.content))
@@ -91,7 +96,8 @@ class ValuationAgent:
     def run(self, symbol: str) -> ValuationAnalysis:
         data = fetch_fair_value(symbol)
         prompt = VALUATION_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2)
+            symbol=symbol, data=data.model_dump_json(indent=2),
+            today=dt.date.today().isoformat(),
         )
         response = self._llm.invoke([HumanMessage(content=prompt)])
         return ValuationAnalysis(data=data, analysis=str(response.content))
@@ -106,7 +112,8 @@ class ControversyAgent:
     def run(self, symbol: str) -> ControversyAnalysis:
         data = fetch_controversy_info(symbol)
         prompt = CONTROVERSY_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2)
+            symbol=symbol, data=data.model_dump_json(indent=2),
+            today=dt.date.today().isoformat(),
         )
         response = self._llm.invoke([HumanMessage(content=prompt)])
         return ControversyAnalysis(data=data, analysis=str(response.content))

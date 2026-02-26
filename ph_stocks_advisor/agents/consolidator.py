@@ -7,6 +7,7 @@ Principle: this module only handles report consolidation logic.
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 from langchain_core.language_models import BaseChatModel
@@ -29,6 +30,7 @@ class ConsolidatorAgent:
     def run(self, state: AdvisorState) -> FinalReport:
         prompt = CONSOLIDATION_PROMPT.format(
             symbol=state.symbol,
+            today=dt.date.today().isoformat(),
             price_analysis=state.price_analysis.analysis if state.price_analysis else "N/A",
             dividend_analysis=state.dividend_analysis.analysis if state.dividend_analysis else "N/A",
             movement_analysis=state.movement_analysis.analysis if state.movement_analysis else "N/A",

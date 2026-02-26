@@ -91,6 +91,14 @@ class DividendInfo(BaseModel):
         default="",
         description="Recent dividend-related web news from Tavily search.",
     )
+    recent_declared_dividends: str = Field(
+        default="",
+        description=(
+            "Recent cash-dividend declarations scraped from PSE EDGE "
+            "(SEC Form 6-1). Contains amount per share, ex-date, "
+            "record date, and payment date."
+        ),
+    )
 
 
 class PriceMovement(BaseModel):

@@ -32,7 +32,7 @@ The data layer cascades through multiple sources for resilience:
 | Source | API Key | Usage |
 |--------|---------|-------|
 | **DragonFi** (`api.dragonfi.ph`) | Not required | Primary — price, dividends, valuation, financials, news, symbol validation |
-| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history and spike detection |
+| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history, spike detection, and declared dividend disclosures (SEC Form 6-1) |
 | **TradingView Scanner** | Not required | Multi-period performance & volatility |
 | **Tavily** | Optional | Web search for dividend news, general news, and controversies |
 
@@ -182,6 +182,7 @@ ph_stocks_advisor/
 │   ├── clients/               # External API clients
 │   │   ├── dragonfi.py        #   DragonFi API (price, dividends, valuation, news)
 │   │   ├── pse_edge.py        #   PSE EDGE daily OHLCV history
+│   │   ├── pse_edge_dividends.py  # PSE EDGE declared dividend scraper (SEC Form 6-1)
 │   │   ├── tradingview.py     #   TradingView scanner (performance & volatility)
 │   │   └── tavily_search.py   #   Tavily web search integration
 │   ├── services/              # Domain services (orchestrate clients → models)

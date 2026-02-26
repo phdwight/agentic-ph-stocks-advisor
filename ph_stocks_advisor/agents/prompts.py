@@ -7,6 +7,7 @@ Open/Closed: new agents can add prompts without modifying existing ones.
 
 PRICE_ANALYSIS_PROMPT = """\
 You are a Philippine stock market analyst specialising in price analysis.
+Today's date is **{today}**.
 
 Given the following price data for **{symbol}**, write a concise analysis
 (3-5 sentences) covering:
@@ -26,6 +27,7 @@ Respond in plain English. Do NOT give a buy/not-buy verdict yet.
 
 DIVIDEND_ANALYSIS_PROMPT = """\
 You are a Philippine stock market analyst specialising in dividends.
+Today's date is **{today}**.
 
 Given the following dividend data for **{symbol}**, write a concise analysis
 (3-5 sentences) covering:
@@ -57,6 +59,13 @@ If ``recent_dividend_news`` contains web search results about dividend
 declarations, ex-dates, or payout amounts, incorporate those details
 into your analysis. Mention any upcoming or recently announced dividends.
 
+**IMPORTANT — ``recent_declared_dividends`` from PSE EDGE:**
+If this field is non-empty, it contains **official** cash-dividend declarations
+filed with the SEC/PSE. These are the most authoritative source for dividend
+amount, ex-date, record date, and payment date. Always prefer this data
+over web search snippets when both are available. State the declared amount,
+ex-date, and payment date explicitly.
+
 Data:
 {data}
 
@@ -65,6 +74,7 @@ Respond in plain English. Do NOT give a buy/not-buy verdict yet.
 
 MOVEMENT_ANALYSIS_PROMPT = """\
 You are a Philippine stock market analyst specialising in technical price movement.
+Today's date is **{today}**.
 
 Given the 1-year price movement data for **{symbol}**, write a concise analysis
 (4-7 sentences) covering:
@@ -117,6 +127,7 @@ Respond in plain English. Do NOT give a buy/not-buy verdict yet.
 
 VALUATION_ANALYSIS_PROMPT = """\
 You are a Philippine stock market analyst specialising in valuation.
+Today's date is **{today}**.
 
 Given the following valuation data for **{symbol}**, write a concise analysis
 (3-5 sentences) covering:
@@ -132,6 +143,7 @@ Respond in plain English. Do NOT give a buy/not-buy verdict yet.
 
 CONTROVERSY_ANALYSIS_PROMPT = """\
 You are a Philippine stock market risk analyst.
+Today's date is **{today}**.
 
 Given the following anomaly / risk data for **{symbol}**, write a concise analysis
 (3-5 sentences) covering:
@@ -149,6 +161,7 @@ Respond in plain English. Do NOT give a buy/not-buy verdict yet.
 
 CONSOLIDATION_PROMPT = """\
 You are a senior Philippine stock market financial advisor.
+Today's date is **{today}**.
 
 Below are specialist analyses for **{symbol}**. Synthesise them into a single,
 clear investment report written in plain English for a retail investor.

@@ -15,6 +15,9 @@ from ph_stocks_advisor.data.clients.dragonfi import (
     fetch_annual_income_trends,
     fetch_stock_profile,
 )
+from ph_stocks_advisor.data.clients.pse_edge_dividends import (
+    fetch_recent_dividend_declarations,
+)
 from ph_stocks_advisor.data.models import DividendInfo
 from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news
 
@@ -129,12 +132,26 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             fcf_trend=fcf_trend,
         )
 
+        # Fetch recent declared dividends from PSE EDGE (SEC Form 6-1)
+        declared_dividends = ""
+        try:
+            declarations = fetch_recent_dividend_declarations(symbol)
+            if declarations:
+                declared_dividends = "; ".join(
+                    d.to_summary() for d in declarations
+                )
+                # Use the most recent ex-date as the ex_dividend_date
+                if declarations[0].ex_date:
+                    ex_dividend_date_str = declarations[0].ex_date
+        except Exception as exc:
+            logger.warning("PSE EDGE dividend fetch failed for %s: %s", symbol, exc)
+
         return DividendInfo(
             symbol=symbol,
             dividend_rate=dividend_rate,
             dividend_yield=div_yield,
             payout_ratio=payout_ratio,
-            ex_dividend_date=None,
+            ex_dividend_date=ex_dividend_date_str if 'ex_dividend_date_str' in dir() else None,
             five_year_avg_yield=0.0,
             is_reit=is_reit,
             annual_dividend_per_share=dividend_rate,
@@ -145,6 +162,7 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             recent_dividend_news=search_dividend_news(
                 symbol, company_name=str(profile.get("companyName", "")),
             ),
+            recent_declared_dividends=declared_dividends,
         )
 
     # No dividend data available from DragonFi
