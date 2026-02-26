@@ -177,8 +177,10 @@ the REIT's dividend sustainability based on whether its income and revenue
 are growing over time.
 
 Your report MUST include:
-1. A one-paragraph executive summary.
-2. Brief sections for each of the five areas above.
+1. A one-paragraph executive summary (this is the ONLY section written as prose).
+2. Brief **bullet-pointed** sections for each of the five analysis areas.
+   Each section should have 3-6 bullet points starting with "- ".
+   Do NOT write paragraphs for these — keep each bullet to one or two sentences.
 3. A final **Verdict** line that says exactly one of: **BUY** or **NOT BUY**.
 4. A one-sentence justification for the verdict.
 
