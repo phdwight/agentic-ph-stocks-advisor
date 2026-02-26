@@ -2,12 +2,14 @@
 Market data tools for PSE (Philippine Stock Exchange) stocks.
 
 **Data strategy:**
-- **DragonFi API** (``api.dragonfi.ph``) is the *primary* source for current
-  price snapshots, dividends, fundamentals and valuation ratios.  It covers
-  all PSE-listed securities.
-- **yfinance** is the *fallback / supplement* used mainly for 1-year daily
-  price history (needed by the price-movement and controversy agents).  Not
-  every PSE ticker exists on Yahoo Finance.
+
+- **DragonFi API** (``api.dragonfi.ph``) — current price snapshots, dividends,
+  fundamentals, valuation ratios.
+- **PSE EDGE** (``edge.pse.com.ph``) — 1-year daily OHLCV history for
+  movement analysis and candlestick pattern detection.
+- **TradingView Scanner** — multi-period performance & volatility metrics.
+- **Tavily** — web search for news, dividend announcements, controversies.
+- **yfinance** — last-resort fallback (currently non-functional for PSE).
 
 Each public function follows the Interface Segregation Principle: callers
 depend only on the data slice they need.
@@ -33,6 +35,7 @@ from ph_stocks_advisor.data.dragonfi import (
     validate_pse_symbol,
 )
 from ph_stocks_advisor.data.candlestick import analyse_candlesticks
+from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
 from ph_stocks_advisor.data.tradingview import (
     fetch_tradingview_snapshot,
     format_tv_performance_summary,
@@ -245,9 +248,9 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
         income_trends = fetch_annual_income_trends(symbol)
         cf_trends = fetch_annual_cashflow_trends(symbol)
 
-        net_income_trend = income_trends.get("net_income", {})
-        revenue_trend = income_trends.get("revenue", {})
-        fcf_trend = cf_trends.get("fcf", {})
+        net_income_trend = income_trends.get("net_income") or {}
+        revenue_trend = income_trends.get("revenue") or {}
+        fcf_trend = cf_trends.get("fcf") or {}
 
         # Estimate payout ratio: total dividends / net income (latest year)
         payout_ratio = 0.0
@@ -335,12 +338,16 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
 def fetch_price_movement(symbol: str) -> PriceMovement:
     """Fetch 1-year price history and compute movement metrics.
 
-    Uses yfinance for daily history (DragonFi doesn't expose a historical
-    price series).  If yfinance has no data, returns a minimal result using
-    the 52-week range from DragonFi.
+    **Primary**: PSE EDGE daily OHLCV (covers all PSE-listed securities).
+    **Fallback**: yfinance, then DragonFi 52-week range + TradingView perf.
     """
     symbol = symbol.upper().replace(".PS", "")
-    hist = _yf_history(symbol)
+
+    # Try PSE EDGE first (most reliable for PSE), then yfinance as fallback
+    hist = fetch_pse_edge_ohlcv(symbol)
+    if hist.empty:
+        logger.info("PSE EDGE OHLCV empty for %s — trying yfinance", symbol)
+        hist = _yf_history(symbol)
 
     # Fetch profile once — used for catalysts in all branches
     profile = fetch_stock_profile(symbol)
@@ -370,6 +377,10 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
         candle_summary = analyse_candlesticks(hist)
         candlestick_patterns = candle_summary.to_text()
 
+        # TradingView multi-period performance (supplementary)
+        tv = fetch_tradingview_snapshot(symbol)
+        perf_summary = format_tv_performance_summary(tv)
+
         monthly = hist["Close"].resample("ME").mean()
         monthly_prices = [round(float(p), 2) for p in monthly.tolist()]
 
@@ -393,11 +404,12 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
             monthly_prices=monthly_prices,
             price_catalysts=catalysts,
             candlestick_patterns=candlestick_patterns,
+            performance_summary=perf_summary,
             web_news=web_news,
         )
 
     # Fallback: use DragonFi 52-week range + TradingView performance data
-    logger.info("yfinance history unavailable for %s — using DragonFi + TradingView", symbol)
+    logger.info("No OHLCV history for %s — using DragonFi + TradingView", symbol)
 
     # TradingView gives accurate multi-period performance & volatility
     tv = fetch_tradingview_snapshot(symbol)
@@ -459,9 +471,11 @@ def fetch_fair_value(symbol: str) -> FairValueEstimate:
     current_price = float(profile.get("price", 0) or 0) if profile else 0.0
 
     # Extract from DragonFi valuation
-    annual = valuation.get("annualValuation", {})
-    pe_data = annual.get("priceToEarnings", {})
-    pb_data = annual.get("priceToBook", {})
+    if not valuation:
+        valuation = {}
+    annual = valuation.get("annualValuation") or {}
+    pe_data = annual.get("priceToEarnings") or {}
+    pb_data = annual.get("priceToBook") or {}
 
     pe = float(pe_data.get("Current", 0) or 0)
     pb = float(pb_data.get("Current", 0) or 0)

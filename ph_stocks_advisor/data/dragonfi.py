@@ -201,7 +201,7 @@ def fetch_annual_income_trends(symbol: str) -> dict[str, dict[str, float]]:
     if not stmts:
         return {}
 
-    annual_is = stmts.get("incomeStatementAnnual", {})
+    annual_is = stmts.get("incomeStatementAnnual") or {}
     return {
         "revenue": _extract_annual_values(annual_is.get("revenue")),
         "net_income": _extract_annual_values(annual_is.get("netIncome")),
@@ -216,13 +216,13 @@ def fetch_annual_cashflow_trends(symbol: str) -> dict[str, dict[str, float]]:
     statements and ``"fcf"`` from security metrics.
     """
     stmts = fetch_stock_financials(symbol)
-    cf_annual = stmts.get("cashFlowAnnual", {}) if stmts else {}
+    cf_annual = (stmts.get("cashFlowAnnual") or {}) if stmts else {}
 
     metrics = fetch_security_metrics(symbol)
     fcf_annual = {}
     if metrics:
-        cf_metrics = metrics.get("cashFlowAnnual", {})
-        fcf_data = cf_metrics.get("fcf", {})
+        cf_metrics = metrics.get("cashFlowAnnual") or {}
+        fcf_data = cf_metrics.get("fcf") or {}
         fcf_annual = _extract_annual_values(fcf_data)
 
     return {

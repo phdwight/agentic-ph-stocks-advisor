@@ -10,6 +10,7 @@ existing node functions — just register them in `build_graph`.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -33,6 +34,8 @@ from ph_stocks_advisor.data.models import (
     ValuationAnalysis,
 )
 from ph_stocks_advisor.data.tools import SymbolNotFoundError, validate_symbol
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -68,38 +71,58 @@ def _validate_node(state: GraphState) -> GraphState:
 
 
 def _price_node(state: GraphState) -> GraphState:
-    llm = get_llm()
-    agent = PriceAgent(llm)
-    result = agent.run(state["symbol"])
-    return {"price_analysis": result}  # type: ignore[return-value]
+    try:
+        llm = get_llm()
+        agent = PriceAgent(llm)
+        result = agent.run(state["symbol"])
+        return {"price_analysis": result}  # type: ignore[return-value]
+    except Exception as exc:
+        logger.error("price_agent failed for %s: %s", state["symbol"], exc)
+        return {}  # type: ignore[return-value]
 
 
 def _dividend_node(state: GraphState) -> GraphState:
-    llm = get_llm()
-    agent = DividendAgent(llm)
-    result = agent.run(state["symbol"])
-    return {"dividend_analysis": result}  # type: ignore[return-value]
+    try:
+        llm = get_llm()
+        agent = DividendAgent(llm)
+        result = agent.run(state["symbol"])
+        return {"dividend_analysis": result}  # type: ignore[return-value]
+    except Exception as exc:
+        logger.error("dividend_agent failed for %s: %s", state["symbol"], exc)
+        return {}  # type: ignore[return-value]
 
 
 def _movement_node(state: GraphState) -> GraphState:
-    llm = get_llm()
-    agent = MovementAgent(llm)
-    result = agent.run(state["symbol"])
-    return {"movement_analysis": result}  # type: ignore[return-value]
+    try:
+        llm = get_llm()
+        agent = MovementAgent(llm)
+        result = agent.run(state["symbol"])
+        return {"movement_analysis": result}  # type: ignore[return-value]
+    except Exception as exc:
+        logger.error("movement_agent failed for %s: %s", state["symbol"], exc)
+        return {}  # type: ignore[return-value]
 
 
 def _valuation_node(state: GraphState) -> GraphState:
-    llm = get_llm()
-    agent = ValuationAgent(llm)
-    result = agent.run(state["symbol"])
-    return {"valuation_analysis": result}  # type: ignore[return-value]
+    try:
+        llm = get_llm()
+        agent = ValuationAgent(llm)
+        result = agent.run(state["symbol"])
+        return {"valuation_analysis": result}  # type: ignore[return-value]
+    except Exception as exc:
+        logger.error("valuation_agent failed for %s: %s", state["symbol"], exc)
+        return {}  # type: ignore[return-value]
 
 
 def _controversy_node(state: GraphState) -> GraphState:
-    llm = get_llm()
-    agent = ControversyAgent(llm)
-    result = agent.run(state["symbol"])
-    return {"controversy_analysis": result}  # type: ignore[return-value]
+    try:
+        llm = get_llm()
+        agent = ControversyAgent(llm)
+        result = agent.run(state["symbol"])
+        return {"controversy_analysis": result}  # type: ignore[return-value]
+    except Exception as exc:
+        logger.error("controversy_agent failed for %s: %s", state["symbol"], exc)
+        return {}  # type: ignore[return-value]
 
 
 def _consolidate_node(state: GraphState) -> GraphState:

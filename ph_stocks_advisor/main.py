@@ -44,7 +44,16 @@ def main(symbol: str | None = None) -> None:
     symbol = symbol.upper().replace(".PS", "")
     print(f"\n🔍 Analysing {symbol} — this may take a minute …\n")
 
-    result = run_analysis(symbol)
+    try:
+        result = run_analysis(symbol)
+    except KeyboardInterrupt:
+        print("\n⚠️  Analysis interrupted by user.")
+        sys.exit(130)
+    except Exception as exc:
+        print(f"❌ An unexpected error occurred while analysing {symbol}:")
+        print(f"   {type(exc).__name__}: {exc}")
+        print("\n   Please check your internet connection and API keys, then try again.")
+        sys.exit(1)
 
     # Check if the symbol validation failed
     error = result.get("error")
@@ -62,13 +71,16 @@ def main(symbol: str | None = None) -> None:
         report = FinalReport(**report)
 
     # Persist the report to the database
-    repo = get_repository()
     try:
-        record = ReportRecord.from_final_report(report)
-        record_id = repo.save(record)
-        print(f"💾 Report saved to database (id={record_id})")
-    finally:
-        repo.close()
+        repo = get_repository()
+        try:
+            record = ReportRecord.from_final_report(report)
+            record_id = repo.save(record)
+            print(f"💾 Report saved to database (id={record_id})")
+        finally:
+            repo.close()
+    except Exception as exc:
+        print(f"⚠️  Could not save report to database: {exc}")
 
     _print_report(report)
 

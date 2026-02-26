@@ -196,21 +196,24 @@ class TestFetchDividendInfo:
 # ---------------------------------------------------------------------------
 
 class TestFetchPriceMovement:
+    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
     @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.tools._yf_history")
-    def test_uptrend_detected(self, mock_hist, mock_profile, _web):
+    def test_uptrend_detected(self, mock_hist, mock_profile, _web, _pse, _tv):
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         mock_hist.return_value = _sample_history(100.0, 252)
         result = fetch_price_movement("TEL")
         assert result.trend == TrendDirection.UPTREND
         assert result.year_change_pct > 5
 
+    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
     @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.tools._yf_history")
-    def test_empty_history_uses_dragonfi(self, mock_hist, mock_profile, _web, _tv):
+    def test_empty_history_uses_dragonfi(self, mock_hist, mock_profile, _web, _tv, _pse):
         mock_hist.return_value = pd.DataFrame()
         mock_profile.return_value = {
             "price": 43.0,
@@ -223,22 +226,24 @@ class TestFetchPriceMovement:
         assert result.min_price == 38.0
         assert result.year_end_price == 43.0
 
+    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
     @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.tools._yf_history")
-    def test_empty_everything(self, mock_hist, mock_profile, _web, _tv):
+    def test_empty_everything(self, mock_hist, mock_profile, _web, _tv, _pse):
         mock_hist.return_value = pd.DataFrame()
         mock_profile.return_value = {}
         result = fetch_price_movement("XYZ")
         assert result.year_start_price == 0.0
         assert result.trend == TrendDirection.SIDEWAYS
 
+    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
     @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.tools._yf_history")
-    def test_catalysts_passed_to_movement(self, mock_hist, mock_profile, _web, _tv):
+    def test_catalysts_passed_to_movement(self, mock_hist, mock_profile, _web, _tv, _pse):
         mock_hist.return_value = pd.DataFrame()
         mock_profile.return_value = {
             "price": 43.5,
@@ -252,10 +257,12 @@ class TestFetchPriceMovement:
         assert len(result.price_catalysts) > 0
         assert any("dividend" in c.lower() for c in result.price_catalysts)
 
+    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="DMC drops on Semirara exposure")
     @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.tools._yf_history")
-    def test_max_drawdown_detected(self, mock_hist, mock_profile, _web):
+    def test_max_drawdown_detected(self, mock_hist, mock_profile, _web, _pse, _tv):
         """Simulate a stock that rises then crashes mid-year and partly recovers."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         dates = pd.bdate_range(end=pd.Timestamp.now(), periods=200)
@@ -271,12 +278,13 @@ class TestFetchPriceMovement:
         assert result.max_drawdown_pct < -30
         assert result.web_news == "DMC drops on Semirara exposure"
 
+    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot")
     @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
     @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.tools._yf_history")
-    def test_tradingview_perf_used_in_fallback(self, mock_hist, mock_profile, _web, mock_tv):
-        """When yfinance is empty, TradingView's 1-year perf should be used for year_change_pct."""
+    def test_tradingview_perf_used_in_fallback(self, mock_hist, mock_profile, _web, mock_tv, _pse):
+        """When both PSE EDGE and yfinance are empty, TradingView's 1-year perf should be used."""
         mock_hist.return_value = pd.DataFrame()
         mock_profile.return_value = {
             "price": 9.88,
@@ -296,6 +304,29 @@ class TestFetchPriceMovement:
         assert result.volatility == pytest.approx(3.67, abs=0.01)
         assert "1-year: -13.9%" in result.performance_summary
         assert "1-week: +13.7%" in result.performance_summary
+
+    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.tools._yf_history", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv")
+    def test_pse_edge_ohlcv_used_as_primary(self, mock_pse, mock_profile, _web, _yf, _tv):
+        """PSE EDGE OHLCV should be used as the primary data source."""
+        mock_profile.return_value = _DRAGONFI_PROFILE.copy()
+        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=100)
+        prices = np.linspace(10.0, 12.0, 100)
+        hist = pd.DataFrame({
+            "Open": prices - 0.1,
+            "High": prices + 0.2,
+            "Low": prices - 0.2,
+            "Close": prices,
+            "Volume": [1_000_000] * 100,
+        }, index=dates)
+        mock_pse.return_value = hist
+        result = fetch_price_movement("DMC")
+        assert result.trend == TrendDirection.UPTREND
+        assert result.year_change_pct > 15
+        assert result.candlestick_patterns  # candlestick analysis activated
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +602,94 @@ class TestFetchAnnualIncomeTrends:
         from ph_stocks_advisor.data.dragonfi import fetch_annual_income_trends
         result = fetch_annual_income_trends("X")
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# PSE EDGE OHLCV module
+# ---------------------------------------------------------------------------
+
+class TestPseEdge:
+    """Tests for pse_edge.py data fetching."""
+
+    @patch("ph_stocks_advisor.data.pse_edge.requests.get")
+    def test_resolve_cmpy_id(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: [{"cmpyId": "188", "cmpyNm": "DMCI Holdings, Inc.", "symbol": "DMC"}],
+        )
+        from ph_stocks_advisor.data.pse_edge import _resolve_cmpy_id
+        assert _resolve_cmpy_id("DMC") == "188"
+
+    @patch("ph_stocks_advisor.data.pse_edge.requests.get")
+    def test_resolve_cmpy_id_no_match(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: [{"cmpyId": "154", "cmpyNm": "San Miguel Corp", "symbol": "SMC"}],
+        )
+        from ph_stocks_advisor.data.pse_edge import _resolve_cmpy_id
+        assert _resolve_cmpy_id("SM") is None
+
+    @patch("ph_stocks_advisor.data.pse_edge.requests.get")
+    def test_resolve_security_id(self, mock_get):
+        html = '''<select name="security_id" onchange="document.form1.submit();">
+<option value="192" selected>DMC</option>
+<option value="261" >DMCP</option>
+</select>'''
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+        from ph_stocks_advisor.data.pse_edge import _resolve_security_id
+        assert _resolve_security_id("188") == "192"
+
+    @patch("ph_stocks_advisor.data.pse_edge.requests.post")
+    @patch("ph_stocks_advisor.data.pse_edge._resolve_ids")
+    def test_fetch_ohlcv_success(self, mock_ids, mock_post):
+        mock_ids.return_value = ("188", "192")
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "chartData": [
+                    {"OPEN": 11.48, "HIGH": 11.58, "LOW": 11.28, "CLOSE": 11.5,
+                     "VALUE": 4.867e7, "CHART_DATE": "Feb 26, 2025 00:00:00"},
+                    {"OPEN": 11.5, "HIGH": 11.54, "LOW": 11.38, "CLOSE": 11.5,
+                     "VALUE": 3.683e7, "CHART_DATE": "Feb 27, 2025 00:00:00"},
+                ],
+                "tableData": [],
+            },
+        )
+        from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
+        df = fetch_pse_edge_ohlcv("DMC")
+        assert len(df) == 2
+        assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
+        assert df.iloc[0]["Close"] == 11.5
+
+    @patch("ph_stocks_advisor.data.pse_edge._resolve_ids", return_value=None)
+    def test_fetch_ohlcv_unresolved_returns_empty(self, _ids):
+        from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
+        df = fetch_pse_edge_ohlcv("ZZZ")
+        assert df.empty
+
+    @patch("ph_stocks_advisor.data.pse_edge.requests.post")
+    @patch("ph_stocks_advisor.data.pse_edge._resolve_ids")
+    def test_fetch_ohlcv_deduplicates(self, mock_ids, mock_post):
+        """PSE EDGE sometimes returns duplicate rows — verify deduplication."""
+        mock_ids.return_value = ("188", "192")
+        row = {"OPEN": 11.0, "HIGH": 11.2, "LOW": 10.9, "CLOSE": 11.1,
+               "VALUE": 1e7, "CHART_DATE": "Mar 24, 2025 00:00:00"}
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"chartData": [row, row], "tableData": []},
+        )
+        from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
+        df = fetch_pse_edge_ohlcv("DMC")
+        assert len(df) == 1
+
+    @patch("ph_stocks_advisor.data.pse_edge.requests.post")
+    @patch("ph_stocks_advisor.data.pse_edge._resolve_ids")
+    def test_fetch_ohlcv_http_error(self, mock_ids, mock_post):
+        mock_ids.return_value = ("188", "192")
+        mock_post.return_value = MagicMock(status_code=500)
+        from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
+        df = fetch_pse_edge_ohlcv("DMC")
+        assert df.empty
 
 
 # ---------------------------------------------------------------------------
