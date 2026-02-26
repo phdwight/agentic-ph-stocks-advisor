@@ -1,7 +1,7 @@
 """
 Candlestick pattern analysis for Philippine Stock Exchange equities.
 
-Analyses OHLCV (Open, High, Low, Close, Volume) data from yfinance to detect
+Analyses OHLCV (Open, High, Low, Close, Volume) data to detect
 notable chart patterns and events that a human would spot on a candlestick
 chart — large bearish/bullish candles, gap-downs/ups, volume spikes, and
 multi-day selling or buying pressure.
@@ -219,14 +219,15 @@ def _detect_consecutive_pressure(
 # ---------------------------------------------------------------------------
 
 def analyse_candlesticks(hist: pd.DataFrame) -> CandlestickSummary:
-    """Run all candlestick detectors on a yfinance-style OHLCV DataFrame.
+    """Run all candlestick detectors on an OHLCV DataFrame.
 
     Parameters
     ----------
     hist:
         DataFrame with at least ``Open``, ``High``, ``Low``, ``Close``
         columns and a DatetimeIndex.  ``Volume`` is optional but
-        enhances the analysis.
+        enhances the analysis.  Any OHLCV source (e.g. PSE EDGE)
+        is supported as long as the column names match.
 
     Returns
     -------

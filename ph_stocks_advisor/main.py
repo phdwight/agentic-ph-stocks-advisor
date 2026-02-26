@@ -23,8 +23,7 @@ from ph_stocks_advisor.graph.workflow import run_analysis
 from ph_stocks_advisor.data.models import FinalReport
 from ph_stocks_advisor.infra.repository import ReportRecord
 
-# Suppress noisy yfinance 404 warnings for tickers that only exist on PSE
-logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
 
 
 def _print_report(report: FinalReport) -> None:

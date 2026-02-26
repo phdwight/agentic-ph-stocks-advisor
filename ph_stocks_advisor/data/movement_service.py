@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 
-import yfinance as yf
 import pandas as pd
 
 from ph_stocks_advisor.data.candlestick import analyse_candlesticks
@@ -34,24 +33,6 @@ logger = logging.getLogger(__name__)
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _yf_history(symbol: str, period: str | None = None) -> pd.DataFrame:
-    """Best-effort 1-year price history from yfinance.
-
-    Returns a DataFrame (possibly empty) and never raises.
-    """
-    try:
-        if period is None:
-            period = get_settings().history_period
-        canon = symbol.upper().replace(".PS", "")
-        t = yf.Ticker(f"{canon}.PS")
-        hist = t.history(period=period)
-        if hist is not None and not hist.empty:
-            return hist
-    except Exception as exc:
-        logger.debug("yfinance history unavailable for %s: %s", symbol, exc)
-    return pd.DataFrame()
-
-
 def _classify_trend(change_pct: float) -> TrendDirection:
     """Classify a percentage change into a trend direction."""
     s = get_settings()
@@ -70,15 +51,12 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
     """Fetch 1-year price history and compute movement metrics.
 
     **Primary**: PSE EDGE daily OHLCV (covers all PSE-listed securities).
-    **Fallback**: yfinance, then DragonFi 52-week range + TradingView perf.
+    **Fallback**: DragonFi 52-week range + TradingView performance.
     """
     symbol = symbol.upper().replace(".PS", "")
 
-    # Try PSE EDGE first (most reliable for PSE), then yfinance as fallback
+    # Try PSE EDGE (most reliable for PSE)
     hist = fetch_pse_edge_ohlcv(symbol)
-    if hist.empty:
-        logger.info("PSE EDGE OHLCV empty for %s — trying yfinance", symbol)
-        hist = _yf_history(symbol)
 
     # Fetch profile once — used for catalysts in all branches
     profile = fetch_stock_profile(symbol)

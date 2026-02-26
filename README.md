@@ -32,10 +32,9 @@ The data layer cascades through multiple sources for resilience:
 | Source | API Key | Usage |
 |--------|---------|-------|
 | **DragonFi** (`api.dragonfi.ph`) | Not required | Primary — price, dividends, valuation, financials, news, symbol validation |
-| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history |
+| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history and spike detection |
 | **TradingView Scanner** | Not required | Multi-period performance & volatility |
 | **Tavily** | Optional | Web search for dividend news, general news, and controversies |
-| **yfinance** | Not required | Last-resort fallback for price, dividends, valuation, and history |
 
 ## SOLID Principles Applied
 
@@ -184,4 +183,3 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `CATALYST_RANGE_PCT` | No | `65` | % of 52-week range for catalyst detection |
 | `CATALYST_DAY_CHANGE_PCT` | No | `0.5` | Daily % change to trigger momentum catalyst |
 | `CATALYST_NEAR_HIGH_PCT` | No | `5` | % gap to 52-week high for "near high" catalyst |
-| `HISTORY_PERIOD` | No | `1y` | yfinance history period |

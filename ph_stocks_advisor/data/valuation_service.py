@@ -11,8 +11,6 @@ import math
 import logging
 from typing import Any
 
-import yfinance as yf
-
 from ph_stocks_advisor.data.dragonfi import (
     fetch_security_valuation,
     fetch_stock_profile,
@@ -25,17 +23,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _safe(d: dict[str, Any], key: str, default: Any = 0.0) -> Any:
-    val = d.get(key, default)
-    return default if val is None else val
-
-
-def _ticker(symbol: str) -> yf.Ticker:
-    """Return a yfinance Ticker (``SYMBOL.PS``)."""
-    canon = symbol.upper().replace(".PS", "")
-    return yf.Ticker(f"{canon}.PS")
-
 
 def _graham_number(eps: float, book_value: float) -> float:
     """Calculate Graham Number: sqrt(22.5 × EPS × BVPS)."""
@@ -58,7 +45,8 @@ def _discount_pct(fair_value: float, current_price: float) -> float:
 def fetch_fair_value(symbol: str) -> FairValueEstimate:
     """Compute a rough fair-value estimate using fundamental ratios.
 
-    Primary: DragonFi valuation + metrics  |  Fallback: yfinance
+    Source: DragonFi valuation + metrics. Returns a minimal object when
+    data is unavailable.
     """
     symbol = symbol.upper().replace(".PS", "")
     profile = fetch_stock_profile(symbol)
@@ -102,34 +90,5 @@ def fetch_fair_value(symbol: str) -> FairValueEstimate:
             discount_pct=discount,
         )
 
-    # Fallback: yfinance
-    logger.info("DragonFi valuation empty for %s — falling back to yfinance", symbol)
-    t = _ticker(symbol)
-    info = t.info or {}
-    current_price = float(
-        _safe(info, "currentPrice") or _safe(info, "regularMarketPrice")
-    )
-    book_value = float(_safe(info, "bookValue"))
-    pe = float(_safe(info, "trailingPE"))
-    pb = float(_safe(info, "priceToBook"))
-    peg = float(_safe(info, "pegRatio"))
-    forward_pe = float(_safe(info, "forwardPE"))
-    eps = float(_safe(info, "trailingEps"))
-
-    estimated_fv = _graham_number(eps, book_value)
-    if estimated_fv == 0.0 and pe > 0 and current_price > 0:
-        estimated_fv = round((current_price / pe) * 15, 2)
-
-    discount = _discount_pct(estimated_fv, current_price)
-
-    return FairValueEstimate(
-        symbol=symbol,
-        current_price=current_price,
-        book_value=book_value,
-        pe_ratio=pe,
-        pb_ratio=pb,
-        peg_ratio=peg,
-        forward_pe=forward_pe,
-        estimated_fair_value=estimated_fv,
-        discount_pct=discount,
-    )
+    logger.warning("DragonFi returned no valuation data for %s", symbol)
+    return FairValueEstimate(symbol=symbol)

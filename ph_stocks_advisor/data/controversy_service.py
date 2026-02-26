@@ -10,13 +10,13 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
-import yfinance as yf
 
 from ph_stocks_advisor.data.dragonfi import (
     fetch_stock_news,
     fetch_stock_profile,
 )
 from ph_stocks_advisor.data.models import ControversyInfo
+from ph_stocks_advisor.data.pse_edge import fetch_pse_edge_ohlcv
 from ph_stocks_advisor.data.tavily_search import (
     search_stock_controversies,
     search_stock_news,
@@ -30,22 +30,16 @@ logger = logging.getLogger(__name__)
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _yf_history(symbol: str, period: str | None = None) -> pd.DataFrame:
-    """Best-effort 1-year price history from yfinance.
+def _fetch_history(symbol: str) -> pd.DataFrame:
+    """Fetch ~1-year daily OHLCV history from PSE EDGE.
 
     Returns a DataFrame (possibly empty) and never raises.
     """
     try:
-        if period is None:
-            period = get_settings().history_period
-        canon = symbol.upper().replace(".PS", "")
-        t = yf.Ticker(f"{canon}.PS")
-        hist = t.history(period=period)
-        if hist is not None and not hist.empty:
-            return hist
-    except Exception as exc:
-        logger.debug("yfinance history unavailable for %s: %s", symbol, exc)
-    return pd.DataFrame()
+        return fetch_pse_edge_ohlcv(symbol, days=365)
+    except Exception as exc:  # pragma: no cover
+        logger.debug("PSE EDGE history unavailable for %s: %s", symbol, exc)
+        return pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
@@ -55,11 +49,11 @@ def _yf_history(symbol: str, period: str | None = None) -> pd.DataFrame:
 def fetch_controversy_info(symbol: str) -> ControversyInfo:
     """Detect potential price anomalies and gather recent news.
 
-    Uses yfinance for daily history (spike detection) and DragonFi
+    Uses PSE EDGE OHLCV for daily history (spike detection) and DragonFi
     for recent news headlines.
     """
     symbol = symbol.upper().replace(".PS", "")
-    hist = _yf_history(symbol)
+    hist = _fetch_history(symbol)
     spikes: list[str] = []
     risk_factors: list[str] = []
 

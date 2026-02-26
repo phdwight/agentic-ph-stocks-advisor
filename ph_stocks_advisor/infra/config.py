@@ -88,9 +88,6 @@ class Settings:
         os.getenv("CATALYST_NEAR_HIGH_PCT", "5")
     )
 
-    # History period (yfinance)
-    history_period: str = os.getenv("HISTORY_PERIOD", "1y")
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

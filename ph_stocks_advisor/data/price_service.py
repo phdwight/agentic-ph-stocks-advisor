@@ -9,28 +9,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import yfinance as yf
-
 from ph_stocks_advisor.data.dragonfi import fetch_stock_profile
 from ph_stocks_advisor.data.models import StockPrice
 from ph_stocks_advisor.infra.config import get_settings
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _safe(d: dict[str, Any], key: str, default: Any = 0.0) -> Any:
-    val = d.get(key, default)
-    return default if val is None else val
-
-
-def _ticker(symbol: str) -> yf.Ticker:
-    """Return a yfinance Ticker (``SYMBOL.PS``)."""
-    canon = symbol.upper().replace(".PS", "")
-    return yf.Ticker(f"{canon}.PS")
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +86,7 @@ def detect_price_catalysts(profile: dict[str, Any]) -> list[str]:
 def fetch_stock_price(symbol: str) -> StockPrice:
     """Fetch current price snapshot for a PSE-listed stock.
 
-    Primary: DragonFi  |  Fallback: yfinance
+    Source: DragonFi API. Returns a minimal object when data is unavailable.
     """
     symbol = symbol.upper().replace(".PS", "")
     profile = fetch_stock_profile(symbol)
@@ -120,16 +103,5 @@ def fetch_stock_price(symbol: str) -> StockPrice:
             price_catalysts=catalysts,
         )
 
-    # Fallback: yfinance
-    logger.info("DragonFi profile empty for %s — falling back to yfinance", symbol)
-    t = _ticker(symbol)
-    info = t.info or {}
-    current = _safe(info, "currentPrice") or _safe(info, "regularMarketPrice")
-    return StockPrice(
-        symbol=symbol,
-        current_price=float(current),
-        currency=str(_safe(info, "currency", "PHP")),
-        fifty_two_week_high=float(_safe(info, "fiftyTwoWeekHigh")),
-        fifty_two_week_low=float(_safe(info, "fiftyTwoWeekLow")),
-        previous_close=float(_safe(info, "previousClose")),
-    )
+    logger.warning("DragonFi returned no price data for %s", symbol)
+    return StockPrice(symbol=symbol, current_price=0.0, currency="PHP")

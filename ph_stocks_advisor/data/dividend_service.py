@@ -7,11 +7,8 @@ and sustainability analysis.
 
 from __future__ import annotations
 
-import datetime as dt
 import logging
 from typing import Any
-
-import yfinance as yf
 
 from ph_stocks_advisor.data.dragonfi import (
     fetch_annual_cashflow_trends,
@@ -27,16 +24,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _safe(d: dict[str, Any], key: str, default: Any = 0.0) -> Any:
-    val = d.get(key, default)
-    return default if val is None else val
-
-
-def _ticker(symbol: str) -> yf.Ticker:
-    """Return a yfinance Ticker (``SYMBOL.PS``)."""
-    canon = symbol.upper().replace(".PS", "")
-    return yf.Ticker(f"{canon}.PS")
 
 
 def _build_sustainability_note(
@@ -92,7 +79,8 @@ def _build_sustainability_note(
 def fetch_dividend_info(symbol: str) -> DividendInfo:
     """Fetch dividend data for a PSE-listed stock.
 
-    Primary: DragonFi (profile + financials)  |  Fallback: yfinance
+    Source: DragonFi (profile + financials). Returns a minimal object when
+    dividend data is unavailable.
 
     Computes:
     - ``dividend_rate`` from yield × price (per-share annual dividend)
@@ -159,23 +147,6 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             ),
         )
 
-    # Fallback: yfinance
-    logger.info("DragonFi dividend data empty for %s — falling back to yfinance", symbol)
-    t = _ticker(symbol)
-    info = t.info or {}
-    ex_date_raw = info.get("exDividendDate")
-    ex_date = None
-    if ex_date_raw:
-        try:
-            ex_date = dt.datetime.fromtimestamp(ex_date_raw).strftime("%Y-%m-%d")
-        except Exception:
-            ex_date = str(ex_date_raw)
-
-    return DividendInfo(
-        symbol=symbol,
-        dividend_rate=float(_safe(info, "dividendRate")),
-        dividend_yield=float(_safe(info, "dividendYield")),
-        payout_ratio=float(_safe(info, "payoutRatio")),
-        ex_dividend_date=ex_date,
-        five_year_avg_yield=float(_safe(info, "fiveYearAvgDividendYield")),
-    )
+    # No dividend data available from DragonFi
+    logger.warning("DragonFi returned no dividend data for %s", symbol)
+    return DividendInfo(symbol=symbol)
