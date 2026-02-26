@@ -12,16 +12,21 @@ of raising exceptions.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
-import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
+def _get_settings():
+    from ph_stocks_advisor.infra.config import get_settings
+    return get_settings()
+
+
 def _get_api_key() -> str:
     """Lazily read the Tavily API key so ``load_dotenv()`` has time to run."""
-    return os.getenv("TAVILY_API_KEY", "")
+    return _get_settings().tavily_api_key
 
 
 def _get_client():
@@ -42,8 +47,8 @@ def _get_client():
 def _search(
     query: str,
     *,
-    max_results: int = 5,
-    search_depth: str = "basic",
+    max_results: int | None = None,
+    search_depth: str | None = None,
     include_domains: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Run a Tavily search and return a list of result dicts.
@@ -55,10 +60,11 @@ def _search(
     if client is None:
         return []
     try:
+        s = _get_settings()
         params: dict[str, Any] = {
             "query": query,
-            "max_results": max_results,
-            "search_depth": search_depth,
+            "max_results": max_results if max_results is not None else s.tavily_max_results,
+            "search_depth": search_depth if search_depth is not None else s.tavily_search_depth,
         }
         if include_domains:
             params["include_domains"] = include_domains
@@ -80,11 +86,12 @@ def search_dividend_news(symbol: str, company_name: str = "") -> str:
     if no results are found / Tavily is not configured).
     """
     name_part = f" ({company_name})" if company_name else ""
+    year = dt.date.today().year
     query = (
         f"{symbol}{name_part} Philippine stock dividend announcement "
-        f"declaration ex-date 2025 OR 2026"
+        f"declaration ex-date {year - 1} OR {year}"
     )
-    results = _search(query, max_results=5)
+    results = _search(query)
     return _format_results(results, fallback="No recent dividend news found via web search.")
 
 
@@ -94,10 +101,11 @@ def search_stock_news(symbol: str, company_name: str = "") -> str:
     Returns a formatted string of search results.
     """
     name_part = f" ({company_name})" if company_name else ""
+    year = dt.date.today().year
     query = (
-        f"{symbol}{name_part} Philippine stock PSE latest news 2025 OR 2026"
+        f"{symbol}{name_part} Philippine stock PSE latest news {year - 1} OR {year}"
     )
-    results = _search(query, max_results=5)
+    results = _search(query)
     return _format_results(results, fallback="No recent news found via web search.")
 
 

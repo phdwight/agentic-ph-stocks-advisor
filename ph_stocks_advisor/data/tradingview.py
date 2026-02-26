@@ -20,8 +20,15 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_SCANNER_URL = "https://scanner.tradingview.com/philippines/scan"
-_TIMEOUT = 10  # seconds
+
+def _scanner_url() -> str:
+    from ph_stocks_advisor.infra.config import get_settings
+    return get_settings().tradingview_scanner_url
+
+
+def _timeout() -> int:
+    from ph_stocks_advisor.infra.config import get_settings
+    return get_settings().http_timeout
 
 # Columns we request from TradingView's scanner
 _COLUMNS = [
@@ -55,12 +62,12 @@ def fetch_tradingview_snapshot(symbol: str) -> dict[str, Any]:
 
     try:
         resp = requests.post(
-            _SCANNER_URL,
+            _scanner_url(),
             json={
                 "symbols": {"tickers": [tv_symbol]},
                 "columns": _COLUMNS,
             },
-            timeout=_TIMEOUT,
+            timeout=_timeout(),
         )
         if resp.status_code != 200:
             logger.debug(

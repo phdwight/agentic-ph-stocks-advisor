@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from ph_stocks_advisor.graph.workflow import build_graph, run_analysis
+import ph_stocks_advisor.graph.workflow as workflow_mod
+from ph_stocks_advisor.graph.workflow import AGENT_REGISTRY, build_graph, run_analysis
 from ph_stocks_advisor.data.models import (
     ControversyAnalysis,
     ControversyInfo,
@@ -28,14 +29,15 @@ from ph_stocks_advisor.data.models import (
 
 class TestBuildGraph:
     def test_graph_compiles(self):
-        """The graph should compile without errors."""
-        graph = build_graph()
+        """The graph should compile without errors when given a mock LLM."""
+        mock_llm = MagicMock()
+        graph = build_graph(llm=mock_llm)
         assert graph is not None
 
     def test_graph_has_expected_nodes(self):
         """All specialist, validation, and consolidator nodes should be present."""
-        graph = build_graph()
-        # LangGraph compiled graphs expose node names
+        mock_llm = MagicMock()
+        graph = build_graph(llm=mock_llm)
         node_names = set(graph.get_graph().nodes.keys())
         expected = {
             "validate",
@@ -48,70 +50,72 @@ class TestBuildGraph:
         }
         assert expected.issubset(node_names)
 
+    def test_registry_drives_node_creation(self):
+        """Every agent in AGENT_REGISTRY should result in a graph node."""
+        mock_llm = MagicMock()
+        graph = build_graph(llm=mock_llm)
+        node_names = set(graph.get_graph().nodes.keys())
+        for node_name, _key, _cls in AGENT_REGISTRY:
+            assert node_name in node_names
+
 
 class TestRunAnalysisIntegration:
-    """Integration test that mocks all agents and runs the full graph."""
+    """Integration test that mocks agent classes and runs the full graph."""
 
-    @patch("ph_stocks_advisor.graph.workflow._validate_node", return_value={})
-    @patch("ph_stocks_advisor.graph.workflow._consolidate_node")
-    @patch("ph_stocks_advisor.graph.workflow._controversy_node")
-    @patch("ph_stocks_advisor.graph.workflow._valuation_node")
-    @patch("ph_stocks_advisor.graph.workflow._movement_node")
-    @patch("ph_stocks_advisor.graph.workflow._dividend_node")
-    @patch("ph_stocks_advisor.graph.workflow._price_node")
-    def test_full_pipeline(
-        self,
-        mock_price,
-        mock_dividend,
-        mock_movement,
-        mock_valuation,
-        mock_controversy,
-        mock_consolidate,
-        mock_validate,
-    ):
-        # Set up mock return values
-        mock_price.return_value = {
-            "price_analysis": PriceAnalysis(
-                data=StockPrice(symbol="TEL", current_price=1250.0),
-                analysis="Price OK.",
-            )
-        }
-        mock_dividend.return_value = {
-            "dividend_analysis": DividendAnalysis(
-                data=DividendInfo(symbol="TEL"),
-                analysis="Dividend OK.",
-            )
-        }
-        mock_movement.return_value = {
-            "movement_analysis": MovementAnalysis(
-                data=PriceMovement(symbol="TEL"),
-                analysis="Movement OK.",
-            )
-        }
-        mock_valuation.return_value = {
-            "valuation_analysis": ValuationAnalysis(
-                data=FairValueEstimate(symbol="TEL"),
-                analysis="Valuation OK.",
-            )
-        }
-        mock_controversy.return_value = {
-            "controversy_analysis": ControversyAnalysis(
-                data=ControversyInfo(symbol="TEL"),
-                analysis="Risk OK.",
-            )
-        }
-        mock_consolidate.return_value = {
-            "final_report": FinalReport(
-                symbol="TEL",
-                verdict=Verdict.BUY,
-                summary="TEL is a solid investment.",
-            )
-        }
+    def test_full_pipeline(self):
+        """All agents produce results and the consolidator merges them."""
+        # Create mock agent classes
+        MockPriceAgent = MagicMock()
+        MockPriceAgent.return_value.run.return_value = PriceAnalysis(
+            data=StockPrice(symbol="TEL", current_price=1250.0),
+            analysis="Price OK.",
+        )
+        MockDividendAgent = MagicMock()
+        MockDividendAgent.return_value.run.return_value = DividendAnalysis(
+            data=DividendInfo(symbol="TEL"),
+            analysis="Dividend OK.",
+        )
+        MockMovementAgent = MagicMock()
+        MockMovementAgent.return_value.run.return_value = MovementAnalysis(
+            data=PriceMovement(symbol="TEL"),
+            analysis="Movement OK.",
+        )
+        MockValuationAgent = MagicMock()
+        MockValuationAgent.return_value.run.return_value = ValuationAnalysis(
+            data=FairValueEstimate(symbol="TEL"),
+            analysis="Valuation OK.",
+        )
+        MockControversyAgent = MagicMock()
+        MockControversyAgent.return_value.run.return_value = ControversyAnalysis(
+            data=ControversyInfo(symbol="TEL"),
+            analysis="Risk OK.",
+        )
 
-        result = run_analysis("TEL")
+        MockConsolidator = MagicMock()
+        MockConsolidator.return_value.run.return_value = FinalReport(
+            symbol="TEL",
+            verdict=Verdict.BUY,
+            summary="TEL is a solid investment.",
+        )
+
+        mock_registry = [
+            ("price_agent", "price_analysis", MockPriceAgent),
+            ("dividend_agent", "dividend_analysis", MockDividendAgent),
+            ("movement_agent", "movement_analysis", MockMovementAgent),
+            ("valuation_agent", "valuation_analysis", MockValuationAgent),
+            ("controversy_agent", "controversy_analysis", MockControversyAgent),
+        ]
+
+        mock_llm = MagicMock()
+
+        with (
+            patch.object(workflow_mod, "AGENT_REGISTRY", mock_registry),
+            patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
+            patch.object(workflow_mod, "validate_symbol", return_value="TEL"),
+        ):
+            result = run_analysis("TEL", llm=mock_llm)
+
         report = result["final_report"]
-
-        # Handle both dict and FinalReport
         if isinstance(report, dict):
             report = FinalReport(**report)
 
@@ -123,12 +127,18 @@ class TestRunAnalysisIntegration:
 class TestValidationFailure:
     """Test that an invalid symbol short-circuits the graph."""
 
-    @patch(
-        "ph_stocks_advisor.graph.workflow._validate_node",
-        return_value={"error": "Symbol 'XYZ' not found on Yahoo Finance."},
-    )
-    def test_invalid_symbol_returns_error(self, mock_validate):
-        result = run_analysis("XYZ")
+    def test_invalid_symbol_returns_error(self):
+        from ph_stocks_advisor.data.tools import SymbolNotFoundError
+
+        mock_llm = MagicMock()
+
+        with patch.object(
+            workflow_mod,
+            "validate_symbol",
+            side_effect=SymbolNotFoundError("TEL", "Symbol 'XYZ' not found."),
+        ):
+            result = run_analysis("XYZ", llm=mock_llm)
+
         assert result.get("error") is not None
         assert "XYZ" in result["error"]
         assert result.get("final_report") is None

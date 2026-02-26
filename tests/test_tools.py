@@ -76,7 +76,7 @@ _DRAGONFI_VALUATION = {
 # ---------------------------------------------------------------------------
 
 class TestFetchStockPrice:
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.price_service.fetch_stock_profile")
     def test_returns_from_dragonfi(self, mock_profile):
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         result = fetch_stock_price("TEL")
@@ -85,7 +85,7 @@ class TestFetchStockPrice:
         assert result.fifty_two_week_high == 1400.0
         assert result.fifty_two_week_low == 1100.0
 
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.price_service.fetch_stock_profile")
     def test_catalysts_detected_for_high_yield(self, mock_profile):
         # Price in upper portion of 52-week range + high dividend yield
         mock_profile.return_value = {
@@ -101,8 +101,8 @@ class TestFetchStockPrice:
         assert any("REIT" in c for c in result.price_catalysts)
         assert any("dividend" in c.lower() for c in result.price_catalysts)
 
-    @patch("ph_stocks_advisor.data.tools._ticker")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.price_service._ticker")
+    @patch("ph_stocks_advisor.data.price_service.fetch_stock_profile")
     def test_fallback_to_yfinance(self, mock_profile, mock_ticker_fn):
         mock_profile.return_value = {}
         mock_ticker_fn.return_value = _make_mock_ticker(
@@ -124,10 +124,10 @@ class TestFetchStockPrice:
 # ---------------------------------------------------------------------------
 
 class TestFetchDividendInfo:
-    @patch("ph_stocks_advisor.data.tools.search_dividend_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_annual_cashflow_trends")
-    @patch("ph_stocks_advisor.data.tools.fetch_annual_income_trends")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.dividend_service.search_dividend_news", return_value="")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_annual_cashflow_trends")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_annual_income_trends")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_stock_profile")
     def test_returns_from_dragonfi(self, mock_profile, mock_income, mock_cf, _mock_tavily):
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         mock_income.return_value = {
@@ -149,10 +149,10 @@ class TestFetchDividendInfo:
         assert result.free_cash_flow_trend["2024"] == 5.95e9
         assert "Net income grew" in result.dividend_sustainability_note
 
-    @patch("ph_stocks_advisor.data.tools.search_dividend_news", return_value="AREIT declares Q1 2026 dividend of PHP 0.56/share")
-    @patch("ph_stocks_advisor.data.tools.fetch_annual_cashflow_trends")
-    @patch("ph_stocks_advisor.data.tools.fetch_annual_income_trends")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.dividend_service.search_dividend_news", return_value="AREIT declares Q1 2026 dividend of PHP 0.56/share")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_annual_cashflow_trends")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_annual_income_trends")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_stock_profile")
     def test_tavily_dividend_news_included(self, mock_profile, mock_income, mock_cf, _mock_tavily):
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         mock_income.return_value = {"net_income": {"2024": 7e9}, "revenue": {}}
@@ -160,10 +160,10 @@ class TestFetchDividendInfo:
         result = fetch_dividend_info("TEL")
         assert "Q1 2026 dividend" in result.recent_dividend_news
 
-    @patch("ph_stocks_advisor.data.tools.search_dividend_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_annual_cashflow_trends")
-    @patch("ph_stocks_advisor.data.tools.fetch_annual_income_trends")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.dividend_service.search_dividend_news", return_value="")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_annual_cashflow_trends")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_annual_income_trends")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_stock_profile")
     def test_reit_flag_detected(self, mock_profile, mock_income, mock_cf, _mock_tavily):
         reit_profile = _DRAGONFI_PROFILE.copy()
         reit_profile["isREIT"] = True
@@ -174,8 +174,8 @@ class TestFetchDividendInfo:
         assert result.is_reit is True
         assert "REIT" in result.dividend_sustainability_note
 
-    @patch("ph_stocks_advisor.data.tools._ticker")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.dividend_service._ticker")
+    @patch("ph_stocks_advisor.data.dividend_service.fetch_stock_profile")
     def test_fallback_to_yfinance(self, mock_profile, mock_ticker_fn):
         mock_profile.return_value = {"dividendYield": 0}
         mock_ticker_fn.return_value = _make_mock_ticker(
@@ -196,11 +196,11 @@ class TestFetchDividendInfo:
 # ---------------------------------------------------------------------------
 
 class TestFetchPriceMovement:
-    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
-    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.movement_service.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.movement_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.movement_service._yf_history")
     def test_uptrend_detected(self, mock_hist, mock_profile, _web, _pse, _tv):
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         mock_hist.return_value = _sample_history(100.0, 252)
@@ -208,11 +208,11 @@ class TestFetchPriceMovement:
         assert result.trend == TrendDirection.UPTREND
         assert result.year_change_pct > 5
 
-    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
-    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.movement_service.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.movement_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.movement_service._yf_history")
     def test_empty_history_uses_dragonfi(self, mock_hist, mock_profile, _web, _tv, _pse):
         mock_hist.return_value = pd.DataFrame()
         mock_profile.return_value = {
@@ -226,11 +226,11 @@ class TestFetchPriceMovement:
         assert result.min_price == 38.0
         assert result.year_end_price == 43.0
 
-    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
-    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.movement_service.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.movement_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.movement_service._yf_history")
     def test_empty_everything(self, mock_hist, mock_profile, _web, _tv, _pse):
         mock_hist.return_value = pd.DataFrame()
         mock_profile.return_value = {}
@@ -238,11 +238,11 @@ class TestFetchPriceMovement:
         assert result.year_start_price == 0.0
         assert result.trend == TrendDirection.SIDEWAYS
 
-    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
-    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.movement_service.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.movement_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.movement_service._yf_history")
     def test_catalysts_passed_to_movement(self, mock_hist, mock_profile, _web, _tv, _pse):
         mock_hist.return_value = pd.DataFrame()
         mock_profile.return_value = {
@@ -257,11 +257,11 @@ class TestFetchPriceMovement:
         assert len(result.price_catalysts) > 0
         assert any("dividend" in c.lower() for c in result.price_catalysts)
 
-    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
-    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="DMC drops on Semirara exposure")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.movement_service.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.movement_service.search_stock_news", return_value="DMC drops on Semirara exposure")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.movement_service._yf_history")
     def test_max_drawdown_detected(self, mock_hist, mock_profile, _web, _pse, _tv):
         """Simulate a stock that rises then crashes mid-year and partly recovers."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
@@ -278,11 +278,11 @@ class TestFetchPriceMovement:
         assert result.max_drawdown_pct < -30
         assert result.web_news == "DMC drops on Semirara exposure"
 
-    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
-    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot")
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.movement_service.fetch_tradingview_snapshot")
+    @patch("ph_stocks_advisor.data.movement_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.movement_service._yf_history")
     def test_tradingview_perf_used_in_fallback(self, mock_hist, mock_profile, _web, mock_tv, _pse):
         """When both PSE EDGE and yfinance are empty, TradingView's 1-year perf should be used."""
         mock_hist.return_value = pd.DataFrame()
@@ -305,11 +305,11 @@ class TestFetchPriceMovement:
         assert "1-year: -13.9%" in result.performance_summary
         assert "1-week: +13.7%" in result.performance_summary
 
-    @patch("ph_stocks_advisor.data.tools.fetch_tradingview_snapshot", return_value={})
-    @patch("ph_stocks_advisor.data.tools._yf_history", return_value=pd.DataFrame())
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
-    @patch("ph_stocks_advisor.data.tools.fetch_pse_edge_ohlcv")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.movement_service._yf_history", return_value=pd.DataFrame())
+    @patch("ph_stocks_advisor.data.movement_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.movement_service.fetch_pse_edge_ohlcv")
     def test_pse_edge_ohlcv_used_as_primary(self, mock_pse, mock_profile, _web, _yf, _tv):
         """PSE EDGE OHLCV should be used as the primary data source."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
@@ -334,8 +334,8 @@ class TestFetchPriceMovement:
 # ---------------------------------------------------------------------------
 
 class TestFetchFairValue:
-    @patch("ph_stocks_advisor.data.tools.fetch_security_valuation")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.valuation_service.fetch_security_valuation")
+    @patch("ph_stocks_advisor.data.valuation_service.fetch_stock_profile")
     def test_graham_number_from_dragonfi(self, mock_profile, mock_valuation):
         mock_profile.return_value = {"price": 100.0}
         mock_valuation.return_value = {
@@ -350,9 +350,9 @@ class TestFetchFairValue:
         assert result.pe_ratio == 10.0
         assert result.pb_ratio == 2.0
 
-    @patch("ph_stocks_advisor.data.tools._ticker")
-    @patch("ph_stocks_advisor.data.tools.fetch_security_valuation")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.valuation_service._ticker")
+    @patch("ph_stocks_advisor.data.valuation_service.fetch_security_valuation")
+    @patch("ph_stocks_advisor.data.valuation_service.fetch_stock_profile")
     def test_fallback_to_yfinance(self, mock_profile, mock_valuation, mock_ticker_fn):
         mock_profile.return_value = {"price": 0}
         mock_valuation.return_value = {}
@@ -374,11 +374,11 @@ class TestFetchFairValue:
 # ---------------------------------------------------------------------------
 
 class TestFetchControversyInfo:
-    @patch("ph_stocks_advisor.data.tools.search_stock_controversies", return_value="")
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile", return_value={})
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_news")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_controversies", return_value="")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_profile", return_value={})
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_news")
+    @patch("ph_stocks_advisor.data.controversy_service._yf_history")
     def test_no_spikes_on_calm_data(self, mock_hist, mock_news, _prof, _web, _contr):
         dates = pd.bdate_range(end=pd.Timestamp.now(), periods=100)
         prices = np.linspace(100, 105, 100)
@@ -388,11 +388,11 @@ class TestFetchControversyInfo:
         result = fetch_controversy_info("SM")
         assert len(result.sudden_spikes) == 0
 
-    @patch("ph_stocks_advisor.data.tools.search_stock_controversies", return_value="")
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile", return_value={})
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_news")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_controversies", return_value="")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_profile", return_value={})
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_news")
+    @patch("ph_stocks_advisor.data.controversy_service._yf_history")
     def test_detects_spike(self, mock_hist, mock_news, _prof, _web, _contr):
         dates = pd.bdate_range(end=pd.Timestamp.now(), periods=100)
         prices = np.full(100, 100.0)
@@ -403,11 +403,11 @@ class TestFetchControversyInfo:
         result = fetch_controversy_info("ALI")
         assert len(result.sudden_spikes) > 0
 
-    @patch("ph_stocks_advisor.data.tools.search_stock_controversies", return_value="")
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile", return_value={})
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_news")
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_controversies", return_value="")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_news", return_value="")
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_profile", return_value={})
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_news")
+    @patch("ph_stocks_advisor.data.controversy_service._yf_history")
     def test_news_from_dragonfi(self, mock_hist, mock_news, _prof, _web, _contr):
         mock_hist.return_value = pd.DataFrame()
         mock_news.return_value = [
@@ -418,11 +418,11 @@ class TestFetchControversyInfo:
         assert "AREIT posts strong earnings" in result.recent_news_summary
         assert "Manila Times" in result.recent_news_summary
 
-    @patch("ph_stocks_advisor.data.tools.search_stock_controversies", return_value="SEC probes AREIT pricing")
-    @patch("ph_stocks_advisor.data.tools.search_stock_news", return_value="AREIT announces record revenue")
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_profile", return_value={"companyName": "AREIT INC."})
-    @patch("ph_stocks_advisor.data.tools.fetch_stock_news", return_value=[])
-    @patch("ph_stocks_advisor.data.tools._yf_history")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_controversies", return_value="SEC probes AREIT pricing")
+    @patch("ph_stocks_advisor.data.controversy_service.search_stock_news", return_value="AREIT announces record revenue")
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_profile", return_value={"companyName": "AREIT INC."})
+    @patch("ph_stocks_advisor.data.controversy_service.fetch_stock_news", return_value=[])
+    @patch("ph_stocks_advisor.data.controversy_service._yf_history")
     def test_tavily_web_news_included(self, mock_hist, _dfnews, _prof, _web, _contr):
         mock_hist.return_value = pd.DataFrame()
         result = fetch_controversy_info("AREIT")
@@ -435,13 +435,13 @@ class TestFetchControversyInfo:
 # ---------------------------------------------------------------------------
 
 class TestValidateSymbol:
-    @patch("ph_stocks_advisor.data.tools.validate_pse_symbol")
+    @patch("ph_stocks_advisor.data.dragonfi.validate_pse_symbol")
     def test_valid_symbol_returns_code(self, mock_validate):
         mock_validate.return_value = "TEL"
         result = validate_symbol("TEL")
         assert result == "TEL"
 
-    @patch("ph_stocks_advisor.data.tools.validate_pse_symbol")
+    @patch("ph_stocks_advisor.data.dragonfi.validate_pse_symbol")
     def test_strips_ps_suffix(self, mock_validate):
         mock_validate.return_value = "SM"
         result = validate_symbol("SM.PS")
@@ -490,7 +490,7 @@ class TestValidatePseSymbolDragonFi:
 
 class TestDetectPriceCatalysts:
     def test_reit_dividend_catalyst(self):
-        from ph_stocks_advisor.data.tools import _detect_price_catalysts
+        from ph_stocks_advisor.data.price_service import detect_price_catalysts
         profile = {
             "price": 43.5,
             "prevDayClosePrice": 43.05,
@@ -499,12 +499,12 @@ class TestDetectPriceCatalysts:
             "dividendYield": 5.54,
             "isREIT": True,
         }
-        catalysts = _detect_price_catalysts(profile)
+        catalysts = detect_price_catalysts(profile)
         assert any("REIT" in c for c in catalysts)
         assert any("dividend" in c.lower() for c in catalysts)
 
     def test_high_yield_non_reit(self):
-        from ph_stocks_advisor.data.tools import _detect_price_catalysts
+        from ph_stocks_advisor.data.price_service import detect_price_catalysts
         profile = {
             "price": 1250.0,
             "prevDayClosePrice": 1240.0,
@@ -513,12 +513,12 @@ class TestDetectPriceCatalysts:
             "dividendYield": 6.0,
             "isREIT": False,
         }
-        catalysts = _detect_price_catalysts(profile)
+        catalysts = detect_price_catalysts(profile)
         assert any("dividend" in c.lower() for c in catalysts)
         assert not any("REIT" in c for c in catalysts)
 
     def test_no_catalyst_for_low_yield(self):
-        from ph_stocks_advisor.data.tools import _detect_price_catalysts
+        from ph_stocks_advisor.data.price_service import detect_price_catalysts
         profile = {
             "price": 50.0,
             "prevDayClosePrice": 49.5,
@@ -527,12 +527,12 @@ class TestDetectPriceCatalysts:
             "dividendYield": 1.0,
             "isREIT": False,
         }
-        catalysts = _detect_price_catalysts(profile)
+        catalysts = detect_price_catalysts(profile)
         # Low yield + not near 52-week high → no dividend catalyst
         assert not any("dividend" in c.lower() for c in catalysts)
 
     def test_near_52_week_high(self):
-        from ph_stocks_advisor.data.tools import _detect_price_catalysts
+        from ph_stocks_advisor.data.price_service import detect_price_catalysts
         profile = {
             "price": 59.0,
             "prevDayClosePrice": 58.5,
@@ -541,13 +541,13 @@ class TestDetectPriceCatalysts:
             "dividendYield": 0.5,
             "isREIT": False,
         }
-        catalysts = _detect_price_catalysts(profile)
+        catalysts = detect_price_catalysts(profile)
         assert any("52-week high" in c for c in catalysts)
 
     def test_empty_profile(self):
-        from ph_stocks_advisor.data.tools import _detect_price_catalysts
-        assert _detect_price_catalysts({}) == []
-        assert _detect_price_catalysts(None) == []
+        from ph_stocks_advisor.data.price_service import detect_price_catalysts
+        assert detect_price_catalysts({}) == []
+        assert detect_price_catalysts(None) == []
 
 
 # ---------------------------------------------------------------------------

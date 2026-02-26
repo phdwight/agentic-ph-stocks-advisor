@@ -21,8 +21,15 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://api.dragonfi.ph/api/v2"
-_TIMEOUT = 15  # seconds
+
+def _base_url() -> str:
+    from ph_stocks_advisor.infra.config import get_settings
+    return get_settings().dragonfi_base_url
+
+
+def _timeout() -> int:
+    from ph_stocks_advisor.infra.config import get_settings
+    return get_settings().http_timeout
 
 
 # ---------------------------------------------------------------------------
@@ -35,9 +42,9 @@ def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any] | li
     Returns the parsed JSON on success, or *None* when the server replies
     with a non-200 status (e.g. 204 for unknown symbols).
     """
-    url = f"{_BASE_URL}/{path}"
+    url = f"{_base_url()}/{path}"
     try:
-        resp = requests.get(url, params=params, timeout=_TIMEOUT)
+        resp = requests.get(url, params=params, timeout=_timeout())
         if resp.status_code == 200:
             return resp.json()
         logger.debug("DragonFi %s returned status %s", url, resp.status_code)

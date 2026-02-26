@@ -50,17 +50,28 @@ class StockPrice(BaseModel):
 
 
 class DividendInfo(BaseModel):
-    """Dividend-related metrics."""
+    """Dividend-related metrics.
+
+    Fields are grouped into three logical sections:
+
+    1. **Core metrics** — basic dividend figures from market data.
+    2. **Financial enrichment** — trend data from DragonFi financials used
+       by the LLM to assess sustainability.
+    3. **External context** — web-sourced news and computed notes.
+    """
 
     symbol: str
+
+    # -- Core dividend metrics -------------------------------------------------
     dividend_rate: float = 0.0
     dividend_yield: float = 0.0
     payout_ratio: float = 0.0
     ex_dividend_date: Optional[str] = None
     five_year_avg_yield: float = 0.0
-    # Enriched fields from DragonFi financials
     is_reit: bool = False
     annual_dividend_per_share: float = 0.0
+
+    # -- Financial enrichment (DragonFi annual income statements) --------------
     net_income_trend: dict[str, float] = Field(
         default_factory=dict,
         description="Annual net income (PHP) keyed by year, e.g. {'2022': 2.89e9}",
@@ -73,6 +84,8 @@ class DividendInfo(BaseModel):
         default_factory=dict,
         description="Annual free cash flow (PHP) keyed by year",
     )
+
+    # -- External context (computed notes + web news) --------------------------
     dividend_sustainability_note: str = ""
     recent_dividend_news: str = Field(
         default="",
@@ -81,9 +94,19 @@ class DividendInfo(BaseModel):
 
 
 class PriceMovement(BaseModel):
-    """One-year price movement summary."""
+    """One-year price movement summary.
+
+    Fields are grouped into three logical sections:
+
+    1. **Core statistics** — annual return metrics, volatility, drawdown.
+    2. **Trend & catalysts** — classified direction and detected drivers.
+    3. **Technical context** — candlestick patterns, TradingView performance,
+       and recent web news that contextualise the movement.
+    """
 
     symbol: str
+
+    # -- Core statistics -------------------------------------------------------
     year_start_price: float = 0.0
     year_end_price: float = 0.0
     year_change_pct: float = 0.0
@@ -95,12 +118,16 @@ class PriceMovement(BaseModel):
         description="Largest peak-to-trough decline (%) during the year. "
         "A value like -30.0 means the stock fell 30% from its high.",
     )
-    trend: TrendDirection = TrendDirection.SIDEWAYS
     monthly_prices: list[float] = Field(default_factory=list)
+
+    # -- Trend & catalysts -----------------------------------------------------
+    trend: TrendDirection = TrendDirection.SIDEWAYS
     price_catalysts: list[str] = Field(
         default_factory=list,
         description="Detected factors likely driving recent price movement.",
     )
+
+    # -- Technical context (candlestick, TradingView, web news) ----------------
     candlestick_patterns: str = Field(
         default="",
         description="Notable candlestick chart patterns detected from OHLCV data "

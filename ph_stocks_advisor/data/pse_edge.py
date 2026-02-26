@@ -26,11 +26,15 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://edge.pse.com.ph"
-_AUTOCOMPLETE_URL = f"{_BASE_URL}/autoComplete/searchCompanyNameSymbol.ax"
-_STOCK_DATA_URL = f"{_BASE_URL}/companyPage/stockData.do"
-_CHART_DATA_URL = f"{_BASE_URL}/common/DisclosureCht.ax"
-_TIMEOUT = 15  # seconds
+
+def _base_url() -> str:
+    from ph_stocks_advisor.infra.config import get_settings
+    return get_settings().pse_edge_base_url
+
+
+def _timeout() -> int:
+    from ph_stocks_advisor.infra.config import get_settings
+    return get_settings().http_timeout
 
 # In-process cache: symbol → (cmpy_id, security_id)
 _ID_CACHE: dict[str, tuple[str, str]] = {}
@@ -47,10 +51,10 @@ def _resolve_cmpy_id(symbol: str) -> str | None:
     """
     try:
         resp = requests.get(
-            _AUTOCOMPLETE_URL,
+            f"{_base_url()}/autoComplete/searchCompanyNameSymbol.ax",
             params={"term": symbol},
             headers={"X-Requested-With": "XMLHttpRequest"},
-            timeout=_TIMEOUT,
+            timeout=_timeout(),
         )
         if resp.status_code != 200:
             logger.debug("PSE EDGE autocomplete returned %s for %s", resp.status_code, symbol)
@@ -77,9 +81,9 @@ def _resolve_security_id(cmpy_id: str) -> str | None:
     """
     try:
         resp = requests.get(
-            _STOCK_DATA_URL,
+            f"{_base_url()}/companyPage/stockData.do",
             params={"cmpy_id": cmpy_id},
-            timeout=_TIMEOUT,
+            timeout=_timeout(),
         )
         if resp.status_code != 200:
             logger.debug("PSE EDGE stockData page returned %s for cmpy_id=%s", resp.status_code, cmpy_id)
@@ -148,8 +152,9 @@ def fetch_pse_edge_ohlcv(
     start_date = end_date - timedelta(days=days)
 
     try:
+        base = _base_url()
         resp = requests.post(
-            _CHART_DATA_URL,
+            f"{base}/common/DisclosureCht.ax",
             json={
                 "cmpy_id": cmpy_id,
                 "security_id": security_id,
@@ -159,9 +164,9 @@ def fetch_pse_edge_ohlcv(
             headers={
                 "Content-Type": "application/json",
                 "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"{_STOCK_DATA_URL}?cmpy_id={cmpy_id}",
+                "Referer": f"{base}/companyPage/stockData.do?cmpy_id={cmpy_id}",
             },
-            timeout=_TIMEOUT,
+            timeout=_timeout(),
         )
         if resp.status_code != 200:
             logger.warning(

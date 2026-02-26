@@ -2,36 +2,48 @@
 
 An agentic AI application that analyses Philippine Stock Exchange (PSE) listed stocks and provides a **BUY** or **NOT BUY** verdict in plain English.
 
-Built with **LangGraph 1.0** + **LangChain 1.2** using a multi-agent architecture.
+Built with **LangGraph** + **LangChain** using a multi-agent architecture. Requires Python ≥ 3.11.
 
 ## Architecture
 
-Five specialist agents run **in parallel**, each responsible for a single analysis dimension. A **consolidator agent** synthesises their outputs into a final investor-friendly report.
+A **validation node** checks the stock symbol, then five specialist agents run **in parallel**, each responsible for a single analysis dimension. A **consolidator agent** synthesises their outputs into a final investor-friendly report.
 
 ```
-START ──┬── Price Agent ────────────┐
-        ├── Dividend Agent ─────────┤
-        ├── Price Movement Agent ───┼── Consolidator ── Final Report
-        ├── Valuation Agent ────────┤
-        └── Controversy Agent ──────┘
+                        ┌── Price Agent ────────────┐
+                        ├── Dividend Agent ─────────┤
+START → Validate ──────►├── Movement Agent ─────────┼──► Consolidator ──► END
+                        ├── Valuation Agent ────────┤
+                        └── Controversy Agent ──────┘
 ```
 
 | Agent | Responsibility |
 |-------|---------------|
-| **Price Agent** | Current price vs 52-week range |
-| **Dividend Agent** | Yield, payout ratio, sustainability |
-| **Movement Agent** | 1-year trend, volatility, monthly patterns |
-| **Valuation Agent** | PE/PB ratios, Graham-number fair value estimate |
-| **Controversy Agent** | Sudden price spikes, statistical anomalies, risk flags |
-| **Consolidator** | Merges all analyses → plain-English report with verdict |
+| **Price Agent** | Current price vs 52-week range, price catalysts |
+| **Dividend Agent** | Yield, payout ratio, sustainability, REIT rules (RA 9856), income/revenue/FCF trends |
+| **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance, web news |
+| **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
+| **Controversy Agent** | Price spike detection, risk factors, web news & controversies |
+| **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict |
+
+### Data Sources
+
+The data layer cascades through multiple sources for resilience:
+
+| Source | API Key | Usage |
+|--------|---------|-------|
+| **DragonFi** (`api.dragonfi.ph`) | Not required | Primary — price, dividends, valuation, financials, news, symbol validation |
+| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history |
+| **TradingView Scanner** | Not required | Multi-period performance & volatility |
+| **Tavily** | Optional | Web search for dividend news, general news, and controversies |
+| **yfinance** | Not required | Last-resort fallback for price, dividends, valuation, and history |
 
 ## SOLID Principles Applied
 
-- **S**ingle Responsibility – each module handles one concern (models, tools, agents, prompts, config, graph)
-- **O**pen/Closed – new agents can be added by registering a node; existing nodes need no changes
-- **L**iskov Substitution – agents depend on `BaseChatModel`, any LLM provider works
-- **I**nterface Segregation – tool functions return narrow, typed data slices instead of a monolithic blob
-- **D**ependency Inversion – agents accept an abstract LLM interface, not a concrete class
+- **S**ingle Responsibility – each domain service (`price_service`, `dividend_service`, etc.) handles one data concern; `tools.py` is a thin re-export façade
+- **O**pen/Closed – new agents are added via `AGENT_REGISTRY` in `workflow.py`; existing node factories need no changes
+- **L**iskov Substitution – `get_llm()` returns `BaseChatModel`; any LangChain-compatible LLM provider works
+- **I**nterface Segregation – tool functions return narrow, typed Pydantic models; fat models are documented with clear field groupings
+- **D**ependency Inversion – LLM is injected into `build_graph(llm=...)` and closed over in nodes; repository layer uses an ABC with SQLite/Postgres implementations
 
 ## Setup
 
@@ -42,20 +54,51 @@ python -m venv .venv && source .venv/bin/activate
 # 2. Install dependencies
 pip install -e ".[dev]"
 
-# 3. Configure API key
+# 3. Configure environment
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY=sk-...
+# Edit .env — at minimum set OPENAI_API_KEY
+```
+
+For PostgreSQL support:
+
+```bash
+pip install -e ".[postgres]"
 ```
 
 ## Usage
 
+### Analyse a stock
+
 ```bash
-python -m ph_stocks_advisor.main TEL    # PLDT
-python -m ph_stocks_advisor.main SM     # SM Investments
-python -m ph_stocks_advisor.main BDO    # BDO Unibank
-python -m ph_stocks_advisor.main ALI    # Ayala Land
-python -m ph_stocks_advisor.main JFC    # Jollibee
+ph-advisor TEL          # PLDT
+ph-advisor SM           # SM Investments
+ph-advisor BDO          # BDO Unibank
+ph-advisor ALI          # Ayala Land
+ph-advisor JFC          # Jollibee
 ```
+
+Or via module:
+
+```bash
+python -m ph_stocks_advisor.main TEL
+```
+
+### Generate a PDF report
+
+```bash
+ph-advisor SM --pdf                   # PDF saved alongside terminal output
+ph-advisor SM --pdf -o report.pdf     # custom output path
+```
+
+### Export a saved report to PDF
+
+```bash
+ph-advisor-pdf MREIT                  # latest report for the symbol
+ph-advisor-pdf MREIT --id 3           # specific report by ID
+ph-advisor-pdf MREIT -o mreit.pdf     # custom output path
+```
+
+Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis.
 
 ## Testing
 
@@ -63,35 +106,82 @@ python -m ph_stocks_advisor.main JFC    # Jollibee
 pytest tests/ -v
 ```
 
-All tests run offline with mocked yfinance data and mocked LLM calls — no API key required.
+All tests run offline with mocked data sources and mocked LLM calls — no API key required.
 
 ## Project Structure
 
 ```
 ph_stocks_advisor/
 ├── __init__.py
-├── config.py          # Settings & LLM factory
-├── models.py          # Pydantic data models & graph state
-├── prompts.py         # Prompt templates per agent
-├── tools.py           # yfinance data-fetching functions
-├── agents.py          # 5 specialist agent classes
-├── consolidator.py    # Consolidator agent
-├── graph.py           # LangGraph workflow definition
-└── main.py            # CLI entry point
+├── main.py                    # CLI entry point (ph-advisor)
+├── export_pdf.py              # PDF export (ph-advisor-pdf)
+├── agents/
+│   ├── __init__.py
+│   ├── specialists.py         # 5 specialist agent classes
+│   ├── consolidator.py        # Consolidator agent
+│   └── prompts.py             # Prompt templates per agent
+├── data/
+│   ├── __init__.py
+│   ├── models.py              # Pydantic data models & graph state
+│   ├── tools.py               # Re-export façade (backward compat)
+│   ├── price_service.py       # Current price & catalyst detection
+│   ├── dividend_service.py    # Dividend data & sustainability
+│   ├── movement_service.py    # 1-year movement, candlestick, TV perf
+│   ├── valuation_service.py   # Fair-value estimation (Graham Number)
+│   ├── controversy_service.py # Price anomalies & risk news
+│   ├── dragonfi.py            # DragonFi API client
+│   ├── pse_edge.py            # PSE EDGE OHLCV client
+│   ├── tradingview.py         # TradingView scanner client
+│   ├── candlestick.py         # Candlestick pattern analysis
+│   └── tavily_search.py       # Tavily web search integration
+├── graph/
+│   ├── __init__.py
+│   └── workflow.py            # LangGraph workflow & agent registry
+└── infra/
+    ├── __init__.py
+    ├── config.py              # Settings & LLM / repository factory
+    ├── repository.py          # Abstract repository interface
+    ├── repository_sqlite.py   # SQLite implementation (default)
+    └── repository_postgres.py # PostgreSQL implementation
 
 tests/
-├── conftest.py        # Shared fixtures & mock helpers
+├── conftest.py                # Shared fixtures & mock helpers
 ├── test_models.py
 ├── test_tools.py
 ├── test_agents.py
 ├── test_consolidator.py
-└── test_graph.py
+├── test_graph.py
+└── test_repository.py
 ```
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | — | Your OpenAI API key |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Model to use |
-| `OPENAI_TEMPERATURE` | `0.2` | LLM temperature |
+All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API_KEY` is required.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENAI_API_KEY` | **Yes** | — | OpenAI API key |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` | LLM model name |
+| `OPENAI_TEMPERATURE` | No | `0.2` | LLM temperature |
+| `TAVILY_API_KEY` | No | — | Tavily web search key (graceful degradation when absent) |
+| `TAVILY_MAX_RESULTS` | No | `5` | Max results per Tavily search call |
+| `TAVILY_SEARCH_DEPTH` | No | `basic` | Tavily search depth (`basic` or `advanced`) |
+| `DB_BACKEND` | No | `sqlite` | `sqlite` or `postgres` |
+| `SQLITE_PATH` | No | `reports.db` | Path to the SQLite database file |
+| `POSTGRES_DSN` | No | `postgresql://localhost:5432/ph_advisor` | PostgreSQL connection string |
+| `DRAGONFI_BASE_URL` | No | `https://api.dragonfi.ph/api/v2` | DragonFi API base URL |
+| `PSE_EDGE_BASE_URL` | No | `https://edge.pse.com.ph` | PSE EDGE base URL |
+| `TRADINGVIEW_SCANNER_URL` | No | `https://scanner.tradingview.com/philippines/scan` | TradingView scanner endpoint |
+| `HTTP_TIMEOUT` | No | `15` | HTTP request timeout (seconds) |
+| `TREND_UP_THRESHOLD` | No | `5` | % change above which trend = uptrend |
+| `TREND_DOWN_THRESHOLD` | No | `-5` | % change below which trend = downtrend |
+| `SPIKE_STD_MULTIPLIER` | No | `3` | × daily-return std-dev to flag a spike |
+| `SPIKE_MIN_ABS_RETURN` | No | `0.05` | Minimum |return| to count as a spike |
+| `HIGH_VOLATILITY_THRESHOLD` | No | `0.03` | Daily std above this = "high volatility" |
+| `OVERVALUATION_MULTIPLIER` | No | `1.3` | price / avg > this = overvaluation risk |
+| `DISTRESS_MULTIPLIER` | No | `0.7` | price / avg < this = distress risk |
+| `CATALYST_YIELD_THRESHOLD` | No | `3.0` | Dividend yield (%) to trigger catalyst |
+| `CATALYST_RANGE_PCT` | No | `65` | % of 52-week range for catalyst detection |
+| `CATALYST_DAY_CHANGE_PCT` | No | `0.5` | Daily % change to trigger momentum catalyst |
+| `CATALYST_NEAR_HIGH_PCT` | No | `5` | % gap to 52-week high for "near high" catalyst |
+| `HISTORY_PERIOD` | No | `1y` | yfinance history period |

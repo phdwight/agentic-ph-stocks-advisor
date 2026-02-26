@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "advisor": "./ph_stocks_advisor/graph/workflow.py:build_graph"
+  },
+  "env": ".env"
+}
