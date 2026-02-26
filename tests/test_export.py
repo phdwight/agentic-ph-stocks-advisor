@@ -168,6 +168,20 @@ class TestParseSections:
         assert sections[0][0] == "Price Analysis"
         assert "--" not in sections[0][0]
 
+    def test_bold_heading_no_colon(self):
+        """**Price Analysis** (no colon) must be recognised as a heading."""
+        text = (
+            "Summary paragraph.\n\n"
+            "**Price Analysis**\n"
+            "- BDO is at PHP 138.50.\n\n"
+            "**Dividend Analysis**\n"
+            "- Dividend yield is about 3.1%.\n"
+        )
+        sections = parse_sections(text)
+        titles = [t for t, _ in sections]
+        assert "Price Analysis" in titles
+        assert "Dividend Analysis" in titles
+
     def test_mreit_style_multiple_sections_with_dashes(self):
         """Regression: full MREIT-style output with dashes after every heading."""
         text = (

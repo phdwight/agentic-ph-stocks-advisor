@@ -54,6 +54,7 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
     Recognises heading patterns produced by the consolidator:
 
     * ``**Title:**`` on its own line  (and variants like ``**Title:----**``)
+    * ``**Title**`` on its own line   (bold, no colon)
     * ``**Title:** inline content``
     * ``### Title`` / ``## Title`` (Markdown ATX headings)
 
@@ -75,7 +76,10 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
         # Matches:  **Price Analysis:**
         #           **Price Analysis:----**
         #           **Price Analysis----:**
-        heading_match = re.match(r"^\*\*(.+?)(?::[-\s]*\*\*|-{2,}:\*\*|:\*\*)\s*$", stripped)
+        #           **Price Analysis**          (no colon)
+        heading_match = re.match(
+            r"^\*\*(.+?)(?::[-\s]*\*\*|-{2,}:\*\*|:\*\*|\*\*)\s*$", stripped
+        )
         if heading_match:
             if current_lines:
                 sections.append((current_title, "\n".join(current_lines)))

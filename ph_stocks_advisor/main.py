@@ -2,12 +2,12 @@
 CLI entry point for the PH Stocks Advisor.
 
 Usage:
-    python -m ph_stocks_advisor.main TEL
-    python -m ph_stocks_advisor.main SM
-    python -m ph_stocks_advisor.main SM --pdf             # also generate PDF
-    python -m ph_stocks_advisor.main SM --html            # also generate HTML
-    python -m ph_stocks_advisor.main SM --pdf -o out.pdf  # custom PDF output path
-    python -m ph_stocks_advisor.main SM --html -o out.html
+    ph-advisor TEL
+    ph-advisor SM BDO TEL            # analyse multiple stocks
+    ph-advisor SM --pdf               # also generate PDF
+    ph-advisor SM --html              # also generate HTML
+    ph-advisor SM --pdf -o out.pdf    # custom output path (single symbol only)
+    ph-advisor SM --html -o out.html
 
 Export only (no new analysis):
     ph-advisor-pdf MREIT          # latest report → PDF
@@ -45,7 +45,10 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Agentic AI Philippine Stock Advisor",
     )
-    parser.add_argument("symbol", help="PSE stock symbol (e.g. TEL, SM, MREIT)")
+    parser.add_argument(
+        "symbols", nargs="+",
+        help="One or more PSE stock symbols (e.g. TEL SM MREIT)",
+    )
 
     # Dynamically add --pdf, --html, … from the formatter registry
     for name in FORMATTER_REGISTRY:
@@ -61,26 +64,9 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main(symbol: str | None = None) -> None:
-    """Run the multi-agent analysis, save to DB, and print the report."""
-
-    # Parse CLI args
-    requested_formats: list[str] = []
-    output_path: str | None = None
-
-    if symbol is None:
-        args = _parse_args()
-        symbol = args.symbol
-        output_path = args.output
-        for name in FORMATTER_REGISTRY:
-            if getattr(args, name, False):
-                requested_formats.append(name)
-    else:
-        # Called programmatically — check leftover argv for flags
-        for name in FORMATTER_REGISTRY:
-            if f"--{name}" in sys.argv:
-                requested_formats.append(name)
-
+def _analyse_single(symbol: str, requested_formats: list[str],
+                     output_path: str | None) -> bool:
+    """Run analysis for one symbol. Returns True on success."""
     symbol = symbol.upper().replace(".PS", "")
     print(f"\n🔍 Analysing {symbol} — this may take a minute …\n")
 
@@ -93,19 +79,19 @@ def main(symbol: str | None = None) -> None:
         print(f"❌ An unexpected error occurred while analysing {symbol}:")
         print(f"   {type(exc).__name__}: {exc}")
         print("\n   Please check your internet connection and API keys, then try again.")
-        sys.exit(1)
+        return False
 
     # Check if the symbol validation failed
     error = result.get("error")
     if error:
         print(f"❌ {error}")
-        sys.exit(1)
+        return False
 
     report = result.get("final_report")
 
     if report is None:
         print("❌ Analysis failed — no report was generated.")
-        sys.exit(1)
+        return False
 
     if isinstance(report, dict):
         report = FinalReport(**report)
@@ -132,6 +118,52 @@ def main(symbol: str | None = None) -> None:
             out = Path(output_path or f"{symbol}_report{formatter.file_extension}")
             formatter.write(rec, out)
             print(f"{formatter.emoji} {formatter.format_label} saved to {out}")
+
+    return True
+
+
+def main(symbol: str | None = None) -> None:
+    """Run the multi-agent analysis, save to DB, and print the report."""
+
+    # Parse CLI args
+    requested_formats: list[str] = []
+    output_path: str | None = None
+    symbols: list[str] = []
+
+    if symbol is None:
+        args = _parse_args()
+        symbols = args.symbols
+        output_path = args.output
+        for name in FORMATTER_REGISTRY:
+            if getattr(args, name, False):
+                requested_formats.append(name)
+    else:
+        symbols = [symbol]
+        # Called programmatically — check leftover argv for flags
+        for name in FORMATTER_REGISTRY:
+            if f"--{name}" in sys.argv:
+                requested_formats.append(name)
+
+    if len(symbols) > 1 and output_path:
+        print("⚠️  -o/--output ignored when analysing multiple symbols "
+              "(each file is auto-named <SYMBOL>_report.<ext>).")
+        output_path = None
+
+    failures: list[str] = []
+    for sym in symbols:
+        ok = _analyse_single(sym, requested_formats, output_path)
+        if not ok:
+            failures.append(sym)
+
+    if len(symbols) > 1:
+        print(f"\n{'=' * 60}")
+        print(f"  Completed {len(symbols) - len(failures)}/{len(symbols)} analyses.")
+        if failures:
+            print(f"  Failed: {', '.join(failures)}")
+        print(f"{'=' * 60}\n")
+
+    if failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
