@@ -89,12 +89,27 @@ ph-advisor SM --pdf                   # PDF saved alongside terminal output
 ph-advisor SM --pdf -o report.pdf     # custom output path
 ```
 
+### Generate an HTML report
+
+```bash
+ph-advisor SM --html                  # HTML saved alongside terminal output
+ph-advisor SM --html -o report.html   # custom output path
+```
+
 ### Export a saved report to PDF
 
 ```bash
 ph-advisor-pdf MREIT                  # latest report for the symbol
 ph-advisor-pdf MREIT --id 3           # specific report by ID
 ph-advisor-pdf MREIT -o mreit.pdf     # custom output path
+```
+
+### Export a saved report to HTML
+
+```bash
+ph-advisor-html MREIT                 # latest report for the symbol
+ph-advisor-html MREIT --id 3          # specific report by ID
+ph-advisor-html MREIT -o mreit.html   # custom output path
 ```
 
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis.
@@ -114,6 +129,7 @@ ph_stocks_advisor/
 ├── __init__.py
 ├── main.py                    # CLI entry point (ph-advisor)
 ├── export_pdf.py              # PDF export (ph-advisor-pdf)
+├── export_html.py             # HTML export (ph-advisor-html)
 ├── agents/
 │   ├── __init__.py
 │   ├── specialists.py         # 5 specialist agent classes
@@ -123,16 +139,19 @@ ph_stocks_advisor/
 │   ├── __init__.py
 │   ├── models.py              # Pydantic data models & graph state
 │   ├── tools.py               # Re-export façade (backward compat)
-│   ├── price_service.py       # Current price & catalyst detection
-│   ├── dividend_service.py    # Dividend data & sustainability
-│   ├── movement_service.py    # 1-year movement, candlestick, TV perf
-│   ├── valuation_service.py   # Fair-value estimation (Graham Number)
-│   ├── controversy_service.py # Price anomalies & risk news
-│   ├── dragonfi.py            # DragonFi API client
-│   ├── pse_edge.py            # PSE EDGE OHLCV client
-│   ├── tradingview.py         # TradingView scanner client
-│   ├── candlestick.py         # Candlestick pattern analysis
-│   └── tavily_search.py       # Tavily web search integration
+│   ├── clients/               # External API clients
+│   │   ├── dragonfi.py        #   DragonFi API (price, dividends, valuation, news)
+│   │   ├── pse_edge.py        #   PSE EDGE daily OHLCV history
+│   │   ├── tradingview.py     #   TradingView scanner (performance & volatility)
+│   │   └── tavily_search.py   #   Tavily web search integration
+│   ├── services/              # Domain services (orchestrate clients → models)
+│   │   ├── price.py           #   Current price & catalyst detection
+│   │   ├── dividend.py        #   Dividend data & sustainability analysis
+│   │   ├── movement.py        #   1-year movement, candlestick, TV perf
+│   │   ├── valuation.py       #   Fair-value estimation (Graham Number)
+│   │   └── controversy.py     #   Price anomalies & risk news
+│   └── analysis/              # Pure data analysis (no I/O)
+│       └── candlestick.py     #   Candlestick pattern detection
 ├── graph/
 │   ├── __init__.py
 │   └── workflow.py            # LangGraph workflow & agent registry
@@ -149,6 +168,7 @@ tests/
 ├── test_tools.py
 ├── test_agents.py
 ├── test_consolidator.py
+├── test_export_html.py            # HTML export tests
 ├── test_graph.py
 └── test_repository.py
 ```
