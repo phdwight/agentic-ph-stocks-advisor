@@ -76,6 +76,14 @@ ph-advisor ALI          # Ayala Land
 ph-advisor JFC          # Jollibee
 ```
 
+### Analyse multiple stocks at once
+
+```bash
+ph-advisor SM BDO TEL               # analyse three stocks sequentially
+ph-advisor SM BDO --pdf              # each stock gets its own PDF
+ph-advisor SM BDO TEL --html --pdf   # PDF + HTML for every stock
+```
+
 Or via module:
 
 ```bash
