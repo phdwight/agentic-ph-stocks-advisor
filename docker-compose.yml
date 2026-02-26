@@ -43,6 +43,8 @@ services:
       TRADINGVIEW_SCANNER_URL: ${TRADINGVIEW_SCANNER_URL:-https://scanner.tradingview.com/philippines/scan}
       # ── HTTP ──────────────────────────────────────────────────────────────
       HTTP_TIMEOUT: ${HTTP_TIMEOUT:-15}
+      # ── Timezone ──────────────────────────────────────────────────────────
+      TIMEZONE: ${TIMEZONE:-Asia/Manila}
       # ── Output directory (bind-mounted to host) ───────────────────────────
       OUTPUT_DIR: /app/output
       # ── LangSmith (optional) ──────────────────────────────────────────────

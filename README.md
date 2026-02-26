@@ -237,6 +237,7 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `PSE_EDGE_BASE_URL` | No | `https://edge.pse.com.ph` | PSE EDGE base URL |
 | `TRADINGVIEW_SCANNER_URL` | No | `https://scanner.tradingview.com/philippines/scan` | TradingView scanner endpoint |
 | `HTTP_TIMEOUT` | No | `15` | HTTP request timeout (seconds) |
+| `TIMEZONE` | No | `Asia/Manila` | IANA timezone or UTC/GMT offset (e.g. `Asia/Manila`, `UTC+8`, `GMT-5`) |
 | `OUTPUT_DIR` | No | _(empty — cwd)_ | Base directory for exported PDF/HTML files |
 | `TREND_UP_THRESHOLD` | No | `5` | % change above which trend = uptrend |
 | `TREND_DOWN_THRESHOLD` | No | `-5` | % change below which trend = downtrend |

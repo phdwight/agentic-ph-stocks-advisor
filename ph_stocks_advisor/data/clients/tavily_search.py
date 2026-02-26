@@ -12,9 +12,10 @@ of raising exceptions.
 
 from __future__ import annotations
 
-import datetime as dt
 import logging
 from typing import Any
+
+from ph_stocks_advisor.infra.config import get_today
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def search_dividend_news(symbol: str, company_name: str = "") -> str:
     if no results are found / Tavily is not configured).
     """
     name_part = f" ({company_name})" if company_name else ""
-    year = dt.date.today().year
+    year = get_today().year
     query = (
         f"{symbol}{name_part} Philippine stock dividend announcement "
         f"declaration ex-date {year - 1} OR {year}"
@@ -101,7 +102,7 @@ def search_stock_news(symbol: str, company_name: str = "") -> str:
     Returns a formatted string of search results.
     """
     name_part = f" ({company_name})" if company_name else ""
-    year = dt.date.today().year
+    year = get_today().year
     query = (
         f"{symbol}{name_part} Philippine stock PSE latest news {year - 1} OR {year}"
     )

@@ -8,8 +8,11 @@ class attributes so they can be changed via ``.env`` without touching code.
 
 from __future__ import annotations
 
+import datetime as dt
 import os
+import re as _re
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from langchain_core.language_models import BaseChatModel
@@ -57,6 +60,9 @@ class Settings:
         "https://scanner.tradingview.com/philippines/scan",
     )
 
+    # -- Timezone ---------------------------------------------------------------
+    timezone: str = os.getenv("TIMEZONE", "Asia/Manila")
+
     # -- Output directory (used as default base for exported files) -------------
     output_dir: str = os.getenv("OUTPUT_DIR", "")
 
@@ -95,6 +101,30 @@ class Settings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
+
+def _parse_tz(name: str) -> dt.tzinfo:
+    """Parse a timezone string into a :class:`datetime.tzinfo`.
+
+    Supports:
+    * IANA names  – ``Asia/Manila``, ``US/Eastern``, ``UTC``
+    * Offset form – ``UTC+8``, ``GMT+8``, ``UTC-5``, ``GMT-05:30``
+    """
+    m = _re.match(
+        r"^(?:UTC|GMT)([+-])(\d{1,2})(?::(\d{2}))?$", name, _re.IGNORECASE
+    )
+    if m:
+        sign = 1 if m.group(1) == "+" else -1
+        hours = int(m.group(2))
+        minutes = int(m.group(3) or 0)
+        return dt.timezone(dt.timedelta(hours=sign * hours, minutes=sign * minutes))
+    return ZoneInfo(name)
+
+
+def get_today() -> dt.date:
+    """Return today's date in the user-configured timezone."""
+    tz = _parse_tz(get_settings().timezone)
+    return dt.datetime.now(tz=tz).date()
 
 
 def get_llm(settings: Settings | None = None) -> BaseChatModel:
