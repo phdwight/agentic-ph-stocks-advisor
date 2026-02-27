@@ -91,5 +91,9 @@ class AbstractReportRepository(abc.ABC):
         """Return recent reports for a symbol, newest first."""
 
     @abc.abstractmethod
+    def list_recent_symbols(self, limit: int = 50) -> list[ReportRecord]:
+        """Return the latest report for each distinct symbol, newest first."""
+
+    @abc.abstractmethod
     def close(self) -> None:
         """Release database resources."""

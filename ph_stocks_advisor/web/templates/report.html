@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{{ record.symbol }} Stock Analysis — PH Stocks Advisor{% endblock %}
+
+{% block content %}
+<div class="report-header">
+  <h1>{{ record.symbol }} Stock Analysis</h1>
+  <div class="verdict-row">
+    <span class="verdict-label">Verdict:</span>
+    <span class="badge {% if is_buy %}buy{% else %}not-buy{% endif %}">
+      {{ record.verdict }}
+    </span>
+  </div>
+  <p class="report-meta">
+    Generated: {{ timestamp }}
+    {% if is_cached %}
+      <span class="cached-badge">📋 Cached report (less than 5 days old)</span>
+    {% endif %}
+  </p>
+  <div class="report-actions">
+    <a href="/" class="btn btn-secondary">← New Analysis</a>
+    <a href="/history/{{ record.symbol }}" class="btn btn-secondary">Report History</a>
+  </div>
+</div>
+
+<div class="report-body">
+  {% for title, body in sections %}
+    {% if not title.lower().startswith('verdict') %}
+    <section class="report-section">
+      <h2>{{ title }}</h2>
+      <div class="section-body">
+        {{ body | replace('\n', '<br>') | safe }}
+      </div>
+    </section>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<div class="report-footer">
+  <p class="sources">{{ data_sources }}</p>
+  <p class="disclaimer">{{ disclaimer }}</p>
+</div>
+{% endblock %}

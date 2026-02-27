@@ -98,6 +98,22 @@ class SQLiteReportRepository(AbstractReportRepository):
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
+    def list_recent_symbols(self, limit: int = 50) -> list[ReportRecord]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """
+            SELECT r.* FROM reports r
+            INNER JOIN (
+                SELECT symbol, MAX(created_at) AS max_ca
+                FROM reports GROUP BY symbol
+            ) g ON r.symbol = g.symbol AND r.created_at = g.max_ca
+            ORDER BY r.created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
     def close(self) -> None:
         if self._conn:
             self._conn.close()

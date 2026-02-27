@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PH Stocks Advisor{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="navbar">
+    <div class="container nav-inner">
+      <a href="/" class="nav-brand">🇵🇭 PH Stocks Advisor</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="disclaimer">
+        This application is for informational purposes only and does not constitute financial advice.
+        Always consult a licensed financial advisor before making investment decisions.
+      </p>
+      <p class="sources">
+        Data Sources: DragonFi, PSE EDGE, TradingView Scanner, Tavily Web Search
+      </p>
+    </div>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

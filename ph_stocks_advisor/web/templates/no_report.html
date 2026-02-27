@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}No Report — {{ symbol }}{% endblock %}
+
+{% block content %}
+<div class="no-report">
+  <h1>No Report Found</h1>
+  <p>There is no saved analysis for <strong>{{ symbol }}</strong>.</p>
+  <a href="/" class="btn btn-primary">Run a New Analysis</a>
+</div>
+{% endblock %}

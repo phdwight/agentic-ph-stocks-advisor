@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}PH Stocks Advisor — Analyse Philippine Stocks{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <h1>Philippine Stock Market AI Advisor</h1>
+  <p class="hero-sub">Enter a PSE stock symbol to get an AI-powered <strong>BUY</strong> or <strong>NOT BUY</strong> analysis.</p>
+
+  <form id="analyse-form" class="analyse-form" method="post" action="/analyse">
+    <div class="input-group">
+      <input
+        type="text"
+        id="symbol-input"
+        name="symbol"
+        placeholder="e.g. TEL, SM, BDO, ALI, JFC"
+        autocomplete="off"
+        required
+      >
+      <button type="submit" id="analyse-btn">Analyse</button>
+    </div>
+  </form>
+
+  <!-- Task tracker: shows progress for each submitted stock -->
+  <div id="tracker-panel" class="tracker-panel" style="display:none;">
+    <h2 class="tracker-title">Analysis Queue <span id="tracker-count" class="tracker-count"></span></h2>
+    <table class="tracker-table">
+      <thead>
+        <tr>
+          <th>Stock</th>
+          <th>Status</th>
+          <th>Time</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tracker-list"></tbody>
+    </table>
+    <p class="tracker-hint">You can keep adding more stocks while these run.</p>
+  </div>
+
+  <div id="error-area" class="error-area" style="display:none;">
+    <p id="error-text"></p>
+  </div>
+</div>
+
+<section class="recent-stocks" id="recent-stocks">
+  <h2>Previously Analysed Stocks</h2>
+  <div class="stock-chips" id="stock-chips">
+    {% for stock in recent_stocks %}
+    <a href="/report/{{ stock.symbol }}" class="stock-chip" data-symbol="{{ stock.symbol }}">
+      <span class="chip-symbol">{{ stock.symbol }}</span>
+      <span class="chip-verdict badge-sm {{ 'buy' if stock.verdict == 'BUY' else 'not-buy' }}">{{ stock.verdict }}</span>
+      <span class="chip-date">{{ stock.created_at.strftime('%b %d') }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="features">
+  <h2>How It Works</h2>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h3>📊 Price Analysis</h3>
+      <p>Current price vs 52-week range, price catalysts detection.</p>
+    </div>
+    <div class="feature-card">
+      <h3>💰 Dividend Analysis</h3>
+      <p>Yield, payout ratio, sustainability, REIT rules, income trends.</p>
+    </div>
+    <div class="feature-card">
+      <h3>📈 Movement Analysis</h3>
+      <p>1-year trend, drawdown, candlestick patterns, multi-period performance.</p>
+    </div>
+    <div class="feature-card">
+      <h3>⚖️ Valuation</h3>
+      <p>PE/PB/PEG ratios, Graham Number fair value estimate.</p>
+    </div>
+    <div class="feature-card">
+      <h3>⚠️ Controversy & Risk</h3>
+      <p>Price spike detection, risk factors, web news & controversies.</p>
+    </div>
+    <div class="feature-card">
+      <h3>📝 Final Verdict</h3>
+      <p>AI consolidates all analyses into a BUY or NOT BUY recommendation.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}
