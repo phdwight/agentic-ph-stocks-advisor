@@ -49,7 +49,7 @@ def format_timestamp(dt_val: datetime | None) -> str:
         return ""
     tz = _parse_tz(get_settings().timezone)
     local_dt = dt_val.astimezone(tz)
-    return local_dt.strftime("%B %d, %Y %I:%M %p")
+    return local_dt.strftime("%B %d, %Y %I:%M:%S %p")
 
 
 # ---------------------------------------------------------------------------
