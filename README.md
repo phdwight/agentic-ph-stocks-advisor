@@ -171,6 +171,74 @@ The web interface lets you enter a stock symbol, kicks off the analysis in the b
 
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis.
 
+### Azure (Cloud Deployment)
+
+Deploy to **Azure Container Apps** with managed PostgreSQL and Redis. All infrastructure is defined as code via Bicep.
+
+| Azure Service | Role |
+|---------------|------|
+| **Container Registry** | Stores the Docker image |
+| **Container Apps — web** | Flask web UI (HTTPS, auto-scaling) |
+| **Container Apps — worker** | Celery worker (scales with queue depth) |
+| **Database for PostgreSQL** | Flexible Server (Burstable B1ms, 32 GB) |
+| **Cache for Redis** | Basic C0 (TLS only) |
+| **Log Analytics** | Container logs & monitoring |
+
+#### Prerequisites
+
+- [Azure CLI](https://aka.ms/install-az-cli) installed and logged in (`az login`)
+- Docker running locally
+- `OPENAI_API_KEY` in `.env` (or exported)
+
+#### First-time deploy
+
+```bash
+# Set a password for the managed PostgreSQL server
+export AZURE_PG_PASSWORD='<strong-password>'
+
+# Deploy everything (infra + build + push + update apps)
+./infra/azure/deploy.sh
+```
+
+The script will:
+1. Create a resource group (`ph-stocks-advisor-rg` in `southeastasia`)
+2. Provision all Azure resources via Bicep
+3. Build the Docker image and push it to ACR
+4. Update both Container Apps with the new image
+5. Print the public HTTPS URL
+
+#### Update after code changes
+
+```bash
+./infra/azure/deploy.sh --update   # rebuild image & redeploy (skips infra)
+```
+
+#### Provision infrastructure only (no image push)
+
+```bash
+./infra/azure/deploy.sh --infra-only
+```
+
+#### Tear down
+
+```bash
+./infra/azure/teardown.sh          # interactive confirmation
+./infra/azure/teardown.sh --yes    # skip confirmation
+```
+
+#### Customisation
+
+Override defaults via environment variables before running `deploy.sh`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AZURE_RESOURCE_GROUP` | `ph-stocks-advisor-rg` | Resource group name |
+| `AZURE_LOCATION` | `southeastasia` | Azure region |
+| `AZURE_APP_NAME` | `phstocks` | Name prefix for all resources |
+| `AZURE_PG_ADMIN_USER` | `phadmin` | PostgreSQL admin login |
+| `AZURE_PG_PASSWORD` | _(required)_ | PostgreSQL admin password |
+| `IMAGE_TAG` | `latest` | Docker image tag |
+
 ## Testing
 
 ```bash
@@ -185,6 +253,12 @@ All tests run offline with mocked data sources and mocked LLM calls — no API k
 Dockerfile                         # Multi-stage container image
 docker-compose.yml                 # Compose v2 (app + Postgres)
 .dockerignore                      # Files excluded from Docker build context
+infra/
+└── azure/                     # Azure deployment (IaC)
+    ├── main.bicep             #   Bicep template (all resources)
+    ├── main.bicepparam        #   Default parameter values
+    ├── deploy.sh              #   One-command deploy script
+    └── teardown.sh            #   Destroy all Azure resources
 ph_stocks_advisor/
 ├── __init__.py
 ├── main.py                    # CLI entry point (ph-advisor)
