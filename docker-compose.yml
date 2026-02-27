@@ -10,22 +10,38 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./db:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ph_advisor}"]
       interval: 5s
       timeout: 3s
       retries: 5
 
-  # ── PH Stocks Advisor CLI ─────────────────────────────────────────────────
-  advisor:
+  # ── Redis (message broker + result backend) ────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Flask web UI ───────────────────────────────────────────────────────────
+  web:
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
       db:
         condition: service_healthy
-    environment:
+      redis:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-5000}:5000"
+    environment: &shared-env
       # ── LLM (required) ────────────────────────────────────────────────────
       OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
@@ -37,6 +53,8 @@ services:
       # ── Database — always Postgres inside Docker ──────────────────────────
       DB_BACKEND: postgres
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:-ph_advisor}@db:5432/${POSTGRES_DB:-ph_advisor}
+      # ── Redis ─────────────────────────────────────────────────────────────
+      REDIS_URL: redis://redis:6379/0
       # ── API base URLs ─────────────────────────────────────────────────────
       DRAGONFI_BASE_URL: ${DRAGONFI_BASE_URL:-https://api.dragonfi.ph/api/v2}
       PSE_EDGE_BASE_URL: ${PSE_EDGE_BASE_URL:-https://edge.pse.com.ph}
@@ -53,6 +71,41 @@ services:
       LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-ph-stocks-advisor}
     volumes:
       - ./output:/app/output
+    entrypoint: ["ph-advisor-web"]
+    command: ["--host", "0.0.0.0", "--port", "5000"]
+
+  # ── Celery worker (runs analyses in the background) ────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *shared-env
+    volumes:
+      - ./output:/app/output
+    entrypoint: ["celery"]
+    command: ["-A", "ph_stocks_advisor.web.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+
+  # ── PH Stocks Advisor CLI (one-shot analysis) ─────────────────────────────
+  advisor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *shared-env
+    volumes:
+      - ./output:/app/output
     # Default: analyse TEL. Override with:
-    #   docker compose run advisor SM BDO --pdf
+    #   docker compose run --rm advisor SM BDO --pdf
     command: ["TEL"]
+
+volumes:
+  pgdata:

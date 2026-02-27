@@ -68,22 +68,34 @@ pip install -e ".[postgres]"
 
 ### Docker (recommended for deployment)
 
-The project ships with a multi-stage `Dockerfile` and a Compose v2 file that runs the advisor alongside a dedicated PostgreSQL container.
+The project ships with a multi-stage `Dockerfile` and a Compose v2 file with four services:
+
+| Container | Role |
+|-----------|------|
+| **db** | PostgreSQL 16 — persistent report storage |
+| **redis** | Redis 7 — Celery message broker & result backend |
+| **web** | Flask web UI (port 5000) |
+| **worker** | Celery worker — runs stock analyses in the background |
+| **advisor** | One-shot CLI analysis (optional) |
 
 ```bash
 # 1. Configure environment
 cp .env.example .env
 # Edit .env — set at least OPENAI_API_KEY
 
-# 2. Build & analyse a stock (one-shot)
-docker compose run --rm advisor TEL
+# 2. Start the web UI + worker + database + redis
+docker compose up --build -d web worker
 
-# 3. Analyse multiple stocks with PDF export
+# 3. Open the web UI
+open http://localhost:5000
+
+# 4. Or run a one-shot CLI analysis
+docker compose run --rm advisor TEL
 docker compose run --rm advisor SM BDO TEL --pdf
 
-# 4. Stop the database when you're done
+# 5. Stop everything
 docker compose down            # keeps data in the pgdata volume
-docker compose down -v         # removes the volume too
+docker compose down -v         # removes volumes too
 ```
 
 Exported files (PDF / HTML) are written to the `./output` directory on the host via a bind mount.
@@ -146,6 +158,17 @@ ph-advisor-html MREIT --id 3          # specific report by ID
 ph-advisor-html MREIT -o mreit.html   # custom output path
 ```
 
+### Web UI
+
+```bash
+ph-advisor-web                        # start on http://127.0.0.1:5000
+ph-advisor-web --port 8080            # custom port
+ph-advisor-web --host 0.0.0.0         # expose to network
+ph-advisor-web --debug                # enable Flask debug mode
+```
+
+The web interface lets you enter a stock symbol, kicks off the analysis in the background, and displays the report in the browser once complete. You can also browse report history for any symbol.
+
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis.
 
 ## Testing
@@ -165,6 +188,20 @@ docker-compose.yml                 # Compose v2 (app + Postgres)
 ph_stocks_advisor/
 ├── __init__.py
 ├── main.py                    # CLI entry point (ph-advisor)
+├── web/                       # Flask web application + Celery worker
+│   ├── __init__.py
+│   ├── app.py                 #   Flask factory, routes, CLI (ph-advisor-web)
+│   ├── celery_app.py          #   Celery instance & configuration
+│   ├── tasks.py               #   Celery task definitions (analyse_stock)
+│   ├── templates/             #   Jinja2 HTML templates
+│   │   ├── base.html          #     Shared layout
+│   │   ├── index.html         #     Landing page with analysis form
+│   │   ├── report.html        #     Single report view
+│   │   ├── history.html       #     Report history table
+│   │   └── no_report.html     #     404 / no report found
+│   └── static/                #   Static assets
+│       ├── style.css          #     Main stylesheet
+│       └── app.js             #     Client-side Celery task polling
 ├── export/                    # Pluggable output formatters (Open/Closed)
 │   ├── __init__.py            #   FORMATTER_REGISTRY & get_formatter()
 │   ├── formatter.py           #   OutputFormatter ABC, parse_sections(), export_cli()
@@ -250,3 +287,6 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `CATALYST_RANGE_PCT` | No | `65` | % of 52-week range for catalyst detection |
 | `CATALYST_DAY_CHANGE_PCT` | No | `0.5` | Daily % change to trigger momentum catalyst |
 | `CATALYST_NEAR_HIGH_PCT` | No | `5` | % gap to 52-week high for "near high" catalyst |
+| `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection URL (broker + result backend for Celery) |
+| `REDIS_PORT` | No | `6379` | Host port for Redis (Docker Compose only) |
+| `WEB_PORT` | No | `5000` | Host port for the Flask web UI (Docker Compose only) |

@@ -48,6 +48,9 @@ class Settings:
         "postgresql://localhost:5432/ph_advisor",
     )
 
+    # -- Redis / Celery --------------------------------------------------------
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
     # -- API base URLs ---------------------------------------------------------
     dragonfi_base_url: str = os.getenv(
         "DRAGONFI_BASE_URL", "https://api.dragonfi.ph/api/v2"

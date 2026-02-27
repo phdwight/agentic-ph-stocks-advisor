@@ -34,5 +34,6 @@ COPY --from=builder /app /app
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
-# Default: run the CLI. Override CMD in docker-compose to pass symbols.
+# Default: run the CLI advisor. docker-compose overrides entrypoint
+# for the web and worker services.
 ENTRYPOINT ["ph-advisor"]

@@ -15,6 +15,9 @@ dependencies = [
     "pandas>=2.0",
     "numpy>=1.24",
     "requests>=2.31",
+    "flask>=3.0",
+    "celery[redis]>=5.3",
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +33,16 @@ postgres = [
 ph-advisor = "ph_stocks_advisor.main:main"
 ph-advisor-pdf = "ph_stocks_advisor.export.pdf:main"
 ph-advisor-html = "ph_stocks_advisor.export.html:main"
+ph-advisor-web = "ph_stocks_advisor.web.app:main"
+
+[tool.setuptools.packages.find]
+include = ["ph_stocks_advisor*"]
+
+[tool.setuptools.package-data]
+ph_stocks_advisor = [
+    "web/templates/**/*.html",
+    "web/static/**/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -116,6 +116,21 @@ class PostgresReportRepository(AbstractReportRepository):
             rows = cur.fetchall()
         return [self._row_to_record(r) for r in rows]
 
+    def list_recent_symbols(self, limit: int = 50) -> list[ReportRecord]:
+        conn = self._get_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ON (symbol) *
+                FROM reports
+                ORDER BY symbol, created_at DESC
+                """,
+            )
+            all_rows = cur.fetchall()
+        # Sort by created_at descending across symbols, then apply limit
+        all_rows.sort(key=lambda r: r["created_at"], reverse=True)
+        return [self._row_to_record(r) for r in all_rows[:limit]]
+
     def close(self) -> None:
         if self._conn and not self._conn.closed:
             self._conn.close()
