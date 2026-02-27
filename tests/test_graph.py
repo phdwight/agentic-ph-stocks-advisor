@@ -10,7 +10,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import ph_stocks_advisor.graph.workflow as workflow_mod
-from ph_stocks_advisor.graph.workflow import AGENT_REGISTRY, build_graph, run_analysis
+from ph_stocks_advisor.graph.workflow import AGENT_REGISTRY, _build_graph_impl, run_analysis
 from ph_stocks_advisor.data.models import (
     ControversyAnalysis,
     ControversyInfo,
@@ -31,13 +31,13 @@ class TestBuildGraph:
     def test_graph_compiles(self):
         """The graph should compile without errors when given a mock LLM."""
         mock_llm = MagicMock()
-        graph = build_graph(llm=mock_llm)
+        graph = _build_graph_impl(llm=mock_llm)
         assert graph is not None
 
     def test_graph_has_expected_nodes(self):
         """All specialist, validation, and consolidator nodes should be present."""
         mock_llm = MagicMock()
-        graph = build_graph(llm=mock_llm)
+        graph = _build_graph_impl(llm=mock_llm)
         node_names = set(graph.get_graph().nodes.keys())
         expected = {
             "validate",
@@ -53,7 +53,7 @@ class TestBuildGraph:
     def test_registry_drives_node_creation(self):
         """Every agent in AGENT_REGISTRY should result in a graph node."""
         mock_llm = MagicMock()
-        graph = build_graph(llm=mock_llm)
+        graph = _build_graph_impl(llm=mock_llm)
         node_names = set(graph.get_graph().nodes.keys())
         for node_name, _key, _cls in AGENT_REGISTRY:
             assert node_name in node_names

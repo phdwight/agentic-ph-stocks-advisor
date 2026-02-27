@@ -23,10 +23,14 @@ from ph_stocks_advisor.data.tools import (
 )
 from ph_stocks_advisor.data.models import TrendDirection
 
+# Fixed end-date for bdate_range — must be a weekday so pandas 3.x
+# doesn't silently drop a non-business-day endpoint.
+_BDATE_END = pd.Timestamp("2026-02-27")  # Friday
+
 
 def _sample_history(start_price: float = 100.0, periods: int = 252) -> pd.DataFrame:
     """Generate a simple upward-trending price history."""
-    dates = pd.bdate_range(end=pd.Timestamp.now(), periods=periods)
+    dates = pd.bdate_range(end=_BDATE_END, periods=periods)
     prices = np.linspace(start_price, start_price * 1.15, periods)
     rng = np.random.default_rng(42)
     noise = rng.normal(0, 1, periods)
@@ -226,7 +230,7 @@ class TestFetchPriceMovement:
     def test_max_drawdown_detected(self, mock_pse, mock_profile, _web, _tv):
         """Simulate a stock that rises then crashes mid-year and partly recovers."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=200)
+        dates = pd.bdate_range(end=_BDATE_END, periods=200)
         prices = np.concatenate([
             np.linspace(10.0, 14.0, 80),   # rally to 14
             np.linspace(14.0, 8.0, 40),    # crash to 8 (~43% drawdown)
@@ -271,7 +275,7 @@ class TestFetchPriceMovement:
     def test_pse_edge_ohlcv_used_as_primary(self, mock_pse, mock_profile, _web, _tv):
         """PSE EDGE OHLCV should be used as the primary data source."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=100)
+        dates = pd.bdate_range(end=_BDATE_END, periods=100)
         prices = np.linspace(10.0, 12.0, 100)
         hist = pd.DataFrame({
             "Open": prices - 0.1,
@@ -329,7 +333,7 @@ class TestFetchControversyInfo:
     @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news")
     @patch("ph_stocks_advisor.data.services.controversy._fetch_history")
     def test_no_spikes_on_calm_data(self, mock_hist, mock_news, _prof, _web, _contr):
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=100)
+        dates = pd.bdate_range(end=_BDATE_END, periods=100)
         prices = np.linspace(100, 105, 100)
         hist = pd.DataFrame({"Close": prices}, index=dates)
         mock_hist.return_value = hist
@@ -343,7 +347,7 @@ class TestFetchControversyInfo:
     @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news")
     @patch("ph_stocks_advisor.data.services.controversy._fetch_history")
     def test_detects_spike(self, mock_hist, mock_news, _prof, _web, _contr):
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=100)
+        dates = pd.bdate_range(end=_BDATE_END, periods=100)
         prices = np.full(100, 100.0)
         prices[50] = 115.0  # 15% jump
         hist = pd.DataFrame({"Close": prices}, index=dates)
@@ -707,7 +711,7 @@ class TestCandlestickAnalysis:
 
     def _make_ohlcv(self, n: int = 100, *, base: float = 10.0) -> pd.DataFrame:
         """Create a calm OHLCV DataFrame."""
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=n)
+        dates = pd.bdate_range(end=_BDATE_END, periods=n)
         closes = np.linspace(base, base * 1.05, n)
         return pd.DataFrame({
             "Open": closes * 0.999,
@@ -761,7 +765,7 @@ class TestCandlestickAnalysis:
 
     def test_detects_selling_pressure(self):
         from ph_stocks_advisor.data.analysis.candlestick import _detect_consecutive_pressure
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=10)
+        dates = pd.bdate_range(end=_BDATE_END, periods=10)
         # 5 consecutive bearish candles (close < open)
         df = pd.DataFrame({
             "Open":  [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],

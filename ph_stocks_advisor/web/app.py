@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
+import redis as redis_lib
 from flask import Flask, jsonify, render_template, request
 
 from ph_stocks_advisor.export.formatter import (
@@ -24,12 +25,22 @@ from ph_stocks_advisor.export.formatter import (
     format_timestamp,
     parse_sections,
 )
-from ph_stocks_advisor.infra.config import get_repository
+from ph_stocks_advisor.infra.config import get_repository, get_settings
 
 logger = logging.getLogger(__name__)
 
 # Reports older than this are considered stale and re-analysed.
 REPORT_MAX_AGE_DAYS = 5
+
+# Redis key prefix for in-flight analysis dedup locks.
+_INFLIGHT_PREFIX = "analysis:inflight:"
+# How long the lock lives before auto-expiring (seconds).
+_INFLIGHT_TTL = 10 * 60  # 10 minutes
+
+
+def _get_redis() -> redis_lib.Redis:
+    """Return a Redis client using the configured URL."""
+    return redis_lib.from_url(get_settings().redis_url, decode_responses=True)
 
 
 def create_app() -> Flask:
@@ -85,8 +96,28 @@ def create_app() -> Flask:
                     "report_id": record.id,
                 })
 
-        # No fresh report — dispatch analysis to the Celery worker
+        # No fresh report — check for an in-flight analysis (dedup)
+        r = _get_redis()
+        inflight_key = f"{_INFLIGHT_PREFIX}{symbol}"
+        existing_task_id = r.get(inflight_key)
+        if existing_task_id:
+            logger.info(
+                "In-flight analysis found for %s (task %s), joining.",
+                symbol,
+                existing_task_id,
+            )
+            return jsonify({
+                "status": "joined",
+                "symbol": symbol,
+                "task_id": existing_task_id,
+            })
+
+        # Dispatch analysis to the Celery worker
         task = analyse_stock.delay(symbol)
+
+        # Store the lock so concurrent requests join this task
+        r.set(inflight_key, task.id, ex=_INFLIGHT_TTL)
+
         return jsonify({"status": "started", "symbol": symbol, "task_id": task.id})
 
     @app.route("/status/<task_id>")
@@ -132,10 +163,18 @@ def create_app() -> Flask:
 
     @app.route("/cancel/<task_id>", methods=["POST"])
     def cancel(task_id: str):
-        """Revoke (cancel) a running Celery task."""
+        """Revoke (cancel) a running Celery task and clear inflight lock."""
         from ph_stocks_advisor.web.tasks import celery_app
 
         celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+
+        # Clear the inflight lock so a new analysis can be dispatched
+        r = _get_redis()
+        for key in r.scan_iter(f"{_INFLIGHT_PREFIX}*"):
+            if r.get(key) == task_id:
+                r.delete(key)
+                break
+
         return jsonify({"status": "cancelled", "task_id": task_id})
 
     @app.route("/report/<symbol>")
