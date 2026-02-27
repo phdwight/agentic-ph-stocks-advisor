@@ -17,6 +17,7 @@ import logging
 from typing import Any, Callable, Optional, TypedDict
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from ph_stocks_advisor.agents.specialists import (
@@ -146,15 +147,15 @@ def _make_consolidate_node(llm: BaseChatModel) -> Callable[[GraphState], GraphSt
 # ---------------------------------------------------------------------------
 
 
-def build_graph(llm: BaseChatModel | None = None):
+def _build_graph_impl(llm: BaseChatModel | None = None):
     """
-    Construct and compile the LangGraph workflow.
+    Internal graph builder used by both the CLI and LangGraph Studio.
 
     Parameters
     ----------
     llm : BaseChatModel | None
         The language model to inject into every agent node.  When ``None``
-        the default LLM from ``get_llm()`` is used (convenient for CLI).
+        the default LLM from ``get_llm()`` is used.
 
     Topology:
         START ──┬── price_agent ────────┐
@@ -193,7 +194,11 @@ def build_graph(llm: BaseChatModel | None = None):
             return END
         return specialist_names
 
-    workflow.add_conditional_edges("validate", _route_after_validation)
+    # Provide an explicit path_map so the graph visualizer can render
+    # all possible edges from the conditional branch.
+    path_map: dict[str, str] = {name: name for name in specialist_names}
+    path_map[END] = END
+    workflow.add_conditional_edges("validate", _route_after_validation, path_map=path_map)
 
     # Fan-in: all specialists feed into the consolidator
     for node_name in specialist_names:
@@ -203,6 +208,16 @@ def build_graph(llm: BaseChatModel | None = None):
     workflow.add_edge("consolidator", END)
 
     return workflow.compile()
+
+
+def build_graph(config: RunnableConfig) -> Any:
+    """LangGraph Studio / CLI entry point.
+
+    LangGraph Studio requires the graph factory to accept exactly one
+    ``RunnableConfig`` argument.  This thin wrapper satisfies that
+    contract and delegates to :func:`_build_graph_impl`.
+    """
+    return _build_graph_impl()
 
 
 def run_analysis(symbol: str, llm: BaseChatModel | None = None) -> dict[str, Any]:
@@ -221,6 +236,6 @@ def run_analysis(symbol: str, llm: BaseChatModel | None = None) -> dict[str, Any
     dict
         The final state dict containing all analyses and the final report.
     """
-    graph = build_graph(llm=llm)
+    graph = _build_graph_impl(llm=llm)
     initial_state: GraphState = {"symbol": symbol.upper().replace(".PS", "")}
     return graph.invoke(initial_state)
