@@ -66,9 +66,9 @@ services:
       # ── Output directory (bind-mounted to host) ───────────────────────────
       OUTPUT_DIR: /app/output
       # ── LangSmith (optional) ──────────────────────────────────────────────
-      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
-      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
-      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-ph-stocks-advisor}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-ph-stocks-advisor}
     volumes:
       - ./output:/app/output
     entrypoint: ["ph-advisor-web"]
