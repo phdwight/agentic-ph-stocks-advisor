@@ -11,9 +11,12 @@ param pgAdminUser = 'phadmin'
 //     --parameters main.bicepparam \
 //     --parameters pgAdminPassword='<password>' \
 //                  openaiApiKey='<key>' \
-//                  tavilyApiKey='<key>'
+//                  tavilyApiKey='<key>' \
+//                  langsmithApiKey='<key>'
 param pgAdminPassword = ''
 param openaiApiKey = ''
 param tavilyApiKey = ''
+param langsmithApiKey = ''
+param langsmithProject = 'ph-stocks-advisor'
 param openaiModel = 'gpt-4o-mini'
 param imageTag = 'latest'

@@ -44,6 +44,13 @@ param tavilyApiKey string = ''
 @description('OpenAI model name.')
 param openaiModel string = 'gpt-4o-mini'
 
+@secure()
+@description('LangSmith API key (optional — for tracing).')
+param langsmithApiKey string = ''
+
+@description('LangSmith project name.')
+param langsmithProject string = 'ph-stocks-advisor'
+
 @description('Docker image tag to deploy.')
 param imageTag string = 'latest'
 
@@ -202,6 +209,9 @@ var sharedEnv = [
   { name: 'HTTP_TIMEOUT', value: '15' }
   { name: 'TIMEZONE', value: 'Asia/Manila' }
   { name: 'OUTPUT_DIR', value: '/app/output' }
+  { name: 'LANGSMITH_API_KEY', secretRef: 'langsmith-api-key' }
+  { name: 'LANGSMITH_TRACING', value: 'true' }
+  { name: 'LANGSMITH_PROJECT', value: langsmithProject }
 ]
 
 var secrets = [
@@ -209,6 +219,7 @@ var secrets = [
   { name: 'tavily-api-key', value: tavilyApiKey }
   { name: 'postgres-dsn', value: 'postgresql://${pgAdminUser}:${pgAdminPassword}@${pgServer.properties.fullyQualifiedDomainName}:5432/${pgDatabaseName}?sslmode=require' }
   { name: 'redis-url', value: redisInternalUrl }
+  { name: 'langsmith-api-key', value: langsmithApiKey }
   { name: 'acr-password', value: acr.listCredentials().passwords[0].value }
 ]
 
