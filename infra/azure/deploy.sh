@@ -39,6 +39,10 @@ fi
 : "${OPENAI_API_KEY:?❌ OPENAI_API_KEY is required. Set it in .env or export it.}"
 : "${AZURE_PG_PASSWORD:?❌ AZURE_PG_PASSWORD is required. Export it before running this script.}"
 TAVILY_API_KEY="${TAVILY_API_KEY:-}"
+ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
+ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET:-}"
+ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-common}"
+FLASK_SECRET_KEY="${FLASK_SECRET_KEY:-ph-stocks-advisor-change-me-in-production}"
 
 # ── Parse flags ──────────────────────────────────────────────────────────────
 UPDATE_ONLY=false
@@ -80,6 +84,10 @@ if [[ "$UPDATE_ONLY" == false ]]; then
       openaiApiKey="$OPENAI_API_KEY" \
       tavilyApiKey="$TAVILY_API_KEY" \
       openaiModel="${OPENAI_MODEL:-gpt-4o-mini}" \
+      entraClientId="$ENTRA_CLIENT_ID" \
+      entraClientSecret="$ENTRA_CLIENT_SECRET" \
+      entraTenantId="$ENTRA_TENANT_ID" \
+      flaskSecretKey="$FLASK_SECRET_KEY" \
       imageTag="$IMAGE_TAG" \
     --query properties.outputs \
     --output json)
@@ -110,8 +118,9 @@ az acr login --name "$ACR_NAME"
 
 IMAGE_FULL="${ACR_LOGIN_SERVER}/ph-stocks-advisor:${IMAGE_TAG}"
 
-info "Building Docker image …"
+info "Building Docker image (linux/amd64) …"
 docker build \
+  --platform linux/amd64 \
   -t "$IMAGE_FULL" \
   -f "$PROJECT_ROOT/Dockerfile" \
   "$PROJECT_ROOT"

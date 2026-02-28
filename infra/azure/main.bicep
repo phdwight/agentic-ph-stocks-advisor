@@ -51,6 +51,21 @@ param langsmithApiKey string = ''
 @description('LangSmith project name.')
 param langsmithProject string = 'ph-stocks-advisor'
 
+@secure()
+@description('Microsoft Entra ID application (client) ID (optional — leave empty to disable auth).')
+param entraClientId string = ''
+
+@secure()
+@description('Microsoft Entra ID client secret.')
+param entraClientSecret string = ''
+
+@description('Microsoft Entra ID tenant ID (or "common" for multi-tenant).')
+param entraTenantId string = 'common'
+
+@secure()
+@description('Flask session encryption secret key.')
+param flaskSecretKey string = 'ph-stocks-advisor-change-me-in-production'
+
 @description('Docker image tag to deploy.')
 param imageTag string = 'latest'
 
@@ -212,14 +227,22 @@ var sharedEnv = [
   { name: 'LANGSMITH_API_KEY', secretRef: 'langsmith-api-key' }
   { name: 'LANGSMITH_TRACING', value: 'true' }
   { name: 'LANGSMITH_PROJECT', value: langsmithProject }
+  { name: 'ENTRA_CLIENT_ID', secretRef: 'entra-client-id' }
+  { name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }
+  { name: 'ENTRA_TENANT_ID', value: entraTenantId }
+  { name: 'ENTRA_REDIRECT_PATH', value: '/auth/callback' }
+  { name: 'FLASK_SECRET_KEY', secretRef: 'flask-secret-key' }
 ]
 
 var secrets = [
   { name: 'openai-api-key', value: openaiApiKey }
-  { name: 'tavily-api-key', value: tavilyApiKey }
+  { name: 'tavily-api-key', value: empty(tavilyApiKey) ? 'NOTSET' : tavilyApiKey }
   { name: 'postgres-dsn', value: 'postgresql://${pgAdminUser}:${pgAdminPassword}@${pgServer.properties.fullyQualifiedDomainName}:5432/${pgDatabaseName}?sslmode=require' }
   { name: 'redis-url', value: redisInternalUrl }
-  { name: 'langsmith-api-key', value: langsmithApiKey }
+  { name: 'langsmith-api-key', value: empty(langsmithApiKey) ? 'NOTSET' : langsmithApiKey }
+  { name: 'entra-client-id', value: empty(entraClientId) ? 'NOTSET' : entraClientId }
+  { name: 'entra-client-secret', value: empty(entraClientSecret) ? 'NOTSET' : entraClientSecret }
+  { name: 'flask-secret-key', value: flaskSecretKey }
   { name: 'acr-password', value: acr.listCredentials().passwords[0].value }
 ]
 
