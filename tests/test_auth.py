@@ -28,6 +28,8 @@ def _entra_env(monkeypatch):
     monkeypatch.setenv("ENTRA_CLIENT_SECRET", "test-secret")
     monkeypatch.setenv("ENTRA_TENANT_ID", "test-tenant")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret-key")
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
     # Avoid real DB / Redis during auth tests
     monkeypatch.setenv("DB_BACKEND", "sqlite")
     monkeypatch.setenv("SQLITE_PATH", ":memory:")
@@ -35,10 +37,25 @@ def _entra_env(monkeypatch):
 
 @pytest.fixture
 def _no_entra_env(monkeypatch):
-    """Ensure Entra ID is *not* configured (anonymous access)."""
+    """Ensure no identity provider is configured (anonymous access)."""
     monkeypatch.delenv("ENTRA_CLIENT_ID", raising=False)
     monkeypatch.delenv("ENTRA_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("ENTRA_TENANT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+
+
+@pytest.fixture
+def _google_env(monkeypatch):
+    """Set Google OAuth2 environment variables for testing."""
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-google-client-id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-google-secret")
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret-key")
+    monkeypatch.delenv("ENTRA_CLIENT_ID", raising=False)
+    monkeypatch.delenv("ENTRA_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("ENTRA_TENANT_ID", raising=False)
+    monkeypatch.setenv("DB_BACKEND", "sqlite")
+    monkeypatch.setenv("SQLITE_PATH", ":memory:")
 
 
 @pytest.fixture
@@ -69,7 +86,7 @@ def client(app):
 
 @pytest.fixture
 def anon_app(_no_entra_env) -> Flask:
-    """Create a Flask test app *without* Entra ID (anonymous mode)."""
+    """Create a Flask test app *without* any auth provider (anonymous mode)."""
     from ph_stocks_advisor.infra.config import get_settings
 
     get_settings.cache_clear()
@@ -77,6 +94,8 @@ def anon_app(_no_entra_env) -> Flask:
     s.entra_client_id = ""
     s.entra_client_secret = ""
     s.entra_tenant_id = "common"
+    s.google_client_id = ""
+    s.google_client_secret = ""
 
     application = create_app()
     application.config["TESTING"] = True
@@ -87,6 +106,31 @@ def anon_app(_no_entra_env) -> Flask:
 @pytest.fixture
 def anon_client(anon_app):
     return anon_app.test_client()
+
+
+@pytest.fixture
+def google_app(_google_env) -> Flask:
+    """Create a Flask test app with Google OAuth2 configured."""
+    from ph_stocks_advisor.infra.config import get_settings
+
+    get_settings.cache_clear()
+    s = get_settings()
+    s.entra_client_id = ""
+    s.entra_client_secret = ""
+    s.entra_tenant_id = "common"
+    s.google_client_id = "test-google-client-id"
+    s.google_client_secret = "test-google-secret"
+    s.flask_secret_key = "test-secret-key"
+
+    application = create_app()
+    application.config["TESTING"] = True
+    yield application
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def google_client(google_app):
+    return google_app.test_client()
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +242,7 @@ class TestCallback:
         with client.session_transaction() as sess:
             assert sess["user"]["name"] == "Juan Dela Cruz"
             assert sess["user"]["email"] == "juan@example.com"
+            assert sess["user"]["provider"] == "microsoft"
 
     def test_callback_state_mismatch_redirects_to_login(self, client):
         with client.session_transaction() as sess:
@@ -233,9 +278,14 @@ class TestLogout:
     """The /auth/logout route clears the session and redirects."""
 
     def test_logout_clears_session(self, client):
-        # Simulate a logged-in user.
+        # Simulate a logged-in Microsoft user.
         with client.session_transaction() as sess:
-            sess["user"] = {"name": "Test", "email": "t@e.com", "oid": "123"}
+            sess["user"] = {
+                "name": "Test",
+                "email": "t@e.com",
+                "oid": "123",
+                "provider": "microsoft",
+            }
 
         resp = client.get("/auth/logout")
         assert resp.status_code == 302
@@ -264,3 +314,105 @@ class TestAuthenticatedAccess:
 
         resp = client.get("/")
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Tests — Google OAuth2 sign-in
+# ---------------------------------------------------------------------------
+
+
+class TestGoogleSignin:
+    """The /auth/google/signin route redirects to Google's auth endpoint."""
+
+    def test_google_signin_redirects_to_google(self, google_client):
+        resp = google_client.get("/auth/google/signin")
+        assert resp.status_code == 302
+        assert "accounts.google.com" in resp.headers["Location"]
+        assert "test-google-client-id" in resp.headers["Location"]
+
+    def test_login_page_shows_google_button(self, google_client):
+        resp = google_client.get("/auth/login")
+        assert resp.status_code == 200
+        assert b"Sign in with Google" in resp.data
+
+
+class TestGoogleCallback:
+    """The /auth/google/callback route exchanges the code for user info."""
+
+    @patch("ph_stocks_advisor.web.auth.http_requests.get")
+    @patch("ph_stocks_advisor.web.auth.http_requests.post")
+    def test_google_callback_sets_session_user(
+        self, mock_post, mock_get, google_client
+    ):
+        # Mock token exchange.
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"access_token": "fake-access-token"},
+        )
+        # Mock userinfo.
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "name": "Maria Santos",
+                "email": "maria@gmail.com",
+                "sub": "google-sub-456",
+            },
+        )
+
+        with google_client.session_transaction() as sess:
+            sess["google_state"] = "test-google-state"
+
+        resp = google_client.get(
+            "/auth/google/callback?code=test-code&state=test-google-state"
+        )
+        assert resp.status_code == 302
+
+        with google_client.session_transaction() as sess:
+            assert sess["user"]["name"] == "Maria Santos"
+            assert sess["user"]["email"] == "maria@gmail.com"
+            assert sess["user"]["provider"] == "google"
+
+    def test_google_callback_state_mismatch(self, google_client):
+        with google_client.session_transaction() as sess:
+            sess["google_state"] = "good-state"
+
+        resp = google_client.get(
+            "/auth/google/callback?code=test-code&state=bad-state"
+        )
+        assert resp.status_code == 302
+        assert "/auth/login" in resp.headers["Location"]
+
+    @patch("ph_stocks_advisor.web.auth.http_requests.post")
+    def test_google_callback_token_error(self, mock_post, google_client):
+        mock_post.return_value = MagicMock(
+            status_code=400, text="invalid_grant"
+        )
+
+        with google_client.session_transaction() as sess:
+            sess["google_state"] = "test-state"
+
+        resp = google_client.get(
+            "/auth/google/callback?code=bad-code&state=test-state"
+        )
+        assert resp.status_code == 200
+        assert b"Could not exchange" in resp.data
+
+
+class TestGoogleLogout:
+    """Google users get redirected to the login page on logout."""
+
+    def test_google_user_logout_redirects_to_login(self, google_client):
+        with google_client.session_transaction() as sess:
+            sess["user"] = {
+                "name": "Maria",
+                "email": "m@gmail.com",
+                "oid": "456",
+                "provider": "google",
+            }
+
+        resp = google_client.get("/auth/logout")
+        assert resp.status_code == 302
+        assert "/auth/login" in resp.headers["Location"]
+
+        with google_client.session_transaction() as sess:
+            assert "user" not in sess

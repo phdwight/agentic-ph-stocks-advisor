@@ -1,10 +1,13 @@
 """
-Microsoft Entra ID authentication blueprint.
+Authentication blueprint -- Microsoft Entra ID + Google OAuth2.
 
 Single Responsibility: handles all OAuth2 / OpenID Connect interactions
-with Microsoft Entra ID (formerly Azure AD).  Passkey (FIDO2) support
-is configured on the Entra ID tenant side; this module drives the
-standard authorization-code flow via MSAL.
+for sign-in.  Supports two identity providers:
+
+* **Microsoft Entra ID** -- via MSAL (authorization-code flow), with
+  optional FIDO2 passkey support configured on the tenant side.
+* **Google** -- standard OAuth2 authorization-code flow using plain HTTP
+  requests (no extra library).
 
 Dependency Inversion: depends on the Settings abstraction from
 ``infra.config`` rather than reading environment variables directly.
@@ -16,8 +19,10 @@ import logging
 import uuid
 from functools import wraps
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 import msal
+import requests as http_requests
 from flask import (
     Blueprint,
     redirect,
@@ -33,8 +38,14 @@ logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
-# OIDC scopes — User.Read gives us the signed-in user's profile.
+# Microsoft OIDC scopes — User.Read gives us the signed-in user's profile.
 _SCOPES = ["User.Read"]
+
+# Google OAuth2 endpoints.
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+_GOOGLE_SCOPES = "openid email profile"
 
 
 # ---------------------------------------------------------------------------
@@ -80,8 +91,8 @@ def login_required(f: Callable) -> Callable:
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
         settings = get_settings()
-        # If Entra ID is not configured, allow anonymous access.
-        if not settings.entra_client_id or settings.entra_client_id == "NOTSET":
+        # If no identity provider is configured, allow anonymous access.
+        if not settings.auth_enabled:
             return f(*args, **kwargs)
         if get_current_user() is None:
             session["next_url"] = request.url
@@ -98,11 +109,15 @@ def login_required(f: Callable) -> Callable:
 
 @auth_bp.route("/login")
 def login():
-    """Render the login page with a 'Sign in with Microsoft' button."""
+    """Render the login page with available sign-in buttons."""
     settings = get_settings()
-    if not settings.entra_client_id or settings.entra_client_id == "NOTSET":
+    if not settings.auth_enabled:
         return redirect(url_for("index"))
-    return render_template("login.html")
+    return render_template(
+        "login.html",
+        entra_enabled=settings.entra_enabled,
+        google_enabled=settings.google_enabled,
+    )
 
 
 @auth_bp.route("/signin")
@@ -173,6 +188,7 @@ def callback():
         "name": id_claims.get("name", ""),
         "email": id_claims.get("preferred_username", ""),
         "oid": id_claims.get("oid", ""),
+        "provider": "microsoft",
     }
 
     logger.info("User signed in: %s", session["user"].get("email"))
@@ -182,18 +198,138 @@ def callback():
     return redirect(next_url)
 
 
+# ---------------------------------------------------------------------------
+# Google OAuth2 routes
+# ---------------------------------------------------------------------------
+
+
+@auth_bp.route("/google/signin")
+def google_signin():
+    """Initiate Google OAuth2 authorization-code flow."""
+    settings = get_settings()
+    session["google_state"] = str(uuid.uuid4())
+
+    redirect_uri = (
+        request.url_root.rstrip("/") + settings.google_redirect_path
+    )
+    params = urlencode(
+        {
+            "client_id": settings.google_client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": _GOOGLE_SCOPES,
+            "state": session["google_state"],
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+    )
+    return redirect(f"{_GOOGLE_AUTH_URL}?{params}")
+
+
+@auth_bp.route("/google/callback")
+def google_callback():
+    """Handle the redirect from Google after authentication."""
+    settings = get_settings()
+
+    # CSRF check.
+    if request.args.get("state") != session.get("google_state"):
+        logger.warning("State mismatch in Google auth callback.")
+        return redirect(url_for("auth.login"))
+
+    if "error" in request.args:
+        logger.error("Google auth error: %s", request.args.get("error"))
+        return render_template(
+            "login.html",
+            error=request.args.get("error_description", "Google authentication failed."),
+            entra_enabled=settings.entra_enabled,
+            google_enabled=settings.google_enabled,
+        )
+
+    code = request.args.get("code")
+    if not code:
+        return redirect(url_for("auth.login"))
+
+    redirect_uri = (
+        request.url_root.rstrip("/") + settings.google_redirect_path
+    )
+
+    # Exchange authorization code for tokens.
+    token_resp = http_requests.post(
+        _GOOGLE_TOKEN_URL,
+        data={
+            "code": code,
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+        timeout=10,
+    )
+
+    if token_resp.status_code != 200:
+        logger.error("Google token exchange failed: %s", token_resp.text)
+        return render_template(
+            "login.html",
+            error="Could not exchange Google authorization code.",
+            entra_enabled=settings.entra_enabled,
+            google_enabled=settings.google_enabled,
+        )
+
+    tokens = token_resp.json()
+    access_token = tokens.get("access_token")
+
+    # Fetch user profile from Google.
+    userinfo_resp = http_requests.get(
+        _GOOGLE_USERINFO_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+
+    if userinfo_resp.status_code != 200:
+        logger.error("Google userinfo request failed: %s", userinfo_resp.text)
+        return render_template(
+            "login.html",
+            error="Could not retrieve Google user profile.",
+            entra_enabled=settings.entra_enabled,
+            google_enabled=settings.google_enabled,
+        )
+
+    userinfo = userinfo_resp.json()
+    session["user"] = {
+        "name": userinfo.get("name", ""),
+        "email": userinfo.get("email", ""),
+        "oid": userinfo.get("sub", ""),
+        "provider": "google",
+    }
+
+    logger.info("Google user signed in: %s", session["user"].get("email"))
+
+    next_url = session.pop("next_url", None) or url_for("index")
+    return redirect(next_url)
+
+
+# ---------------------------------------------------------------------------
+# Logout
+# ---------------------------------------------------------------------------
+
+
 @auth_bp.route("/logout")
 def logout():
-    """Sign the user out locally and redirect to Entra ID logout."""
+    """Sign the user out locally and redirect to the appropriate logout endpoint."""
     settings = get_settings()
+    provider = session.get("user", {}).get("provider")
     session.clear()
 
-    if not settings.entra_client_id:
+    if not settings.auth_enabled:
         return redirect(url_for("index"))
 
-    # Redirect to Microsoft's logout endpoint.
-    logout_url = (
-        f"{settings.entra_authority}/oauth2/v2.0/logout"
-        f"?post_logout_redirect_uri={request.url_root.rstrip('/')}"
-    )
-    return redirect(logout_url)
+    # If the user signed in via Microsoft, redirect to Entra's logout.
+    if provider != "google" and settings.entra_enabled:
+        logout_url = (
+            f"{settings.entra_authority}/oauth2/v2.0/logout"
+            f"?post_logout_redirect_uri={request.url_root.rstrip('/')}"
+        )
+        return redirect(logout_url)
+
+    # Otherwise (Google or unknown), just redirect to the login page.
+    return redirect(url_for("auth.login"))

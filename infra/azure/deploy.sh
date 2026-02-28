@@ -43,6 +43,8 @@ ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
 ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET:-}"
 ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-common}"
 FLASK_SECRET_KEY="${FLASK_SECRET_KEY:-ph-stocks-advisor-change-me-in-production}"
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
 
 # ── Parse flags ──────────────────────────────────────────────────────────────
 UPDATE_ONLY=false
@@ -88,6 +90,8 @@ if [[ "$UPDATE_ONLY" == false ]]; then
       entraClientSecret="$ENTRA_CLIENT_SECRET" \
       entraTenantId="$ENTRA_TENANT_ID" \
       flaskSecretKey="$FLASK_SECRET_KEY" \
+      googleClientId="$GOOGLE_CLIENT_ID" \
+      googleClientSecret="$GOOGLE_CLIENT_SECRET" \
       imageTag="$IMAGE_TAG" \
     --query properties.outputs \
     --output json)

@@ -66,6 +66,14 @@ param entraTenantId string = 'common'
 @description('Flask session encryption secret key.')
 param flaskSecretKey string = 'ph-stocks-advisor-change-me-in-production'
 
+@secure()
+@description('Google OAuth2 client ID (optional — leave empty to disable Google login).')
+param googleClientId string = ''
+
+@secure()
+@description('Google OAuth2 client secret.')
+param googleClientSecret string = ''
+
 @description('Docker image tag to deploy.')
 param imageTag string = 'latest'
 
@@ -232,6 +240,9 @@ var sharedEnv = [
   { name: 'ENTRA_TENANT_ID', value: entraTenantId }
   { name: 'ENTRA_REDIRECT_PATH', value: '/auth/callback' }
   { name: 'FLASK_SECRET_KEY', secretRef: 'flask-secret-key' }
+  { name: 'GOOGLE_CLIENT_ID', secretRef: 'google-client-id' }
+  { name: 'GOOGLE_CLIENT_SECRET', secretRef: 'google-client-secret' }
+  { name: 'GOOGLE_REDIRECT_PATH', value: '/auth/google/callback' }
 ]
 
 var secrets = [
@@ -243,6 +254,8 @@ var secrets = [
   { name: 'entra-client-id', value: empty(entraClientId) ? 'NOTSET' : entraClientId }
   { name: 'entra-client-secret', value: empty(entraClientSecret) ? 'NOTSET' : entraClientSecret }
   { name: 'flask-secret-key', value: flaskSecretKey }
+  { name: 'google-client-id', value: empty(googleClientId) ? 'NOTSET' : googleClientId }
+  { name: 'google-client-secret', value: empty(googleClientSecret) ? 'NOTSET' : googleClientSecret }
   { name: 'acr-password', value: acr.listCredentials().passwords[0].value }
 ]
 

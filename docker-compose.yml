@@ -71,6 +71,10 @@ services:
       ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-common}
       ENTRA_REDIRECT_PATH: ${ENTRA_REDIRECT_PATH:-/auth/callback}
       FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-ph-stocks-advisor-change-me-in-production}
+      # ── Google OAuth2 (social login) ──────────────────────────────────────
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_PATH: ${GOOGLE_REDIRECT_PATH:-/auth/google/callback}
       # ── LangSmith (optional) ──────────────────────────────────────────────
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}

@@ -82,6 +82,32 @@ class Settings:
     def entra_authority(self) -> str:
         return f"https://login.microsoftonline.com/{self.entra_tenant_id}"
 
+    # -- Google OAuth2 ---------------------------------------------------------
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    google_redirect_path: str = os.getenv(
+        "GOOGLE_REDIRECT_PATH", "/auth/google/callback"
+    )
+
+    @property
+    def auth_enabled(self) -> bool:
+        """True when at least one identity provider is configured."""
+        ms_ok = self.entra_client_id and self.entra_client_id != "NOTSET"
+        g_ok = self.google_client_id and self.google_client_id != "NOTSET"
+        return bool(ms_ok or g_ok)
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(
+            self.google_client_id and self.google_client_id != "NOTSET"
+        )
+
+    @property
+    def entra_enabled(self) -> bool:
+        return bool(
+            self.entra_client_id and self.entra_client_id != "NOTSET"
+        )
+
     # -- HTTP timeouts (seconds) -----------------------------------------------
     http_timeout: int = int(os.getenv("HTTP_TIMEOUT", "15"))
 

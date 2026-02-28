@@ -171,9 +171,11 @@ The web interface lets you enter a stock symbol, kicks off the analysis in the b
 
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis.
 
-### Authentication (Microsoft Entra ID + Passkeys)
+### Authentication (Microsoft Entra ID + Google OAuth2)
 
-The web UI supports **Microsoft Entra ID** (formerly Azure AD) login with **passkey (FIDO2)** support. When configured, users must sign in before accessing any page.
+The web UI supports **Microsoft Entra ID** and **Google** login with **passkey (FIDO2)** support. When at least one provider is configured, users must sign in before accessing any page. Both providers can be enabled simultaneously.
+
+#### Microsoft Entra ID
 
 1. **Register an app** in the [Azure portal](https://portal.azure.com) → Microsoft Entra ID → App registrations:
    - **Redirect URI** → `http://localhost:5000/auth/callback` (Web platform)
@@ -188,7 +190,20 @@ ENTRA_TENANT_ID=<your-tenant-id>   # or "common" for multi-tenant
 FLASK_SECRET_KEY=<random-secret>
 ```
 
-When `ENTRA_CLIENT_ID` is **not set**, authentication is disabled and all routes are publicly accessible (useful for local development).
+#### Google OAuth2
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. Create an **OAuth 2.0 Client ID** (Web application type):
+   - **Authorized redirect URI** → `http://localhost:5000/auth/google/callback`
+   - For Azure deployment also add: `https://<your-app>.azurecontainerapps.io/auth/google/callback`
+3. Set the environment variables:
+
+```bash
+GOOGLE_CLIENT_ID=<your-google-client-id>
+GOOGLE_CLIENT_SECRET=<your-google-client-secret>
+```
+
+When **neither** `ENTRA_CLIENT_ID` nor `GOOGLE_CLIENT_ID` is set, authentication is disabled and all routes are publicly accessible (useful for local development).
 
 ### Azure (Cloud Deployment)
 
@@ -284,13 +299,13 @@ ph_stocks_advisor/
 ├── web/                       # Flask web application + Celery worker
 │   ├── __init__.py
 │   ├── app.py                 #   Flask factory, routes, CLI (ph-advisor-web)
-│   ├── auth.py                #   Entra ID (OIDC/passkey) authentication blueprint
+│   ├── auth.py                #   Entra ID + Google OAuth2 authentication blueprint
 │   ├── celery_app.py          #   Celery instance & configuration
 │   ├── tasks.py               #   Celery task definitions (analyse_stock)
 │   ├── templates/             #   Jinja2 HTML templates
 │   │   ├── base.html          #     Shared layout
 │   │   ├── index.html         #     Landing page with analysis form
-│   │   ├── login.html         #     Sign-in page (Microsoft button)
+│   │   ├── login.html         #     Sign-in page (Microsoft + Google buttons)
 │   │   ├── report.html        #     Single report view
 │   │   ├── history.html       #     Report history table
 │   │   └── no_report.html     #     404 / no report found
@@ -389,5 +404,8 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `ENTRA_CLIENT_ID` | No | — | Microsoft Entra ID application (client) ID (enables login) |
 | `ENTRA_CLIENT_SECRET` | No | — | Entra ID client secret |
 | `ENTRA_TENANT_ID` | No | `common` | Entra ID tenant ID (or `common` for multi-tenant) |
-| `ENTRA_REDIRECT_PATH` | No | `/auth/callback` | OAuth2 redirect path |
+| `ENTRA_REDIRECT_PATH` | No | `/auth/callback` | OAuth2 redirect path (Microsoft) |
+| `GOOGLE_CLIENT_ID` | No | — | Google OAuth2 client ID (enables Google login) |
+| `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth2 client secret |
+| `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
 | `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
