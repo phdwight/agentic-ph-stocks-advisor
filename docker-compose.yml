@@ -117,5 +117,20 @@ services:
     #   docker compose run --rm advisor SM BDO --pdf
     command: ["TEL"]
 
+  # ── SQLAdmin (database admin panel) ────────────────────────────────────────
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${ADMIN_PORT:-8085}:8085"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:-ph_advisor}@db:5432/${POSTGRES_DB:-ph_advisor}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-sqladmin-dev-secret-change-me}
+    restart: unless-stopped
+
 volumes:
   pgdata:

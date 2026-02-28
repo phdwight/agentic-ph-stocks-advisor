@@ -54,14 +54,24 @@
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     {% if current_user %}your analysed stocks{% else %}previously analysed stocks{% endif %}
   </h2>
-  <div class="stock-chips" id="stock-chips">
-    {% for stock in recent_stocks %}
-    <a href="/report/{{ stock.symbol }}" class="stock-chip" data-symbol="{{ stock.symbol }}">
-      <span class="chip-symbol">{{ stock.symbol }}</span>
-      <span class="chip-verdict badge-sm {{ 'buy' if stock.verdict == 'BUY' else 'not-buy' }}">{{ stock.verdict }}</span>
-      <span class="chip-date">{{ stock.created_at.strftime('%b %d') }}</span>
-    </a>
-    {% endfor %}
+  <div class="stock-chips-wrapper">
+    <div class="stock-chips" id="stock-chips">
+      {% for stock in recent_stocks %}
+      <a href="/report/{{ stock.symbol }}" class="stock-chip" data-symbol="{{ stock.symbol }}">
+        <span class="chip-symbol">{{ stock.symbol }}</span>
+        <span class="chip-verdict badge-sm {{ 'buy' if stock.verdict == 'BUY' else 'not-buy' }}">{{ stock.verdict }}</span>
+        <span class="chip-date">{{ stock.created_at.strftime('%b %d') }}</span>
+      </a>
+      {% endfor %}
+      {# Duplicate for seamless infinite scroll #}
+      {% for stock in recent_stocks %}
+      <a href="/report/{{ stock.symbol }}" class="stock-chip" aria-hidden="true" tabindex="-1">
+        <span class="chip-symbol">{{ stock.symbol }}</span>
+        <span class="chip-verdict badge-sm {{ 'buy' if stock.verdict == 'BUY' else 'not-buy' }}">{{ stock.verdict }}</span>
+        <span class="chip-date">{{ stock.created_at.strftime('%b %d') }}</span>
+      </a>
+      {% endfor %}
+    </div>
   </div>
 </section>
 

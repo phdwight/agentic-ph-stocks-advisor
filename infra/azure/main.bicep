@@ -74,6 +74,10 @@ param googleClientId string = ''
 @description('Google OAuth2 client secret.')
 param googleClientSecret string = ''
 
+@secure()
+@description('Secret key for the SQLAdmin session middleware.')
+param adminSecretKey string = 'sqladmin-change-me-in-production'
+
 @description('Docker image tag to deploy.')
 param imageTag string = 'latest'
 
@@ -268,6 +272,7 @@ var registries = [
 ]
 
 var imageName = '${acr.properties.loginServer}/ph-stocks-advisor:${imageTag}'
+var adminImageName = '${acr.properties.loginServer}/ph-stocks-advisor-admin:${imageTag}'
 
 // ── Container App: web ──────────────────────────────────────────────────────
 
@@ -351,10 +356,55 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
   }
 }
 
+// ── Container App: admin (SQLAdmin panel) ───────────────────────────────────
+
+resource adminApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: '${appName}-admin'
+  location: location
+  properties: {
+    managedEnvironmentId: containerAppEnv.id
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 8085
+        transport: 'auto'
+        allowInsecure: false
+      }
+      registries: registries
+      secrets: [
+        { name: 'postgres-dsn', value: 'postgresql://${pgAdminUser}:${pgAdminPassword}@${pgServer.properties.fullyQualifiedDomainName}:5432/${pgDatabaseName}?sslmode=require' }
+        { name: 'admin-secret-key', value: adminSecretKey }
+        { name: 'acr-password', value: acr.listCredentials().passwords[0].value }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'admin'
+          image: adminImageName
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+          env: [
+            { name: 'DATABASE_URL', secretRef: 'postgres-dsn' }
+            { name: 'ADMIN_SECRET_KEY', secretRef: 'admin-secret-key' }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 1
+      }
+    }
+  }
+}
+
 // ── Outputs ─────────────────────────────────────────────────────────────────
 
 output acrLoginServer string = acr.properties.loginServer
 output acrName string = acr.name
 output webAppUrl string = 'https://${webApp.properties.configuration.ingress.fqdn}'
+output adminAppUrl string = 'https://${adminApp.properties.configuration.ingress.fqdn}'
 output pgServerFqdn string = pgServer.properties.fullyQualifiedDomainName
 output redisInternalFqdn string = redisApp.properties.configuration.ingress.fqdn

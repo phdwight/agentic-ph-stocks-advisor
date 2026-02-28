@@ -214,6 +214,7 @@ Deploy to **Azure Container Apps** with managed PostgreSQL and Redis. All infras
 | **Container Registry** | Stores the Docker image |
 | **Container Apps — web** | Flask web UI (HTTPS, auto-scaling) |
 | **Container Apps — worker** | Celery worker (scales with queue depth) |
+| **Container Apps — admin** | SQLAdmin database panel (HTTPS) |
 | **Database for PostgreSQL** | Flexible Server (Burstable B1ms, 32 GB) |
 | **Cache for Redis** | Basic C0 (TLS only) |
 | **Log Analytics** | Container logs & monitoring |
@@ -237,9 +238,9 @@ export AZURE_PG_PASSWORD='<strong-password>'
 The script will:
 1. Create a resource group (`ph-stocks-advisor-rg` in `southeastasia`)
 2. Provision all Azure resources via Bicep
-3. Build the Docker image and push it to ACR
-4. Update both Container Apps with the new image
-5. Print the public HTTPS URL
+3. Build the web and admin Docker images and push them to ACR
+4. Update all Container Apps (web, worker, admin) with the new images
+5. Print the public HTTPS URLs for the web UI and admin panel
 
 #### Update after code changes
 
@@ -285,8 +286,12 @@ All tests run offline with mocked data sources and mocked LLM calls — no API k
 
 ```
 Dockerfile                         # Multi-stage container image
-docker-compose.yml                 # Compose v2 (app + Postgres)
+docker-compose.yml                 # Compose v2 (app + Postgres + admin)
 .dockerignore                      # Files excluded from Docker build context
+admin/                             # SQLAdmin database panel
+├── app.py                     #   Flask + SQLAdmin wiring & model views
+├── Dockerfile                 #   Container image for admin panel
+└── requirements.txt           #   Python dependencies
 infra/
 └── azure/                     # Azure deployment (IaC)
     ├── main.bicep             #   Bicep template (all resources)
@@ -403,6 +408,8 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection URL (broker + result backend for Celery) |
 | `REDIS_PORT` | No | `6379` | Host port for Redis (Docker Compose only) |
 | `WEB_PORT` | No | `5000` | Host port for the Flask web UI (Docker Compose only) |
+| `ADMIN_PORT` | No | `8085` | Host port for the SQLAdmin panel (Docker Compose only) |
+| `ADMIN_SECRET_KEY` | No | `sqladmin-dev-…` | Flask secret key for the admin panel |
 | `ENTRA_CLIENT_ID` | No | — | Microsoft Entra ID application (client) ID (enables login) |
 | `ENTRA_CLIENT_SECRET` | No | — | Entra ID client secret |
 | `ENTRA_TENANT_ID` | No | `common` | Entra ID tenant ID (or `common` for multi-tenant) |
