@@ -63,14 +63,6 @@
         <span class="chip-date">{{ stock.created_at.strftime('%b %d') }}</span>
       </a>
       {% endfor %}
-      {# Duplicate for seamless infinite scroll #}
-      {% for stock in recent_stocks %}
-      <a href="/report/{{ stock.symbol }}" class="stock-chip" aria-hidden="true" tabindex="-1">
-        <span class="chip-symbol">{{ stock.symbol }}</span>
-        <span class="chip-verdict badge-sm {{ 'buy' if stock.verdict == 'BUY' else 'not-buy' }}">{{ stock.verdict }}</span>
-        <span class="chip-date">{{ stock.created_at.strftime('%b %d') }}</span>
-      </a>
-      {% endfor %}
     </div>
   </div>
 </section>

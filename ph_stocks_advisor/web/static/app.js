@@ -63,6 +63,82 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ================================================================== */
+  /*  Carousel: build row tracks for seamless marquee                   */
+  /* ================================================================== */
+
+  function calibrateCarousel() {
+    const el = document.getElementById("stock-chips");
+    const wrapper = document.querySelector(".stock-chips-wrapper");
+    if (!el || !wrapper) return;
+
+    // 1. Flatten — move chips out of any existing row tracks
+    el.querySelectorAll(".stock-chips-row").forEach(row => {
+      while (row.firstChild) el.appendChild(row.firstChild);
+      row.remove();
+    });
+
+    // 2. Remove all duplicates (we'll re-create them per-row)
+    el.querySelectorAll('[aria-hidden="true"]').forEach(d => d.remove());
+
+    // 3. Gather originals
+    const originals = Array.from(el.querySelectorAll(".stock-chip"));
+    const count = originals.length;
+    if (count === 0) return;
+
+    // ≤5 chips → static centered row, no animation
+    if (count <= 5) {
+      wrapper.setAttribute("data-static", "");
+      el.classList.add("calibrated");
+      return;
+    }
+
+    // >5 chips → marquee mode with independent row tracks
+    wrapper.removeAttribute("data-static");
+    const numRows = count <= 10 ? 2 : 3;
+
+    // 4. Create row track elements
+    const rowEls = [];
+    for (let i = 0; i < numRows; i++) {
+      const row = document.createElement("div");
+      row.className = "stock-chips-row";
+      rowEls.push(row);
+      el.appendChild(row);
+    }
+
+    // 5. Distribute chips round-robin across rows
+    originals.forEach((chip, i) => {
+      rowEls[i % numRows].appendChild(chip);
+    });
+
+    // 6. Duplicate each row's chips for seamless infinite scroll
+    rowEls.forEach(row => {
+      Array.from(row.children).forEach(chip => {
+        const dupe = chip.cloneNode(true);
+        dupe.setAttribute("aria-hidden", "true");
+        dupe.removeAttribute("data-symbol");
+        dupe.tabIndex = -1;
+        row.appendChild(dupe);
+      });
+    });
+
+    // 7. Set animation speed per row (~50 px/s)
+    const PX_PER_SEC = 50;
+    rowEls.forEach((row, i) => {
+      const halfWidth = row.scrollWidth / 2;
+      if (halfWidth <= 0) return;
+      const base = Math.max(6, halfWidth / PX_PER_SEC);
+      // Slight speed offset between rows for visual depth
+      const duration = base * (1 + i * 0.12);
+      row.style.setProperty("--row-duration", `${duration.toFixed(1)}s`);
+      // Stagger start so rows aren't synchronised
+      row.style.animationDelay = `${(-i * 1.5).toFixed(1)}s`;
+    });
+
+    // Reveal once layout is ready
+    el.classList.add("calibrated");
+  }
+
+  /* ================================================================== */
   /*  Dynamically add a chip to "Previously Analysed Stocks"            */
   /* ================================================================== */
 
@@ -82,40 +158,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const dateStr = `${monthNames[now.getMonth()]} ${String(now.getDate()).padStart(2, "0")}`;
 
-    const chipHTML = `
-      <span class="chip-symbol">${symbol}</span>
-      <span class="chip-verdict badge-sm ${isBuy ? "buy" : "not-buy"}">${isBuy ? "BUY" : "NOT BUY"}</span>
-      <span class="chip-date">${dateStr}</span>`;
-
-    // Primary chip (interactive)
     const chip = document.createElement("a");
     chip.href = `/report/${symbol}`;
     chip.className = "stock-chip stock-chip-new";
     chip.dataset.symbol = symbol;
-    chip.innerHTML = chipHTML;
+    chip.innerHTML = `
+      <span class="chip-symbol">${symbol}</span>
+      <span class="chip-verdict badge-sm ${isBuy ? "buy" : "not-buy"}">${isBuy ? "BUY" : "NOT BUY"}</span>
+      <span class="chip-date">${dateStr}</span>`;
 
-    // Duplicate chip for seamless carousel loop
-    const dupe = document.createElement("a");
-    dupe.href = `/report/${symbol}`;
-    dupe.className = "stock-chip";
-    dupe.setAttribute("aria-hidden", "true");
-    dupe.tabIndex = -1;
-    dupe.innerHTML = chipHTML;
-
-    // Insert primary at start, duplicate at midpoint (after original set)
+    // Prepend chip then let calibrateCarousel redistribute
     chipsContainer.prepend(chip);
-    // Find the first aria-hidden chip (start of duplicate set) and prepend there
-    const firstDupe = chipsContainer.querySelector('[aria-hidden="true"]');
-    if (firstDupe) {
-      chipsContainer.insertBefore(dupe, firstDupe);
-    } else {
-      chipsContainer.appendChild(dupe);
-    }
-
-    // Restart animation for seamless looping with new content
-    chipsContainer.style.animation = "none";
-    chipsContainer.offsetHeight; // force reflow
-    chipsContainer.style.animation = "";
+    calibrateCarousel();
   }
 
   /* ================================================================== */
@@ -408,4 +462,7 @@ document.addEventListener("DOMContentLoaded", () => {
       pollStatus(boot[sym].taskId, sym);
     }
   }
+
+  // Calibrate carousel speed on initial load
+  calibrateCarousel();
 });

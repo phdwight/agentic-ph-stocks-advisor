@@ -14,6 +14,7 @@ import os
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from sqlalchemy import (
     Column,
     DateTime,
@@ -144,6 +145,7 @@ secret_key = os.environ.get(
 
 app = Starlette(
     middleware=[
+        Middleware(ProxyHeadersMiddleware, trusted_hosts="*"),
         Middleware(SessionMiddleware, secret_key=secret_key),
     ],
 )

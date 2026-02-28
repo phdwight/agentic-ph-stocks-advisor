@@ -365,7 +365,7 @@ resource adminApp 'Microsoft.App/containerApps@2023-05-01' = {
     managedEnvironmentId: containerAppEnv.id
     configuration: {
       ingress: {
-        external: true
+        external: false
         targetPort: 8085
         transport: 'auto'
         allowInsecure: false

@@ -678,21 +678,53 @@ a:hover {
   max-width: 700px;
   margin: 0 auto;
   /* Fade masks on left & right edges */
-  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
 }
 
+/* Static mode: no overflow, no masks — chips are simply centered */
+.stock-chips-wrapper[data-static] {
+  overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* Hide raw chips until JS has built the row tracks */
 .stock-chips {
   display: flex;
   flex-direction: column;
-  flex-wrap: wrap;
   gap: 0.6rem;
-  height: calc(3 * 2.1rem + 3 * 1rem + 2 * 0.6rem);   /* 3 rows of chips */
-  width: max-content;
-  animation: marquee-scroll 22s linear infinite;
+  visibility: hidden;
 }
 
-.stock-chips:hover {
+.stock-chips.calibrated {
+  visibility: visible;
+}
+
+/* Static mode: single centered row */
+.stock-chips-wrapper[data-static] .stock-chips {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Hide duplicate chips in static mode */
+.stock-chips-wrapper[data-static] .stock-chip[aria-hidden="true"] {
+  display: none;
+}
+
+/* ---------- Individual marquee row track ---------- */
+.stock-chips-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0.6rem;
+  width: max-content;
+  animation: marquee-scroll var(--row-duration, 12s) linear infinite;
+  will-change: transform;
+}
+
+.stock-chips-wrapper:hover .stock-chips-row {
   animation-play-state: paused;
 }
 
@@ -716,14 +748,16 @@ a:hover {
   font-size: 0.82rem;
   transition: all 0.2s;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  position: relative;
+  z-index: 0;
 }
 
 .stock-chip:hover {
   border-color: var(--accent);
-  box-shadow: 0 2px 12px rgba(108, 99, 255, 0.15);
+  box-shadow: 0 2px 12px rgba(108, 99, 255, 0.25);
   background: rgba(108, 99, 255, 0.06);
   color: var(--text);
-  transform: translateY(-1px);
+  z-index: 1;
 }
 
 .stock-chip-new {

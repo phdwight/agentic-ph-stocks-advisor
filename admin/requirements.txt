@@ -1,0 +1,7 @@
+starlette>=0.37
+sqlalchemy>=2.0
+sqladmin>=0.19
+psycopg2-binary>=2.9
+uvicorn[standard]>=0.29
+itsdangerous>=2.1
+httptools>=0.6
