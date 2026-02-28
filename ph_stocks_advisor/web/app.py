@@ -20,12 +20,15 @@ import redis as redis_lib
 from flask import Flask, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from markupsafe import Markup
+
 from ph_stocks_advisor.export.formatter import (
     DATA_SOURCES,
     DISCLAIMER,
     format_timestamp,
     parse_sections,
 )
+from ph_stocks_advisor.export.html import _body_to_html
 from ph_stocks_advisor.infra.config import get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
 
@@ -81,6 +84,11 @@ def create_app() -> Flask:
     # Register the Entra ID authentication blueprint.
     app.register_blueprint(auth_bp)
 
+    @app.template_filter("md_to_html")
+    def md_to_html_filter(text: str) -> Markup:
+        """Convert light-markdown section body to formatted HTML."""
+        return Markup(_body_to_html(text))
+
     @app.context_processor
     def inject_user():
         """Make ``current_user`` available in every template."""
@@ -93,12 +101,25 @@ def create_app() -> Flask:
     @app.route("/")
     @login_required
     def index():
-        """Landing page with the analysis form and previously analysed stocks."""
+        """Landing page with the analysis form and user's analysed stocks.
+
+        Authenticated users see only the stocks they have previously
+        requested.  Anonymous users (auth disabled) see all recent
+        symbols.
+        """
         repo = get_repository()
         try:
-            recent = repo.list_recent_symbols(limit=50)
+            user = get_current_user()
+            if user and user.get("email"):
+                recent = repo.list_user_symbols(
+                    user_id=user["email"], limit=50
+                )
+            else:
+                recent = repo.list_recent_symbols(limit=50)
         except Exception:
             recent = []
+        finally:
+            repo.close()
         return render_template("index.html", recent_stocks=recent)
 
     @app.route("/analyse", methods=["POST"])
@@ -126,6 +147,15 @@ def create_app() -> Flask:
                     symbol,
                     age,
                 )
+                # Track symbol for the current user.
+                user = get_current_user()
+                if user and user.get("email"):
+                    try:
+                        repo2 = get_repository()
+                        repo2.add_user_symbol(user["email"], symbol)
+                        repo2.close()
+                    except Exception:
+                        logger.debug("Failed to record user-symbol link.")
                 return jsonify({
                     "status": "cached",
                     "symbol": symbol,
@@ -153,6 +183,16 @@ def create_app() -> Flask:
 
         # Store the lock so concurrent requests join this task
         r.set(inflight_key, task.id, ex=_INFLIGHT_TTL)
+
+        # Track symbol for the current user.
+        user = get_current_user()
+        if user and user.get("email"):
+            try:
+                repo2 = get_repository()
+                repo2.add_user_symbol(user["email"], symbol)
+                repo2.close()
+            except Exception:
+                logger.debug("Failed to record user-symbol link.")
 
         return jsonify({"status": "started", "symbol": symbol, "task_id": task.id})
 

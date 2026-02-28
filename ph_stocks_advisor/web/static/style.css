@@ -650,6 +650,24 @@ body {
   line-height: 1.7;
 }
 
+.section-body p {
+  margin-bottom: 0.5rem;
+}
+
+.section-body ul {
+  padding-left: 1.4rem;
+  margin-top: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.section-body li {
+  margin-bottom: 0.25rem;
+}
+
+.section-body strong {
+  font-weight: 700;
+}
+
 .report-footer {
   text-align: center;
   padding: 1.5rem 0;

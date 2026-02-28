@@ -155,6 +155,65 @@ class TestSQLiteRepository:
         assert fetched.valuation_section == "Undervalued by 10%."
         assert fetched.controversy_section == "Minor spike in June."
 
+    # ------------------------------------------------------------------
+    # Per-user symbol tracking
+    # ------------------------------------------------------------------
+
+    def test_add_user_symbol_is_idempotent(self, sqlite_repo, sample_report):
+        """Calling add_user_symbol twice for the same pair must not raise."""
+        record = ReportRecord.from_final_report(sample_report)
+        sqlite_repo.save(record)
+        sqlite_repo.add_user_symbol("alice@test.com", "TEL")
+        sqlite_repo.add_user_symbol("alice@test.com", "TEL")  # no error
+
+    def test_list_user_symbols_returns_only_user_stocks(
+        self, sqlite_repo, sample_report
+    ):
+        """Each user should only see the symbols they have analysed."""
+        # Save two different stock reports.
+        r1 = ReportRecord.from_final_report(sample_report)
+        sqlite_repo.save(r1)
+
+        r2 = ReportRecord.from_final_report(
+            sample_report.model_copy(update={"symbol": "SM"})
+        )
+        sqlite_repo.save(r2)
+
+        # Alice analysed TEL only; Bob analysed SM only.
+        sqlite_repo.add_user_symbol("alice@test.com", "TEL")
+        sqlite_repo.add_user_symbol("bob@test.com", "SM")
+
+        alice_stocks = sqlite_repo.list_user_symbols("alice@test.com")
+        bob_stocks = sqlite_repo.list_user_symbols("bob@test.com")
+
+        assert len(alice_stocks) == 1
+        assert alice_stocks[0].symbol == "TEL"
+        assert len(bob_stocks) == 1
+        assert bob_stocks[0].symbol == "SM"
+
+    def test_list_user_symbols_empty_for_new_user(self, sqlite_repo, sample_report):
+        """A user who has never analysed anything sees an empty list."""
+        record = ReportRecord.from_final_report(sample_report)
+        sqlite_repo.save(record)
+        assert sqlite_repo.list_user_symbols("nobody@test.com") == []
+
+    def test_list_user_symbols_returns_latest_report(
+        self, sqlite_repo, sample_report
+    ):
+        """When multiple reports exist for a symbol, the latest is returned."""
+        r1 = ReportRecord.from_final_report(sample_report)
+        sqlite_repo.save(r1)
+
+        r2 = ReportRecord.from_final_report(
+            sample_report.model_copy(update={"summary": "Updated TEL analysis."})
+        )
+        sqlite_repo.save(r2)
+
+        sqlite_repo.add_user_symbol("alice@test.com", "TEL")
+        results = sqlite_repo.list_user_symbols("alice@test.com")
+        assert len(results) == 1
+        assert "Updated TEL analysis" in results[0].summary
+
 
 # ---------------------------------------------------------------------------
 # Repository factory

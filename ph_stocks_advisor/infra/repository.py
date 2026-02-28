@@ -94,6 +94,28 @@ class AbstractReportRepository(abc.ABC):
     def list_recent_symbols(self, limit: int = 50) -> list[ReportRecord]:
         """Return the latest report for each distinct symbol, newest first."""
 
+    # ------------------------------------------------------------------
+    # Per-user symbol tracking
+    # ------------------------------------------------------------------
+
+    @abc.abstractmethod
+    def add_user_symbol(self, user_id: str, symbol: str) -> None:
+        """Record that *user_id* has analysed *symbol*.
+
+        Implementations must be idempotent — calling this twice for the
+        same (user_id, symbol) pair must not raise or create duplicates.
+        """
+
+    @abc.abstractmethod
+    def list_user_symbols(
+        self, user_id: str, limit: int = 50
+    ) -> list[ReportRecord]:
+        """Return the latest report for each symbol the user has analysed.
+
+        Behaves like ``list_recent_symbols`` but scoped to symbols the
+        given user has previously requested.
+        """
+
     @abc.abstractmethod
     def close(self) -> None:
         """Release database resources."""

@@ -34,6 +34,15 @@ CREATE INDEX IF NOT EXISTS idx_reports_symbol_created
 ON reports (symbol, created_at DESC);
 """
 
+_CREATE_USER_SYMBOLS_SQL = """
+CREATE TABLE IF NOT EXISTS user_symbols (
+    user_id    VARCHAR(320) NOT NULL,
+    symbol     VARCHAR(20)  NOT NULL,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, symbol)
+);
+"""
+
 
 class PostgresReportRepository(AbstractReportRepository):
     """PostgreSQL-backed repository — for production / multi-user use."""
@@ -58,6 +67,7 @@ class PostgresReportRepository(AbstractReportRepository):
         with conn.cursor() as cur:
             cur.execute(_CREATE_TABLE_SQL)
             cur.execute(_CREATE_INDEX_SQL)
+            cur.execute(_CREATE_USER_SYMBOLS_SQL)
         conn.commit()
 
     def save(self, record: ReportRecord) -> int:
@@ -128,6 +138,43 @@ class PostgresReportRepository(AbstractReportRepository):
             )
             all_rows = cur.fetchall()
         # Sort by created_at descending across symbols, then apply limit
+        all_rows.sort(key=lambda r: r["created_at"], reverse=True)
+        return [self._row_to_record(r) for r in all_rows[:limit]]
+
+    # ------------------------------------------------------------------
+    # Per-user symbol tracking
+    # ------------------------------------------------------------------
+
+    def add_user_symbol(self, user_id: str, symbol: str) -> None:
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_symbols (user_id, symbol)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id, symbol) DO NOTHING
+                """,
+                (user_id, symbol.upper()),
+            )
+        conn.commit()
+
+    def list_user_symbols(
+        self, user_id: str, limit: int = 50
+    ) -> list[ReportRecord]:
+        conn = self._get_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ON (r.symbol) r.*
+                FROM reports r
+                WHERE r.symbol IN (
+                    SELECT symbol FROM user_symbols WHERE user_id = %s
+                )
+                ORDER BY r.symbol, r.created_at DESC
+                """,
+                (user_id,),
+            )
+            all_rows = cur.fetchall()
         all_rows.sort(key=lambda r: r["created_at"], reverse=True)
         return [self._row_to_record(r) for r in all_rows[:limit]]
 

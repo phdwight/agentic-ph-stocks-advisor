@@ -80,9 +80,29 @@ def _get_token_cache() -> msal.SerializableTokenCache:
     return msal.SerializableTokenCache()
 
 
+# Default identity used when authentication is disabled (local dev).
+_DEV_USER: dict[str, str] = {
+    "name": "Local Developer",
+    "email": "dev@localhost",
+    "oid": "local-dev",
+    "provider": "local",
+}
+
+
 def get_current_user() -> dict[str, Any] | None:
-    """Return the currently signed-in user dict, or ``None``."""
-    return session.get("user")
+    """Return the currently signed-in user dict, or ``None``.
+
+    When authentication is disabled (no identity provider configured),
+    a deterministic dev user is returned so that per-user symbol
+    tracking still works during local development.
+    """
+    user = session.get("user")
+    if user:
+        return user
+    settings = get_settings()
+    if not settings.auth_enabled:
+        return _DEV_USER
+    return None
 
 
 def login_required(f: Callable) -> Callable:

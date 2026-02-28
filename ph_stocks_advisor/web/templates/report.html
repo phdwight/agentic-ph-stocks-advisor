@@ -29,15 +29,10 @@
     <section class="report-section">
       <h2>{{ title }}</h2>
       <div class="section-body">
-        {{ body | replace('\n', '<br>') | safe }}
+        {{ body | md_to_html }}
       </div>
     </section>
     {% endif %}
   {% endfor %}
-</div>
-
-<div class="report-footer">
-  <p class="sources">{{ data_sources }}</p>
-  <p class="disclaimer">{{ disclaimer }}</p>
 </div>
 {% endblock %}

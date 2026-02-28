@@ -44,12 +44,15 @@ def format_timestamp(dt_val: datetime | None) -> str:
     """Format a UTC datetime to the user's configured timezone.
 
     Returns an empty string when *dt_val* is ``None``.
+    The timezone abbreviation (e.g. ``PHT``, ``UTC``) is appended.
     """
     if dt_val is None:
         return ""
     tz = _parse_tz(get_settings().timezone)
     local_dt = dt_val.astimezone(tz)
-    return local_dt.strftime("%B %d, %Y %I:%M:%S %p")
+    formatted = local_dt.strftime("%B %d, %Y %I:%M:%S %p")
+    tz_abbr = local_dt.strftime("%Z") or str(tz)
+    return f"{formatted} {tz_abbr}"
 
 
 # ---------------------------------------------------------------------------

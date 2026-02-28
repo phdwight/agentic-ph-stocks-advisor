@@ -44,7 +44,7 @@
 </div>
 
 <section class="recent-stocks" id="recent-stocks">
-  <h2>Previously Analysed Stocks</h2>
+  <h2>{% if current_user %}Your Analysed Stocks{% else %}Previously Analysed Stocks{% endif %}</h2>
   <div class="stock-chips" id="stock-chips">
     {% for stock in recent_stocks %}
     <a href="/report/{{ stock.symbol }}" class="stock-chip" data-symbol="{{ stock.symbol }}">

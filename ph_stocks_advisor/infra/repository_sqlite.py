@@ -32,6 +32,15 @@ CREATE INDEX IF NOT EXISTS idx_reports_symbol_created
 ON reports (symbol, created_at DESC);
 """
 
+_CREATE_USER_SYMBOLS_SQL = """
+CREATE TABLE IF NOT EXISTS user_symbols (
+    user_id    TEXT NOT NULL,
+    symbol     TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, symbol)
+);
+"""
+
 
 class SQLiteReportRepository(AbstractReportRepository):
     """SQLite-backed repository — great for dev / single-user use."""
@@ -50,6 +59,7 @@ class SQLiteReportRepository(AbstractReportRepository):
         conn = self._get_conn()
         conn.execute(_CREATE_TABLE_SQL)
         conn.execute(_CREATE_INDEX_SQL)
+        conn.execute(_CREATE_USER_SYMBOLS_SQL)
         conn.commit()
 
     def save(self, record: ReportRecord) -> int:
@@ -111,6 +121,42 @@ class SQLiteReportRepository(AbstractReportRepository):
             LIMIT ?
             """,
             (limit,),
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Per-user symbol tracking
+    # ------------------------------------------------------------------
+
+    def add_user_symbol(self, user_id: str, symbol: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO user_symbols (user_id, symbol, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (user_id, symbol.upper(), datetime.now(tz=UTC).isoformat()),
+        )
+        conn.commit()
+
+    def list_user_symbols(
+        self, user_id: str, limit: int = 50
+    ) -> list[ReportRecord]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """
+            SELECT r.* FROM reports r
+            INNER JOIN (
+                SELECT symbol, MAX(created_at) AS max_ca
+                FROM reports GROUP BY symbol
+            ) g ON r.symbol = g.symbol AND r.created_at = g.max_ca
+            WHERE r.symbol IN (
+                SELECT symbol FROM user_symbols WHERE user_id = ?
+            )
+            ORDER BY r.created_at DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
