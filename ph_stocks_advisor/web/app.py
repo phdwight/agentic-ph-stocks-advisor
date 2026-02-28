@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 
 import redis as redis_lib
 from flask import Flask, jsonify, render_template, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from ph_stocks_advisor.export.formatter import (
     DATA_SOURCES,
@@ -53,7 +54,29 @@ def create_app() -> Flask:
         static_folder="static",
     )
     app.config["SECRET_KEY"] = settings.flask_secret_key
-    app.config["SESSION_TYPE"] = "filesystem"
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+    # Try server-side Redis sessions.  If Redis is unreachable fall back
+    # to the default signed-cookie sessions (safe now that we no longer
+    # store the large MSAL token cache in the session).
+    try:
+        r = redis_lib.from_url(settings.redis_url, socket_connect_timeout=3)
+        r.ping()
+        app.config["SESSION_TYPE"] = "redis"
+        app.config["SESSION_PERMANENT"] = False
+        app.config["SESSION_REDIS"] = r
+        from flask_session import Session
+        Session(app)
+        logger.info("Server-side Redis sessions enabled.")
+    except Exception:
+        logger.warning(
+            "Redis unavailable for sessions — using signed-cookie sessions."
+        )
+
+    # Trust reverse-proxy headers (Azure Container Apps, nginx, etc.)
+    # so that request.url_root uses https:// when behind TLS termination.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # type: ignore[assignment]
 
     # Register the Entra ID authentication blueprint.
     app.register_blueprint(auth_bp)

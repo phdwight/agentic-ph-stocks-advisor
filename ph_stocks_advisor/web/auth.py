@@ -57,17 +57,16 @@ def _build_msal_app(
 
 
 def _get_token_cache() -> msal.SerializableTokenCache:
-    """Return a per-session MSAL token cache."""
-    cache = msal.SerializableTokenCache()
-    if session.get("token_cache"):
-        cache.deserialize(session["token_cache"])
-    return cache
+    """Return a throwaway MSAL token cache for the authorization-code exchange.
 
-
-def _save_token_cache(cache: msal.SerializableTokenCache) -> None:
-    """Persist the token cache into the Flask session."""
-    if cache.has_state_changed:
-        session["token_cache"] = cache.serialize()
+    We intentionally do NOT persist the cache in the session because it
+    can easily exceed the 4 KB browser cookie limit and browsers silently
+    drop oversized cookies — causing an infinite login loop.  We only
+    need the ID-token claims (name / email) which are extracted during
+    the callback; we never call the Graph API later so there is no need
+    to keep access/refresh tokens around.
+    """
+    return msal.SerializableTokenCache()
 
 
 def get_current_user() -> dict[str, Any] | None:
@@ -82,7 +81,7 @@ def login_required(f: Callable) -> Callable:
     def decorated(*args: Any, **kwargs: Any) -> Any:
         settings = get_settings()
         # If Entra ID is not configured, allow anonymous access.
-        if not settings.entra_client_id:
+        if not settings.entra_client_id or settings.entra_client_id == "NOTSET":
             return f(*args, **kwargs)
         if get_current_user() is None:
             session["next_url"] = request.url
@@ -101,7 +100,7 @@ def login_required(f: Callable) -> Callable:
 def login():
     """Render the login page with a 'Sign in with Microsoft' button."""
     settings = get_settings()
-    if not settings.entra_client_id:
+    if not settings.entra_client_id or settings.entra_client_id == "NOTSET":
         return redirect(url_for("index"))
     return render_template("login.html")
 
@@ -148,8 +147,8 @@ def callback():
         return redirect(url_for("auth.login"))
 
     cache = _get_token_cache()
-    app = _build_msal_app(cache=cache)
-    result = app.acquire_token_by_authorization_code(
+    msal_app = _build_msal_app(cache=cache)
+    result = msal_app.acquire_token_by_authorization_code(
         code=request.args["code"],
         scopes=_SCOPES,
         redirect_uri=request.url_root.rstrip("/") + settings.entra_redirect_path,
@@ -166,14 +165,15 @@ def callback():
             error=result.get("error_description", "Could not acquire token."),
         )
 
-    # Store the user's claims from the ID token in the session.
+    # Store only the minimal user claims from the ID token.
+    # We do NOT persist the MSAL token cache — it is large and would
+    # blow past the 4 KB cookie limit.
     id_claims = result.get("id_token_claims", {})
     session["user"] = {
         "name": id_claims.get("name", ""),
         "email": id_claims.get("preferred_username", ""),
         "oid": id_claims.get("oid", ""),
     }
-    _save_token_cache(cache)
 
     logger.info("User signed in: %s", session["user"].get("email"))
 
