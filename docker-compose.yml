@@ -65,6 +65,12 @@ services:
       TIMEZONE: ${TIMEZONE:-Asia/Manila}
       # ── Output directory (bind-mounted to host) ───────────────────────────
       OUTPUT_DIR: /app/output
+      # ── Microsoft Entra ID (passkey / OIDC login) ─────────────────────────
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID:-}
+      ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-common}
+      ENTRA_REDIRECT_PATH: ${ENTRA_REDIRECT_PATH:-/auth/callback}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-ph-stocks-advisor-change-me-in-production}
       # ── LangSmith (optional) ──────────────────────────────────────────────
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}

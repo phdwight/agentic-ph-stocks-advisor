@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In — PH Stocks Advisor{% endblock %}
+
+{% block content %}
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-header">
+      <h1>🇵🇭 PH Stocks Advisor</h1>
+      <p>Sign in to access AI-powered Philippine stock analysis</p>
+    </div>
+
+    {% if error %}
+    <div class="login-error">
+      <p>{{ error }}</p>
+    </div>
+    {% endif %}
+
+    <a href="{{ url_for('auth.signin') }}" class="ms-signin-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 21 21">
+        <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+        <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+        <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      </svg>
+      <span>Sign in with Microsoft</span>
+    </a>
+
+    <div class="login-hint">
+      <p>
+        <strong>Passkey supported:</strong> If your organisation has
+        enabled FIDO2 passkeys in Entra ID, you can use your
+        security key or device biometrics to sign in.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

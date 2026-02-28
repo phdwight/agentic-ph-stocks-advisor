@@ -171,6 +171,25 @@ The web interface lets you enter a stock symbol, kicks off the analysis in the b
 
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis.
 
+### Authentication (Microsoft Entra ID + Passkeys)
+
+The web UI supports **Microsoft Entra ID** (formerly Azure AD) login with **passkey (FIDO2)** support. When configured, users must sign in before accessing any page.
+
+1. **Register an app** in the [Azure portal](https://portal.azure.com) → Microsoft Entra ID → App registrations:
+   - **Redirect URI** → `http://localhost:5000/auth/callback` (Web platform)
+   - Note the **Application (client) ID** and create a **Client secret**
+2. **Enable FIDO2 passkeys** in your Entra ID tenant (Security → Authentication methods → FIDO2 security key)
+3. Set the environment variables:
+
+```bash
+ENTRA_CLIENT_ID=<your-client-id>
+ENTRA_CLIENT_SECRET=<your-client-secret>
+ENTRA_TENANT_ID=<your-tenant-id>   # or "common" for multi-tenant
+FLASK_SECRET_KEY=<random-secret>
+```
+
+When `ENTRA_CLIENT_ID` is **not set**, authentication is disabled and all routes are publicly accessible (useful for local development).
+
 ### Azure (Cloud Deployment)
 
 Deploy to **Azure Container Apps** with managed PostgreSQL and Redis. All infrastructure is defined as code via Bicep.
@@ -265,11 +284,13 @@ ph_stocks_advisor/
 ├── web/                       # Flask web application + Celery worker
 │   ├── __init__.py
 │   ├── app.py                 #   Flask factory, routes, CLI (ph-advisor-web)
+│   ├── auth.py                #   Entra ID (OIDC/passkey) authentication blueprint
 │   ├── celery_app.py          #   Celery instance & configuration
 │   ├── tasks.py               #   Celery task definitions (analyse_stock)
 │   ├── templates/             #   Jinja2 HTML templates
 │   │   ├── base.html          #     Shared layout
 │   │   ├── index.html         #     Landing page with analysis form
+│   │   ├── login.html         #     Sign-in page (Microsoft button)
 │   │   ├── report.html        #     Single report view
 │   │   ├── history.html       #     Report history table
 │   │   └── no_report.html     #     404 / no report found
@@ -319,6 +340,7 @@ tests/
 ├── test_models.py
 ├── test_tools.py
 ├── test_agents.py
+├── test_auth.py               # Entra ID auth blueprint tests
 ├── test_consolidator.py
 ├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py
@@ -364,3 +386,8 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection URL (broker + result backend for Celery) |
 | `REDIS_PORT` | No | `6379` | Host port for Redis (Docker Compose only) |
 | `WEB_PORT` | No | `5000` | Host port for the Flask web UI (Docker Compose only) |
+| `ENTRA_CLIENT_ID` | No | — | Microsoft Entra ID application (client) ID (enables login) |
+| `ENTRA_CLIENT_SECRET` | No | — | Entra ID client secret |
+| `ENTRA_TENANT_ID` | No | `common` | Entra ID tenant ID (or `common` for multi-tenant) |
+| `ENTRA_REDIRECT_PATH` | No | `/auth/callback` | OAuth2 redirect path |
+| `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |

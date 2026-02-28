@@ -11,6 +11,12 @@
   <nav class="navbar">
     <div class="container nav-inner">
       <a href="/" class="nav-brand">🇵🇭 PH Stocks Advisor</a>
+      {% if current_user %}
+      <div class="nav-user">
+        <span class="nav-user-name">{{ current_user.name or current_user.email }}</span>
+        <a href="{{ url_for('auth.logout') }}" class="nav-logout">Sign out</a>
+      </div>
+      {% endif %}
     </div>
   </nav>
 

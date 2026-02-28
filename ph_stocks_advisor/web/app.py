@@ -26,6 +26,7 @@ from ph_stocks_advisor.export.formatter import (
     parse_sections,
 )
 from ph_stocks_advisor.infra.config import get_repository, get_settings
+from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +46,29 @@ def _get_redis() -> redis_lib.Redis:
 
 def create_app() -> Flask:
     """Application factory — returns a configured Flask instance."""
+    settings = get_settings()
     app = Flask(
         __name__,
         template_folder="templates",
         static_folder="static",
     )
-    app.config["SECRET_KEY"] = "ph-stocks-advisor-dev-key"
+    app.config["SECRET_KEY"] = settings.flask_secret_key
+    app.config["SESSION_TYPE"] = "filesystem"
+
+    # Register the Entra ID authentication blueprint.
+    app.register_blueprint(auth_bp)
+
+    @app.context_processor
+    def inject_user():
+        """Make ``current_user`` available in every template."""
+        return {"current_user": get_current_user()}
 
     # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
 
     @app.route("/")
+    @login_required
     def index():
         """Landing page with the analysis form and previously analysed stocks."""
         repo = get_repository()
@@ -67,6 +79,7 @@ def create_app() -> Flask:
         return render_template("index.html", recent_stocks=recent)
 
     @app.route("/analyse", methods=["POST"])
+    @login_required
     def analyse():
         """Check for a fresh cached report; dispatch to Celery if stale/missing."""
         from ph_stocks_advisor.web.tasks import analyse_stock
@@ -178,6 +191,7 @@ def create_app() -> Flask:
         return jsonify({"status": "cancelled", "task_id": task_id})
 
     @app.route("/report/<symbol>")
+    @login_required
     def report(symbol: str):
         """Display the latest report for a symbol."""
         symbol = symbol.upper().replace(".PS", "")
@@ -212,6 +226,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/history/<symbol>")
+    @login_required
     def history(symbol: str):
         """List all saved reports for a symbol."""
         symbol = symbol.upper().replace(".PS", "")
@@ -235,6 +250,7 @@ def create_app() -> Flask:
         return render_template("history.html", symbol=symbol, reports=formatted)
 
     @app.route("/report-by-id/<int:report_id>")
+    @login_required
     def report_by_id(report_id: int):
         """Display a specific report by its database ID."""
         repo = get_repository()

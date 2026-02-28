@@ -69,6 +69,19 @@ class Settings:
     # -- Output directory (used as default base for exported files) -------------
     output_dir: str = os.getenv("OUTPUT_DIR", "")
 
+    # -- Microsoft Entra ID (Azure AD) -----------------------------------------
+    entra_client_id: str = os.getenv("ENTRA_CLIENT_ID", "")
+    entra_client_secret: str = os.getenv("ENTRA_CLIENT_SECRET", "")
+    entra_tenant_id: str = os.getenv("ENTRA_TENANT_ID", "common")
+    entra_redirect_path: str = os.getenv("ENTRA_REDIRECT_PATH", "/auth/callback")
+    flask_secret_key: str = os.getenv(
+        "FLASK_SECRET_KEY", "ph-stocks-advisor-change-me-in-production"
+    )
+
+    @property
+    def entra_authority(self) -> str:
+        return f"https://login.microsoftonline.com/{self.entra_tenant_id}"
+
     # -- HTTP timeouts (seconds) -----------------------------------------------
     http_timeout: int = int(os.getenv("HTTP_TIMEOUT", "15"))
 
