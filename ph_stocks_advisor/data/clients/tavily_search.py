@@ -57,6 +57,7 @@ def _search(
     Each result dict contains ``title``, ``url``, ``content`` (snippet),
     and ``score``.  Returns an empty list on any failure.
     """
+    logger.info("Tavily search invoked — query=%r", query)
     client = _get_client()
     if client is None:
         return []
@@ -70,7 +71,9 @@ def _search(
         if include_domains:
             params["include_domains"] = include_domains
         response = client.search(**params)
-        return response.get("results", [])
+        results = response.get("results", [])
+        logger.info("Tavily search completed — query=%r, results=%d", query, len(results))
+        return results
     except Exception as exc:
         logger.warning("Tavily search failed for %r: %s", query, exc)
         return []
@@ -86,6 +89,7 @@ def search_dividend_news(symbol: str, company_name: str = "") -> str:
     Returns a formatted string of search results (or a fallback message
     if no results are found / Tavily is not configured).
     """
+    logger.info("Tavily search_dividend_news invoked — symbol=%s, company=%s", symbol, company_name)
     name_part = f" ({company_name})" if company_name else ""
     year = get_today().year
     query = (
@@ -101,6 +105,7 @@ def search_stock_news(symbol: str, company_name: str = "") -> str:
 
     Returns a formatted string of search results.
     """
+    logger.info("Tavily search_stock_news invoked — symbol=%s, company=%s", symbol, company_name)
     name_part = f" ({company_name})" if company_name else ""
     year = get_today().year
     query = (
@@ -115,6 +120,7 @@ def search_stock_controversies(symbol: str, company_name: str = "") -> str:
 
     Returns a formatted string of search results.
     """
+    logger.info("Tavily search_stock_controversies invoked — symbol=%s, company=%s", symbol, company_name)
     name_part = f" ({company_name})" if company_name else ""
     query = (
         f"{symbol}{name_part} Philippine stock controversy risk issue "

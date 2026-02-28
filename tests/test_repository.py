@@ -15,7 +15,7 @@ import pytest
 
 from ph_stocks_advisor.infra.config import Settings, get_repository
 from ph_stocks_advisor.data.models import FinalReport, Verdict
-from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord
+from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
 from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
 
 
@@ -243,3 +243,54 @@ class TestGetRepository:
         from ph_stocks_advisor.infra.repository_postgres import PostgresReportRepository
 
         assert issubclass(PostgresReportRepository, AbstractReportRepository)
+
+
+# ---------------------------------------------------------------------------
+# User persistence
+# ---------------------------------------------------------------------------
+
+
+class TestUserPersistence:
+    """Tests for save_user / get_user on SQLiteReportRepository."""
+
+    def test_save_and_get_user(self, sqlite_repo):
+        user = UserRecord(
+            oid="oid-123",
+            name="Juan Dela Cruz",
+            email="juan@example.com",
+            provider="microsoft",
+        )
+        sqlite_repo.save_user(user)
+
+        fetched = sqlite_repo.get_user("oid-123")
+        assert fetched is not None
+        assert fetched.name == "Juan Dela Cruz"
+        assert fetched.email == "juan@example.com"
+        assert fetched.provider == "microsoft"
+
+    def test_save_user_upserts_on_duplicate(self, sqlite_repo):
+        """A second save with the same oid updates the existing row."""
+        user = UserRecord(
+            oid="oid-456",
+            name="Maria Santos",
+            email="maria@gmail.com",
+            provider="google",
+        )
+        sqlite_repo.save_user(user)
+
+        # Update name and re-save.
+        user2 = UserRecord(
+            oid="oid-456",
+            name="Maria S.",
+            email="maria-new@gmail.com",
+            provider="google",
+        )
+        sqlite_repo.save_user(user2)
+
+        fetched = sqlite_repo.get_user("oid-456")
+        assert fetched is not None
+        assert fetched.name == "Maria S."
+        assert fetched.email == "maria-new@gmail.com"
+
+    def test_get_user_not_found(self, sqlite_repo):
+        assert sqlite_repo.get_user("nonexistent") is None

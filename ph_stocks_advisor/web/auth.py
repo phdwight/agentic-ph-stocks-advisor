@@ -32,7 +32,8 @@ from flask import (
     url_for,
 )
 
-from ph_stocks_advisor.infra.config import get_settings
+from ph_stocks_advisor.infra.config import get_repository, get_settings
+from ph_stocks_advisor.infra.repository import UserRecord
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,18 @@ def callback():
         "provider": "microsoft",
     }
 
+    # Persist user in the database (upsert).
+    try:
+        repo = get_repository()
+        repo.save_user(UserRecord(
+            oid=session["user"]["oid"],
+            name=session["user"]["name"],
+            email=session["user"]["email"],
+            provider="microsoft",
+        ))
+    except Exception:
+        logger.exception("Failed to persist user record")
+
     logger.info("User signed in: %s", session["user"].get("email"))
 
     # Redirect to where the user originally wanted to go.
@@ -321,6 +334,18 @@ def google_callback():
         "oid": userinfo.get("sub", ""),
         "provider": "google",
     }
+
+    # Persist user in the database (upsert).
+    try:
+        repo = get_repository()
+        repo.save_user(UserRecord(
+            oid=session["user"]["oid"],
+            name=session["user"]["name"],
+            email=session["user"]["email"],
+            provider="google",
+        ))
+    except Exception:
+        logger.exception("Failed to persist user record")
 
     logger.info("Google user signed in: %s", session["user"].get("email"))
 

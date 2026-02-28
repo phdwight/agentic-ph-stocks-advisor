@@ -12,7 +12,7 @@ from typing import Optional
 import psycopg2  # type: ignore[import-untyped]
 import psycopg2.extras  # type: ignore[import-untyped]
 
-from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord
+from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS reports (
@@ -43,6 +43,17 @@ CREATE TABLE IF NOT EXISTS user_symbols (
 );
 """
 
+_CREATE_USERS_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    oid           VARCHAR(320) PRIMARY KEY,
+    name          VARCHAR(320) NOT NULL DEFAULT '',
+    email         VARCHAR(320) NOT NULL DEFAULT '',
+    provider      VARCHAR(20)  NOT NULL DEFAULT '',
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    last_login_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+"""
+
 
 class PostgresReportRepository(AbstractReportRepository):
     """PostgreSQL-backed repository — for production / multi-user use."""
@@ -68,6 +79,7 @@ class PostgresReportRepository(AbstractReportRepository):
             cur.execute(_CREATE_TABLE_SQL)
             cur.execute(_CREATE_INDEX_SQL)
             cur.execute(_CREATE_USER_SYMBOLS_SQL)
+            cur.execute(_CREATE_USERS_SQL)
         conn.commit()
 
     def save(self, record: ReportRecord) -> int:
@@ -182,6 +194,50 @@ class PostgresReportRepository(AbstractReportRepository):
         if self._conn and not self._conn.closed:
             self._conn.close()
             self._conn = None
+
+    # ------------------------------------------------------------------
+    # User persistence
+    # ------------------------------------------------------------------
+
+    def save_user(self, user: UserRecord) -> None:
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (oid, name, email, provider, created_at, last_login_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (oid) DO UPDATE SET
+                    name          = EXCLUDED.name,
+                    email         = EXCLUDED.email,
+                    provider      = EXCLUDED.provider,
+                    last_login_at = EXCLUDED.last_login_at
+                """,
+                (
+                    user.oid,
+                    user.name,
+                    user.email,
+                    user.provider,
+                    user.created_at,
+                    user.last_login_at or datetime.now(tz=UTC),
+                ),
+            )
+        conn.commit()
+
+    def get_user(self, oid: str) -> Optional[UserRecord]:
+        conn = self._get_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute("SELECT * FROM users WHERE oid = %s", (oid,))
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return UserRecord(
+            oid=row["oid"],
+            name=row["name"],
+            email=row["email"],
+            provider=row["provider"],
+            created_at=row["created_at"],
+            last_login_at=row["last_login_at"],
+        )
 
     @staticmethod
     def _row_to_record(row) -> ReportRecord:

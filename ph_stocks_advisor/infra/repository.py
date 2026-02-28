@@ -14,6 +14,32 @@ from typing import Optional
 from ph_stocks_advisor.data.models import FinalReport
 
 
+class UserRecord:
+    """A persisted user profile from OAuth sign-in."""
+
+    def __init__(
+        self,
+        oid: str,
+        name: str,
+        email: str,
+        provider: str,
+        created_at: datetime | None = None,
+        last_login_at: datetime | None = None,
+    ) -> None:
+        self.oid = oid
+        self.name = name
+        self.email = email
+        self.provider = provider
+        self.created_at = created_at or datetime.now(tz=UTC)
+        self.last_login_at = last_login_at or datetime.now(tz=UTC)
+
+    def __repr__(self) -> str:
+        return (
+            f"UserRecord(oid={self.oid!r}, email={self.email!r}, "
+            f"provider={self.provider!r})"
+        )
+
+
 class ReportRecord:
     """A persisted report with metadata."""
 
@@ -115,6 +141,23 @@ class AbstractReportRepository(abc.ABC):
         Behaves like ``list_recent_symbols`` but scoped to symbols the
         given user has previously requested.
         """
+
+    # ------------------------------------------------------------------
+    # User persistence
+    # ------------------------------------------------------------------
+
+    @abc.abstractmethod
+    def save_user(self, user: UserRecord) -> None:
+        """Insert or update a user record.
+
+        Implementations must be idempotent — if a user with the same
+        ``oid`` already exists, update ``name``, ``email``, ``provider``,
+        and ``last_login_at``.
+        """
+
+    @abc.abstractmethod
+    def get_user(self, oid: str) -> Optional[UserRecord]:
+        """Retrieve a user by their unique ``oid``, or ``None``."""
 
     @abc.abstractmethod
     def close(self) -> None:

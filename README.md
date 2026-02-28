@@ -169,7 +169,7 @@ ph-advisor-web --debug                # enable Flask debug mode
 
 The web interface lets you enter a stock symbol, kicks off the analysis in the background, and displays the report in the browser once complete. You can also browse report history for any symbol.
 
-Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis. Reports are **shared** — they are not tied to any user — but each authenticated user only sees the stocks they have personally requested to analyse. A `user_symbols` table tracks which symbols each user has analysed; anonymous users (auth disabled) see all reports.
+Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis. Reports are **shared** — they are not tied to any user — but each authenticated user only sees the stocks they have personally requested to analyse. A `user_symbols` table tracks which symbols each user has analysed; anonymous users (auth disabled) see all reports. Authenticated user profiles (name, email, provider, login timestamps) are saved to a `users` table on every sign-in (upserted by `oid`).
 
 ### Authentication (Microsoft Entra ID + Google OAuth2)
 

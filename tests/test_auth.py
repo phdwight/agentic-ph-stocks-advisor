@@ -244,6 +244,34 @@ class TestCallback:
             assert sess["user"]["email"] == "juan@example.com"
             assert sess["user"]["provider"] == "microsoft"
 
+    @patch("ph_stocks_advisor.web.auth.get_repository")
+    @patch("ph_stocks_advisor.web.auth._build_msal_app")
+    def test_callback_persists_user_in_database(self, mock_msal, mock_repo, client):
+        """After Microsoft sign-in, the user record is saved to the DB."""
+        mock_app = MagicMock()
+        mock_app.acquire_token_by_authorization_code.return_value = {
+            "id_token_claims": {
+                "name": "Juan Dela Cruz",
+                "preferred_username": "juan@example.com",
+                "oid": "user-oid-123",
+            }
+        }
+        mock_msal.return_value = mock_app
+
+        repo_instance = MagicMock()
+        mock_repo.return_value = repo_instance
+
+        with client.session_transaction() as sess:
+            sess["auth_state"] = "test-state"
+
+        client.get("/auth/callback?code=test-code&state=test-state")
+
+        repo_instance.save_user.assert_called_once()
+        saved_user = repo_instance.save_user.call_args[0][0]
+        assert saved_user.oid == "user-oid-123"
+        assert saved_user.email == "juan@example.com"
+        assert saved_user.provider == "microsoft"
+
     def test_callback_state_mismatch_redirects_to_login(self, client):
         with client.session_transaction() as sess:
             sess["auth_state"] = "good-state"
@@ -371,6 +399,42 @@ class TestGoogleCallback:
             assert sess["user"]["name"] == "Maria Santos"
             assert sess["user"]["email"] == "maria@gmail.com"
             assert sess["user"]["provider"] == "google"
+
+    @patch("ph_stocks_advisor.web.auth.get_repository")
+    @patch("ph_stocks_advisor.web.auth.http_requests.get")
+    @patch("ph_stocks_advisor.web.auth.http_requests.post")
+    def test_google_callback_persists_user_in_database(
+        self, mock_post, mock_get, mock_repo, google_client
+    ):
+        """After Google sign-in, the user record is saved to the DB."""
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"access_token": "fake-access-token"},
+        )
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "name": "Maria Santos",
+                "email": "maria@gmail.com",
+                "sub": "google-sub-456",
+            },
+        )
+
+        repo_instance = MagicMock()
+        mock_repo.return_value = repo_instance
+
+        with google_client.session_transaction() as sess:
+            sess["google_state"] = "test-google-state"
+
+        google_client.get(
+            "/auth/google/callback?code=test-code&state=test-google-state"
+        )
+
+        repo_instance.save_user.assert_called_once()
+        saved_user = repo_instance.save_user.call_args[0][0]
+        assert saved_user.oid == "google-sub-456"
+        assert saved_user.email == "maria@gmail.com"
+        assert saved_user.provider == "google"
 
     def test_google_callback_state_mismatch(self, google_client):
         with google_client.session_transaction() as sess:

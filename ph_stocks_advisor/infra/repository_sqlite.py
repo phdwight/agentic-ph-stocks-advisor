@@ -10,7 +10,7 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Optional
 
-from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord
+from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS reports (
@@ -41,6 +41,17 @@ CREATE TABLE IF NOT EXISTS user_symbols (
 );
 """
 
+_CREATE_USERS_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    oid           TEXT PRIMARY KEY,
+    name          TEXT NOT NULL DEFAULT '',
+    email         TEXT NOT NULL DEFAULT '',
+    provider      TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL,
+    last_login_at TEXT NOT NULL
+);
+"""
+
 
 class SQLiteReportRepository(AbstractReportRepository):
     """SQLite-backed repository — great for dev / single-user use."""
@@ -60,6 +71,7 @@ class SQLiteReportRepository(AbstractReportRepository):
         conn.execute(_CREATE_TABLE_SQL)
         conn.execute(_CREATE_INDEX_SQL)
         conn.execute(_CREATE_USER_SYMBOLS_SQL)
+        conn.execute(_CREATE_USERS_SQL)
         conn.commit()
 
     def save(self, record: ReportRecord) -> int:
@@ -164,6 +176,47 @@ class SQLiteReportRepository(AbstractReportRepository):
         if self._conn:
             self._conn.close()
             self._conn = None
+
+    # ------------------------------------------------------------------
+    # User persistence
+    # ------------------------------------------------------------------
+
+    def save_user(self, user: UserRecord) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """
+            INSERT INTO users (oid, name, email, provider, created_at, last_login_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(oid) DO UPDATE SET
+                name          = excluded.name,
+                email         = excluded.email,
+                provider      = excluded.provider,
+                last_login_at = excluded.last_login_at
+            """,
+            (
+                user.oid,
+                user.name,
+                user.email,
+                user.provider,
+                user.created_at.isoformat(),
+                user.last_login_at.isoformat() if user.last_login_at else datetime.now(tz=UTC).isoformat(),
+            ),
+        )
+        conn.commit()
+
+    def get_user(self, oid: str) -> Optional[UserRecord]:
+        conn = self._get_conn()
+        row = conn.execute("SELECT * FROM users WHERE oid = ?", (oid,)).fetchone()
+        if row is None:
+            return None
+        return UserRecord(
+            oid=row["oid"],
+            name=row["name"],
+            email=row["email"],
+            provider=row["provider"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            last_login_at=datetime.fromisoformat(row["last_login_at"]),
+        )
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> ReportRecord:
