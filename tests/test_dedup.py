@@ -35,6 +35,14 @@ class FakeRedis:
     def set(self, key: str, value: str, ex: int | None = None) -> None:  # noqa: A003
         self._store[key] = value
 
+    def incr(self, key: str) -> int:
+        val = int(self._store.get(key, 0)) + 1
+        self._store[key] = str(val)
+        return val
+
+    def expire(self, key: str, seconds: int) -> None:
+        pass  # no-op for tests
+
     def delete(self, key: str) -> None:
         self._store.pop(key, None)
 
@@ -48,8 +56,22 @@ def fake_redis():
 
 
 @pytest.fixture
-def client(fake_redis):
+def client(fake_redis, monkeypatch):
     """Flask test client with all external deps mocked."""
+    from ph_stocks_advisor.infra.config import get_settings
+
+    monkeypatch.delenv("ENTRA_CLIENT_ID", raising=False)
+    monkeypatch.delenv("ENTRA_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+
+    get_settings.cache_clear()
+    s = get_settings()
+    s.entra_client_id = ""
+    s.entra_client_secret = ""
+    s.google_client_id = ""
+    s.google_client_secret = ""
+
     mock_repo = MagicMock()
     mock_repo.get_latest_by_symbol.return_value = None
     mock_repo.list_recent_symbols.return_value = []
@@ -62,6 +84,8 @@ def client(fake_redis):
         app.config["TESTING"] = True
         with app.test_client() as c:
             yield c
+
+    get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------

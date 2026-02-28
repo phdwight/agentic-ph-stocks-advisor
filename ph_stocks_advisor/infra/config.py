@@ -139,6 +139,9 @@ class Settings:
         os.getenv("CATALYST_NEAR_HIGH_PCT", "5")
     )
 
+    # -- Rate limiting ---------------------------------------------------------
+    daily_analysis_limit: int = int(os.getenv("DAILY_ANALYSIS_LIMIT", "5"))
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

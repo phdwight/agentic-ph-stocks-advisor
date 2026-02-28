@@ -31,6 +31,7 @@ from ph_stocks_advisor.export.formatter import (
 from ph_stocks_advisor.export.html import _body_to_html
 from ph_stocks_advisor.infra.config import get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
+from ph_stocks_advisor.web.rate_limit import check_and_increment
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,26 @@ def create_app() -> Flask:
                 "task_id": existing_task_id,
             })
 
+        # --- Per-user daily rate limit --------------------------------
+        user = get_current_user()
+        user_id = (user or {}).get("email", "anonymous")
+        allowed, count = check_and_increment(
+            r, user_id, settings.daily_analysis_limit
+        )
+        if not allowed:
+            logger.warning(
+                "User %s exceeded daily analysis limit (%d/%d).",
+                user_id,
+                count,
+                settings.daily_analysis_limit,
+            )
+            return jsonify({
+                "error": (
+                    f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
+                    "Your quota resets at 00:00 UTC."
+                ),
+            }), 429
+
         # Dispatch analysis to the Celery worker
         task = analyse_stock.delay(symbol)
 
@@ -185,7 +206,6 @@ def create_app() -> Flask:
         r.set(inflight_key, task.id, ex=_INFLIGHT_TTL)
 
         # Track symbol for the current user.
-        user = get_current_user()
         if user and user.get("email"):
             try:
                 repo2 = get_repository()

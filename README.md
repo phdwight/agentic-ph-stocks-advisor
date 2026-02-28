@@ -300,6 +300,7 @@ ph_stocks_advisor/
 │   ├── __init__.py
 │   ├── app.py                 #   Flask factory, routes, CLI (ph-advisor-web)
 │   ├── auth.py                #   Entra ID + Google OAuth2 authentication blueprint
+│   ├── rate_limit.py          #   Per-user daily analysis rate limiting (Redis)
 │   ├── celery_app.py          #   Celery instance & configuration
 │   ├── tasks.py               #   Celery task definitions (analyse_stock)
 │   ├── templates/             #   Jinja2 HTML templates
@@ -409,3 +410,4 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth2 client secret |
 | `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
 | `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
+| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max new analyses per user per UTC day (resets at 00:00 UTC) |
