@@ -6,7 +6,7 @@
 <div class="report-header">
   <h1>{{ record.symbol }} Stock Analysis</h1>
   <div class="verdict-row">
-    <span class="verdict-label">Verdict:</span>
+    <span class="verdict-label">verdict</span>
     <span class="badge {% if is_buy %}buy{% else %}not-buy{% endif %}">
       {{ record.verdict }}
     </span>
@@ -14,12 +14,21 @@
   <p class="report-meta">
     Generated: {{ timestamp }}
     {% if is_cached %}
-      <span class="cached-badge">📋 Cached report (less than 5 days old)</span>
+      <span class="cached-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        Cached report
+      </span>
     {% endif %}
   </p>
   <div class="report-actions">
-    <a href="/" class="btn btn-secondary">← New Analysis</a>
-    <a href="/history/{{ record.symbol }}" class="btn btn-secondary">Report History</a>
+    <a href="/" class="btn btn-secondary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      New Analysis
+    </a>
+    <a href="/history/{{ record.symbol }}" class="btn btn-secondary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Report History
+    </a>
   </div>
 </div>
 
@@ -27,7 +36,23 @@
   {% for title, body in sections %}
     {% if not title.lower().startswith('verdict') %}
     <section class="report-section">
-      <h2>{{ title }}</h2>
+      <h2>
+        {% set tl = title.lower() %}
+        {% if 'price' in tl and 'movement' not in tl %}
+          <span class="section-icon section-icon-price"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c63ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+        {% elif 'dividend' in tl %}
+          <span class="section-icon section-icon-dividend"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg></span>
+        {% elif 'movement' in tl or 'trend' in tl %}
+          <span class="section-icon section-icon-movement"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
+        {% elif 'valuation' in tl or 'fair value' in tl %}
+          <span class="section-icon section-icon-valuation"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#63b3ed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><rect x="4" y="8" width="4" height="13" rx="1"/><rect x="10" y="5" width="4" height="16" rx="1"/><rect x="16" y="10" width="4" height="11" rx="1"/></svg></span>
+        {% elif 'controversy' in tl or 'risk' in tl %}
+          <span class="section-icon section-icon-risk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+        {% else %}
+          <span class="section-icon section-icon-summary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+        {% endif %}
+        {{ title }}
+      </h2>
       <div class="section-body">
         {{ body | md_to_html }}
       </div>
@@ -35,4 +60,8 @@
     {% endif %}
   {% endfor %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='report-viz.js') }}"></script>
 {% endblock %}

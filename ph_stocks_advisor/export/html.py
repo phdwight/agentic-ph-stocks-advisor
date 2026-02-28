@@ -19,32 +19,45 @@ from ph_stocks_advisor.infra.repository import ReportRecord
 # ---------------------------------------------------------------------------
 
 _CSS = """\
-:root{--accent:#1e3c78;--green:#228b22;--red:#c83232;--bg:#f8f9fb;--card:#fff}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+:root{--bg:#1a1e2e;--card:rgba(34,39,58,0.80);--text:#f0f1f5;--text-sec:#b4b9cc;
+  --text-muted:#828699;--accent:#6c63ff;--emerald:#34d399;--crimson:#f87171;
+  --border:rgba(255,255,255,0.10);--radius:12px}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);
-  color:#222;line-height:1.6;padding:2rem}
-.container{max-width:820px;margin:0 auto;background:var(--card);border-radius:12px;
-  box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden}
-header{background:var(--accent);color:#fff;padding:2rem 2.5rem 1.5rem}
-header h1{font-size:1.75rem;margin-bottom:.35rem}
-header .meta{font-size:.85rem;opacity:.8}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);
+  color:var(--text);line-height:1.65;letter-spacing:-0.01em;padding:2rem;
+  -webkit-font-smoothing:antialiased}
+.container{max-width:820px;margin:0 auto;overflow:hidden}
+header{background:rgba(34,39,58,0.85);backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,0.08);border-radius:16px;
+  padding:2rem 2.5rem 1.5rem;margin-bottom:1.5rem}
+header h1{font-size:1.75rem;font-weight:800;letter-spacing:-0.03em;margin-bottom:.35rem}
+header .meta{font-size:.8rem;color:var(--text-muted)}
 .verdict-row{margin-top:.6rem;display:flex;align-items:center;gap:.5rem}
-.verdict-label{font-size:1rem;font-weight:700;color:#fff}
-.badge{display:inline-block;padding:.3rem 1.2rem;border-radius:999px;font-weight:700;
-  font-size:1rem;color:#fff}
-.badge.buy{background:var(--green)}.badge.not-buy{background:var(--red)}
-main{padding:2rem 2.5rem 2.5rem}
-section{margin-bottom:1.8rem}
-section h2{font-size:1.15rem;color:var(--accent);border-bottom:2px solid var(--accent);
-  padding-bottom:.25rem;margin-bottom:.6rem}
-section p,section li{font-size:.95rem}
-section ul{padding-left:1.4rem;margin-top:.3rem}
-section li{margin-bottom:.25rem}
-footer{text-align:center;padding:1.2rem 2.5rem;font-size:.75rem;color:#888;border-top:1px solid #eee;line-height:1.5}
+.verdict-label{font-size:.85rem;font-weight:600;color:var(--text-sec);
+  text-transform:lowercase;letter-spacing:0.03em}
+.badge{display:inline-block;padding:.35rem 1.3rem;border-radius:999px;font-weight:700;
+  font-size:.85rem;color:#fff;letter-spacing:0.04em}
+.badge.buy{background:var(--emerald);box-shadow:0 2px 12px rgba(52,211,153,0.3)}
+.badge.not-buy{background:var(--crimson);box-shadow:0 2px 12px rgba(248,113,113,0.3)}
+main{display:flex;flex-direction:column;gap:1.2rem}
+section{background:var(--card);backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:2rem 2.2rem}
+section h2{font-size:.95rem;font-weight:700;color:var(--text);letter-spacing:-0.01em;
+  padding-bottom:.6rem;margin-bottom:1rem;border-bottom:1px solid var(--border)}
+section p,section li{font-size:.88rem;color:var(--text-sec);line-height:1.75}
+section p{margin-bottom:.6rem}
+section ul{padding-left:1.2rem;margin:.4rem 0 .6rem}
+section li{margin-bottom:.35rem;padding-left:.3rem}
+section strong{font-weight:600;color:var(--text)}
+footer{text-align:center;padding:2rem 0;font-size:.7rem;color:var(--text-muted);
+  border-top:1px solid var(--border);margin-top:1.5rem;line-height:1.6}
 footer .disclaimer{margin-bottom:.3rem}
-footer .sources{font-style:italic}
-@media print{body{padding:0}
-  .container{box-shadow:none;border-radius:0}}
+footer .sources{font-style:italic;opacity:.7}
+@media print{body{padding:0;background:#fff;color:#222}
+  section{background:#fff;border:1px solid #ddd}
+  header{background:#f5f5f5;border:1px solid #ddd}
+  .badge.buy{background:#228b22}.badge.not-buy{background:#c83232}}
 """
 
 

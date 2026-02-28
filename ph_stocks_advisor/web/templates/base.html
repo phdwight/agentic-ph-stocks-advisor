@@ -3,18 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a1e2e">
   <title>{% block title %}PH Stocks Advisor{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
   <nav class="navbar">
     <div class="container nav-inner">
-      <a href="/" class="nav-brand">🇵🇭 PH Stocks Advisor</a>
+      <a href="/" class="nav-brand">
+        <span class="nav-brand-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </span>
+        ph stocks advisor
+      </a>
       {% if current_user %}
       <div class="nav-user">
         <span class="nav-user-name">{{ current_user.name or current_user.email }}</span>
-        <a href="{{ url_for('auth.logout') }}" class="nav-logout">Sign out</a>
+        <a href="{{ url_for('auth.logout') }}" class="nav-logout">sign out</a>
       </div>
       {% endif %}
     </div>

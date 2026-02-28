@@ -311,8 +311,9 @@ ph_stocks_advisor/
 │   │   ├── history.html       #     Report history table
 │   │   └── no_report.html     #     404 / no report found
 │   └── static/                #   Static assets
-│       ├── style.css          #     Main stylesheet
-│       └── app.js             #     Client-side Celery task polling
+│       ├── style.css          #     Main stylesheet (dark glassmorphism theme)
+│       ├── app.js             #     Client-side Celery task polling
+│       └── report-viz.js      #     Report data visualization enhancements
 ├── export/                    # Pluggable output formatters (Open/Closed)
 │   ├── __init__.py            #   FORMATTER_REGISTRY & get_formatter()
 │   ├── formatter.py           #   OutputFormatter ABC, parse_sections(), export_cli()
