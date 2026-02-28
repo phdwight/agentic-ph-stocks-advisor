@@ -192,11 +192,15 @@ def create_app() -> Flask:
                 count,
                 settings.daily_analysis_limit,
             )
+            next_midnight = (
+                datetime.now(tz=UTC) + timedelta(days=1)
+            ).replace(hour=0, minute=0, second=0, microsecond=0)
             return jsonify({
                 "error": (
                     f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
-                    "Your quota resets at 00:00 UTC."
+                    "Your quota resets at midnight UTC."
                 ),
+                "reset_at": next_midnight.isoformat(),
             }), 429
 
         # Dispatch analysis to the Celery worker

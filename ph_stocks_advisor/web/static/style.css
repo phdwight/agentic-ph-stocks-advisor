@@ -672,13 +672,33 @@ a:hover {
   gap: 0.5rem;
 }
 
-.stock-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.6rem;
+.stock-chips-wrapper {
+  position: relative;
+  overflow: hidden;
   max-width: 700px;
   margin: 0 auto;
+  /* Fade masks on left & right edges */
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+}
+
+.stock-chips {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  height: calc(3 * 2.1rem + 3 * 1rem + 2 * 0.6rem);   /* 3 rows of chips */
+  width: max-content;
+  animation: marquee-scroll 22s linear infinite;
+}
+
+.stock-chips:hover {
+  animation-play-state: paused;
+}
+
+@keyframes marquee-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
 .stock-chip {

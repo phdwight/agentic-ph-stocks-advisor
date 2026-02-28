@@ -82,16 +82,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const dateStr = `${monthNames[now.getMonth()]} ${String(now.getDate()).padStart(2, "0")}`;
 
-    const chip = document.createElement("a");
-    chip.href = `/report/${symbol}`;
-    chip.className = "stock-chip stock-chip-new";
-    chip.dataset.symbol = symbol;
-    chip.innerHTML = `
+    const chipHTML = `
       <span class="chip-symbol">${symbol}</span>
       <span class="chip-verdict badge-sm ${isBuy ? "buy" : "not-buy"}">${isBuy ? "BUY" : "NOT BUY"}</span>
       <span class="chip-date">${dateStr}</span>`;
 
+    // Primary chip (interactive)
+    const chip = document.createElement("a");
+    chip.href = `/report/${symbol}`;
+    chip.className = "stock-chip stock-chip-new";
+    chip.dataset.symbol = symbol;
+    chip.innerHTML = chipHTML;
+
+    // Duplicate chip for seamless carousel loop
+    const dupe = document.createElement("a");
+    dupe.href = `/report/${symbol}`;
+    dupe.className = "stock-chip";
+    dupe.setAttribute("aria-hidden", "true");
+    dupe.tabIndex = -1;
+    dupe.innerHTML = chipHTML;
+
+    // Insert primary at start, duplicate at midpoint (after original set)
     chipsContainer.prepend(chip);
+    // Find the first aria-hidden chip (start of duplicate set) and prepend there
+    const firstDupe = chipsContainer.querySelector('[aria-hidden="true"]');
+    if (firstDupe) {
+      chipsContainer.insertBefore(dupe, firstDupe);
+    } else {
+      chipsContainer.appendChild(dupe);
+    }
+
+    // Restart animation for seamless looping with new content
+    chipsContainer.style.animation = "none";
+    chipsContainer.offsetHeight; // force reflow
+    chipsContainer.style.animation = "";
   }
 
   /* ================================================================== */
@@ -286,7 +310,21 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await resp.json();
 
       if (!resp.ok) {
-        flashError(data.error || "Something went wrong.");
+        let msg = data.error || "Something went wrong.";
+        if (data.reset_at) {
+          const resetDate = new Date(data.reset_at);
+          const localTime = resetDate.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+            timeZoneName: "short",
+          });
+          msg = msg.replace(
+            /Your quota resets at .+$/,
+            `Your quota resets at ${localTime}.`
+          );
+        }
+        flashError(msg);
         return;
       }
 

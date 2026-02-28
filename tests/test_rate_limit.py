@@ -258,7 +258,7 @@ class TestAnalyseRateLimit:
                 assert resp.status_code == 200
 
     def test_error_message_mentions_reset(self, client, fake_redis):
-        """The 429 error message should tell the user when the quota resets."""
+        """The 429 response includes reset_at ISO timestamp for client-side formatting."""
         task = MagicMock()
         task.id = "task-001"
 
@@ -272,4 +272,9 @@ class TestAnalyseRateLimit:
             resp = client.post("/analyse", data={"symbol": "OVER"})
 
         data = resp.get_json()
-        assert "00:00 UTC" in data["error"]
+        assert "quota resets" in data["error"]
+        assert "reset_at" in data
+        # reset_at should be a valid ISO-8601 datetime string
+        from datetime import datetime
+        reset_dt = datetime.fromisoformat(data["reset_at"])
+        assert reset_dt.hour == 0 and reset_dt.minute == 0
