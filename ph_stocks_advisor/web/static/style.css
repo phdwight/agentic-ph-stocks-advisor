@@ -560,6 +560,10 @@ a:hover {
 .error-pill {
   background: var(--crimson-bg);
   color: var(--crimson);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
 }
 
 /* Animated dot for pending */

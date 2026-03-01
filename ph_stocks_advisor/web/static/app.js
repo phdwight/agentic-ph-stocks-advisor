@@ -246,10 +246,13 @@ document.addEventListener("DOMContentLoaded", () => {
             <button class="tracker-dismiss" data-symbol="${sym}">✕</button>
           </td>`;
       } else if (t.status === "error") {
+        const fullMsg = t.msg || "Unknown error";
+        // Show a short label in the pill; full detail in tooltip.
+        const shortMsg = fullMsg.length > 48 ? fullMsg.slice(0, 45) + "…" : fullMsg;
         row.className = "tracker-row tracker-row-error";
         row.innerHTML = `
           <td><span class="chip-symbol">${sym}</span></td>
-          <td><span class="tracker-status-pill error-pill">✕ Failed</span></td>
+          <td><span class="tracker-status-pill error-pill" title="${fullMsg.replace(/"/g, '&quot;')}">✕ ${shortMsg}</span></td>
           <td></td>
           <td class="tracker-actions">
             <button class="tracker-retry" data-symbol="${sym}">↻ Retry</button>
@@ -422,7 +425,8 @@ document.addEventListener("DOMContentLoaded", () => {
           delete activeSources[symbol];
 
           if (data.error) {
-            updateTask(symbol, "error", { msg: data.error });
+            const failLabel = data.label || "Analysis";
+            updateTask(symbol, "error", { msg: `Failed ${failLabel.toLowerCase()}: ${data.error}` });
           } else {
             updateTask(symbol, "done", {
               verdict: data.verdict || "",
@@ -455,7 +459,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.done) {
           clearInterval(interval);
           if (data.error) {
-            updateTask(symbol, "error", { msg: data.error });
+            updateTask(symbol, "error", { msg: `Failed: ${data.error}` });
           } else {
             updateTask(symbol, "done", { verdict: data.verdict || "" });
             // Auto-dismiss completed tasks after 8 seconds

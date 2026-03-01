@@ -48,6 +48,7 @@ def analyse_stock(self, symbol: str) -> dict:
     from ph_stocks_advisor.web.progress import (
         STEP_FETCHING,
         STEP_SAVING,
+        STEP_VALIDATING,
         publish_progress,
     )
 
@@ -64,7 +65,10 @@ def analyse_stock(self, symbol: str) -> dict:
         if report is None:
             error_msg = result.get("error", "Analysis produced no report.")
             logger.error("Analysis for %s failed: %s", symbol, error_msg)
-            publish_progress(task_id, STEP_SAVING, done=True, error=error_msg)
+            # Use STEP_VALIDATING if the error came from symbol validation,
+            # otherwise use STEP_SAVING as a generic failure step.
+            error_step = STEP_VALIDATING if result.get("error") else STEP_SAVING
+            publish_progress(task_id, error_step, done=True, error=error_msg)
             return {"symbol": symbol, "error": error_msg}
 
         # Persist to database
