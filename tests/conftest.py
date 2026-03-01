@@ -34,9 +34,32 @@ from ph_stocks_advisor.data.models import (
 
 
 def make_mock_llm(response_text: str = "Mock analysis.") -> MagicMock:
-    """Return a MagicMock that behaves like a BaseChatModel."""
+    """Return a MagicMock that behaves like a BaseChatModel.
+
+    The mock does NOT support ``with_structured_output`` — calling it
+    raises ``NotImplementedError`` so the consolidator falls back to
+    regex-based verdict extraction.
+    """
     llm = MagicMock()
     llm.invoke.return_value = AIMessage(content=response_text)
+    llm.with_structured_output.side_effect = NotImplementedError(
+        "mock LLM does not support structured output"
+    )
+    return llm
+
+
+def make_structured_mock_llm(structured_response: Any) -> MagicMock:
+    """Return a MagicMock whose ``with_structured_output`` chain returns
+    *structured_response* directly.
+
+    Use this to test the structured-output (primary) path of the
+    consolidator without hitting a real LLM.
+    """
+    inner = MagicMock()
+    inner.invoke.return_value = structured_response
+
+    llm = MagicMock()
+    llm.with_structured_output.return_value = inner
     return llm
 
 

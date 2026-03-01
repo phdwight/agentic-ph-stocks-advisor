@@ -3,10 +3,16 @@ Consolidator agent – synthesises specialist analyses into a final report.
 
 Separated from the specialist agents to respect the Single Responsibility
 Principle: this module only handles report consolidation logic.
+
+Uses ``BaseChatModel.with_structured_output()`` to enforce a typed
+``ConsolidationResponse`` from the LLM, eliminating fragile regex-based
+verdict parsing.  Falls back to free-form text + regex extraction when
+the LLM does not support structured output.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 
 from langchain_core.language_models import BaseChatModel
@@ -14,11 +20,14 @@ from langchain_core.messages import HumanMessage
 
 from ph_stocks_advisor.data.models import (
     AdvisorState,
+    ConsolidationResponse,
     FinalReport,
     Verdict,
 )
 from ph_stocks_advisor.agents.prompts import CONSOLIDATION_PROMPT
 from ph_stocks_advisor.infra.config import get_today
+
+logger = logging.getLogger(__name__)
 
 
 class ConsolidatorAgent:
@@ -37,22 +46,47 @@ class ConsolidatorAgent:
             valuation_analysis=state.valuation_analysis.analysis if state.valuation_analysis else "N/A",
             controversy_analysis=state.controversy_analysis.analysis if state.controversy_analysis else "N/A",
         )
-        response = self._llm.invoke([HumanMessage(content=prompt)])
-        content = str(response.content)
 
-        # Determine verdict from LLM output
-        verdict = self._extract_verdict(content)
+        verdict, summary = self._invoke_structured(prompt)
 
         return FinalReport(
             symbol=state.symbol,
             verdict=verdict,
-            summary=content,
+            summary=summary,
             price_section=state.price_analysis.analysis if state.price_analysis else "",
             dividend_section=state.dividend_analysis.analysis if state.dividend_analysis else "",
             movement_section=state.movement_analysis.analysis if state.movement_analysis else "",
             valuation_section=state.valuation_analysis.analysis if state.valuation_analysis else "",
             controversy_section=state.controversy_analysis.analysis if state.controversy_analysis else "",
         )
+
+    # ------------------------------------------------------------------
+    # Structured output (primary) → free-form + regex (fallback)
+    # ------------------------------------------------------------------
+
+    def _invoke_structured(self, prompt: str) -> tuple[Verdict, str]:
+        """Try structured output first; fall back to regex extraction.
+
+        Returns ``(verdict, summary)`` regardless of which path succeeds.
+        """
+        try:
+            structured_llm = self._llm.with_structured_output(ConsolidationResponse)
+            result: ConsolidationResponse = structured_llm.invoke(
+                [HumanMessage(content=prompt)]
+            )
+            logger.info("Structured output succeeded — verdict=%s", result.verdict.value)
+            return result.verdict, result.summary
+        except (NotImplementedError, AttributeError, TypeError) as exc:
+            logger.info(
+                "Structured output not supported (%s); falling back to regex.",
+                exc,
+            )
+
+        # Fallback: invoke without structured output and parse manually
+        response = self._llm.invoke([HumanMessage(content=prompt)])
+        content = str(response.content)
+        verdict = self._extract_verdict(content)
+        return verdict, content
 
     @staticmethod
     def _extract_verdict(text: str) -> Verdict:

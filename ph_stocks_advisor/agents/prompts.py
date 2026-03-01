@@ -197,5 +197,10 @@ Your report MUST include:
 3. A final **Verdict** line that says exactly one of: **BUY** or **NOT BUY**.
 4. A one-sentence justification for the verdict.
 
+Your output will be captured as structured data with three fields:
+- ``verdict``: exactly "BUY" or "NOT BUY"
+- ``justification``: one sentence explaining why
+- ``summary``: the full report text (sections 1-4 above)
+
 Use plain, jargon-free English that any Filipino retail investor can understand.
 """

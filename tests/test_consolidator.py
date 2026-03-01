@@ -1,15 +1,82 @@
-"""
-Tests for the ConsolidatorAgent.
+"""Tests for the ConsolidatorAgent.
+
+Verifies both the primary structured-output path (LLM returns a typed
+``ConsolidationResponse``) and the regex-fallback path (for LLMs that
+don't support structured output).
 """
 
 from __future__ import annotations
 
-from tests.conftest import make_mock_llm
+from tests.conftest import make_mock_llm, make_structured_mock_llm
 from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
-from ph_stocks_advisor.data.models import AdvisorState, Verdict
+from ph_stocks_advisor.data.models import (
+    AdvisorState,
+    ConsolidationResponse,
+    Verdict,
+)
 
 
-class TestConsolidatorAgent:
+# ---------------------------------------------------------------------------
+# Tests for the structured-output (primary) path
+# ---------------------------------------------------------------------------
+
+
+class TestConsolidatorStructuredOutput:
+    """Verify that the agent uses with_structured_output when available."""
+
+    def test_buy_via_structured_output(self, sample_advisor_state: AdvisorState):
+        response = ConsolidationResponse(
+            verdict=Verdict.BUY,
+            justification="Strong fundamentals and undervalued.",
+            summary="Executive summary: TEL is a solid stock.",
+        )
+        llm = make_structured_mock_llm(response)
+        agent = ConsolidatorAgent(llm)
+        report = agent.run(sample_advisor_state)
+
+        assert report.symbol == "TEL"
+        assert report.verdict == Verdict.BUY
+        assert "solid stock" in report.summary
+        # Verify with_structured_output was called with the right model
+        llm.with_structured_output.assert_called_once_with(ConsolidationResponse)
+
+    def test_not_buy_via_structured_output(self, sample_advisor_state: AdvisorState):
+        response = ConsolidationResponse(
+            verdict=Verdict.NOT_BUY,
+            justification="Overvalued and high risk.",
+            summary="Executive summary: TEL is too expensive.",
+        )
+        llm = make_structured_mock_llm(response)
+        agent = ConsolidatorAgent(llm)
+        report = agent.run(sample_advisor_state)
+
+        assert report.verdict == Verdict.NOT_BUY
+
+    def test_sections_populated_from_state(self, sample_advisor_state: AdvisorState):
+        response = ConsolidationResponse(
+            verdict=Verdict.BUY,
+            justification="Good.",
+            summary="Report.",
+        )
+        llm = make_structured_mock_llm(response)
+        agent = ConsolidatorAgent(llm)
+        report = agent.run(sample_advisor_state)
+
+        assert report.price_section == "Price looks healthy."
+        assert report.dividend_section == "Dividends are good."
+        assert report.movement_section == "Trending up."
+        assert report.valuation_section == "Undervalued."
+        assert report.controversy_section == "Minor risk."
+
+
+# ---------------------------------------------------------------------------
+# Tests for the regex-fallback path
+# ---------------------------------------------------------------------------
+
+
+class TestConsolidatorRegexFallback:
+    """Verify fallback when with_structured_output raises."""
+
     def test_run_returns_final_report(self, sample_advisor_state: AdvisorState):
         llm = make_mock_llm(
             "Executive summary: TEL is a solid stock.\n\n"
@@ -31,6 +98,11 @@ class TestConsolidatorAgent:
         agent = ConsolidatorAgent(llm)
         report = agent.run(sample_advisor_state)
         assert report.verdict == Verdict.NOT_BUY
+
+
+# ---------------------------------------------------------------------------
+# Tests for the static _extract_verdict helper (regex engine)
+# ---------------------------------------------------------------------------
 
 
 class TestExtractVerdict:

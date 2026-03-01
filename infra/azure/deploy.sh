@@ -35,18 +35,6 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
   set +a
 fi
 
-# ── Require secrets ──────────────────────────────────────────────────────────
-: "${OPENAI_API_KEY:?❌ OPENAI_API_KEY is required. Set it in .env or export it.}"
-: "${AZURE_PG_PASSWORD:?❌ AZURE_PG_PASSWORD is required. Export it before running this script.}"
-TAVILY_API_KEY="${TAVILY_API_KEY:-}"
-ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
-ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET:-}"
-ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-common}"
-FLASK_SECRET_KEY="${FLASK_SECRET_KEY:-ph-stocks-advisor-change-me-in-production}"
-ADMIN_SECRET_KEY="${ADMIN_SECRET_KEY:-sqladmin-change-me-in-production}"
-GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
-GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
-
 # ── Parse flags ──────────────────────────────────────────────────────────────
 UPDATE_ONLY=false
 INFRA_ONLY=false
@@ -57,6 +45,22 @@ for arg in "$@"; do
     *)            echo "Unknown flag: $arg"; exit 1 ;;
   esac
 done
+
+# ── Require secrets ──────────────────────────────────────────────────────────
+: "${OPENAI_API_KEY:?❌ OPENAI_API_KEY is required. Set it in .env or export it.}"
+if [[ "$UPDATE_ONLY" == false ]]; then
+  : "${AZURE_PG_PASSWORD:?❌ AZURE_PG_PASSWORD is required. Export it before running this script.}"
+fi
+TAVILY_API_KEY="${TAVILY_API_KEY:-}"
+LANGSMITH_API_KEY="${LANGSMITH_API_KEY:-}"
+LANGSMITH_PROJECT="${LANGSMITH_PROJECT:-ph-stocks-advisor}"
+ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
+ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET:-}"
+ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-common}"
+FLASK_SECRET_KEY="${FLASK_SECRET_KEY:-ph-stocks-advisor-change-me-in-production}"
+ADMIN_SECRET_KEY="${ADMIN_SECRET_KEY:-sqladmin-change-me-in-production}"
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 info()  { echo -e "\n\033[1;34m▸ $*\033[0m"; }
@@ -87,6 +91,8 @@ if [[ "$UPDATE_ONLY" == false ]]; then
       openaiApiKey="$OPENAI_API_KEY" \
       tavilyApiKey="$TAVILY_API_KEY" \
       openaiModel="${OPENAI_MODEL:-gpt-4o-mini}" \
+      langsmithApiKey="$LANGSMITH_API_KEY" \
+      langsmithProject="$LANGSMITH_PROJECT" \
       entraClientId="$ENTRA_CLIENT_ID" \
       entraClientSecret="$ENTRA_CLIENT_SECRET" \
       entraTenantId="$ENTRA_TENANT_ID" \
@@ -146,11 +152,16 @@ docker push "$ADMIN_IMAGE_FULL"
 ok "Images pushed: $IMAGE_FULL, $ADMIN_IMAGE_FULL"
 
 # ── 4. Update Container Apps to use the new image ───────────────────────────
+# Setting DEPLOY_TIMESTAMP forces a new revision even when the image tag
+# (e.g. "latest") hasn't changed, ensuring the container pulls the new image.
+DEPLOY_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+
 info "Updating web container app …"
 az containerapp update \
   --name "${APP_NAME}-web" \
   --resource-group "$RESOURCE_GROUP" \
   --image "$IMAGE_FULL" \
+  --set-env-vars "DEPLOY_TIMESTAMP=${DEPLOY_TS}" \
   --output none
 
 info "Updating worker container app …"
@@ -158,6 +169,7 @@ az containerapp update \
   --name "${APP_NAME}-worker" \
   --resource-group "$RESOURCE_GROUP" \
   --image "$IMAGE_FULL" \
+  --set-env-vars "DEPLOY_TIMESTAMP=${DEPLOY_TS}" \
   --output none
 
 info "Updating admin container app …"
@@ -165,6 +177,7 @@ az containerapp update \
   --name "${APP_NAME}-admin" \
   --resource-group "$RESOURCE_GROUP" \
   --image "$ADMIN_IMAGE_FULL" \
+  --set-env-vars "DEPLOY_TIMESTAMP=${DEPLOY_TS}" \
   --output none
 
 ok "Container apps updated."

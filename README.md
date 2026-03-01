@@ -23,7 +23,7 @@ START → Validate ──────►├── Movement Agent ─────
 | **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance, web news |
 | **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
 | **Controversy Agent** | Price spike detection, risk factors, web news & controversies |
-| **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict |
+| **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict (via structured output; regex fallback) |
 
 ### Data Sources
 

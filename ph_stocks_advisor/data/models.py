@@ -218,6 +218,28 @@ class ControversyAnalysis(BaseModel):
     analysis: str = ""
 
 
+class ConsolidationResponse(BaseModel):
+    """Structured LLM output from the consolidator agent.
+
+    Used with ``BaseChatModel.with_structured_output()`` so the verdict
+    is returned as a typed enum — no regex parsing required.
+    """
+
+    verdict: Verdict = Field(
+        description="Final investment verdict. Must be exactly BUY or NOT BUY.",
+    )
+    justification: str = Field(
+        description="One-sentence justification for the verdict.",
+    )
+    summary: str = Field(
+        description=(
+            "The full investment report in markdown format, including "
+            "executive summary, bullet-pointed sections for each analysis "
+            "area, and the verdict line."
+        ),
+    )
+
+
 class FinalReport(BaseModel):
     """The consolidated investment report."""
 
