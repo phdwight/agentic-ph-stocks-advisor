@@ -41,9 +41,19 @@ class FakeRedisPubSub:
     def __init__(self, store: "FakeRedisWithPubSub"):
         self._store = store
         self._channels: list[str] = []
+        self._msg_queue: list[dict] = []
 
     def subscribe(self, channel: str) -> None:
         self._channels.append(channel)
+        # Drain any messages already published to this channel.
+        for msg_data in self._store._drain(channel):
+            self._msg_queue.append({"type": "message", "data": msg_data})
+
+    def get_message(self, timeout: float = 0) -> dict | None:
+        """Return the next queued message, or None."""
+        if self._msg_queue:
+            return self._msg_queue.pop(0)
+        return None
 
     def listen(self):
         """Yield messages that were published while we are subscribed."""
@@ -167,6 +177,11 @@ class TestPublishProgress:
         assert event["label"] == STEP_LABELS[STEP_FETCHING]
         assert event["done"] is False
 
+        # Also stores latest state in a Redis key.
+        state = fake_redis.get("analysis:state:task-123")
+        assert state is not None
+        assert json.loads(state)["step"] == STEP_FETCHING
+
     def test_done_event_includes_extra_fields(self, fake_redis):
         with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
             publish_progress(
@@ -215,25 +230,38 @@ class TestSubscribeProgress:
     """Verify subscribe_progress yields events and stops on done."""
 
     def test_yields_events_until_done(self, fake_redis):
-        # Pre-load two events: one in-progress, one done.
-        channel = "analysis:progress:task-sub"
-        fake_redis.publish(
-            channel, json.dumps({"step": 2, "label": "Fetching data", "done": False})
-        )
-        fake_redis.publish(
-            channel,
-            json.dumps({"step": 5, "label": "Saving report", "done": True, "verdict": "BUY"}),
-        )
-
+        """Subscriber reads stored state, then Pub/Sub events."""
         from ph_stocks_advisor.web.progress import subscribe_progress
 
+        # Simulate: worker already published progress (stored in state key
+        # AND in the pub/sub queue).
+        with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
+            publish_progress("task-sub", STEP_FETCHING)
+            publish_progress("task-sub", STEP_SAVING, done=True, verdict="BUY")
+
+        # The state key now holds the LAST event (done=True).
+        # subscribe_progress should read it and return immediately.
         with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
             events = list(subscribe_progress("task-sub"))
 
-        assert len(events) == 2
-        assert events[0]["done"] is False
-        assert events[1]["done"] is True
-        assert events[1]["verdict"] == "BUY"
+        # Should get the stored state (done event) and stop.
+        assert len(events) >= 1
+        assert events[-1]["done"] is True
+        assert events[-1]["verdict"] == "BUY"
+
+    def test_catches_up_from_state_key_when_pubsub_missed(self, fake_redis):
+        """If pub/sub events were missed, the state key catches up."""
+        from ph_stocks_advisor.web.progress import subscribe_progress
+
+        # Write directly to the state key (simulating worker already done).
+        done_event = {"step": 5, "label": "Saving report", "done": True, "verdict": "BUY"}
+        fake_redis.set("analysis:state:task-late", json.dumps(done_event))
+
+        with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
+            events = list(subscribe_progress("task-late"))
+
+        assert len(events) == 1
+        assert events[0]["done"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -246,12 +274,9 @@ class TestStreamEndpoint:
 
     def test_stream_returns_sse_content_type(self, client, fake_redis):
         """The endpoint should set the correct MIME type."""
-        # Pre-load a done event so the stream terminates.
-        channel = "analysis:progress:task-sse"
-        fake_redis.publish(
-            channel,
-            json.dumps({"step": 5, "label": "Done", "done": True}),
-        )
+        # Store a done event in the state key so the stream terminates.
+        done_event = {"step": 5, "label": "Done", "done": True}
+        fake_redis.set("analysis:state:task-sse", json.dumps(done_event))
 
         with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
             resp = client.get("/stream/task-sse")
@@ -260,36 +285,24 @@ class TestStreamEndpoint:
 
     def test_stream_emits_data_lines(self, client, fake_redis):
         """Events should be formatted as SSE data lines."""
-        channel = "analysis:progress:task-sse2"
-        fake_redis.publish(
-            channel,
-            json.dumps({"step": 3, "label": "Running agents", "done": False}),
-        )
-        fake_redis.publish(
-            channel,
-            json.dumps({"step": 5, "done": True, "verdict": "BUY"}),
-        )
+        # Store a done event in the state key.
+        done_event = {"step": 5, "done": True, "verdict": "BUY", "label": "Saving report"}
+        fake_redis.set("analysis:state:task-sse2", json.dumps(done_event))
 
         with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
             resp = client.get("/stream/task-sse2")
 
         body = resp.data.decode()
         lines = [l for l in body.split("\n") if l.startswith("data:")]
-        assert len(lines) == 2
+        assert len(lines) >= 1
 
-        first = json.loads(lines[0].removeprefix("data: "))
-        assert first["step"] == 3
-        assert first["done"] is False
-
-        second = json.loads(lines[1].removeprefix("data: "))
-        assert second["done"] is True
-        assert second["verdict"] == "BUY"
+        last = json.loads(lines[-1].removeprefix("data: "))
+        assert last["done"] is True
+        assert last["verdict"] == "BUY"
 
     def test_stream_sets_no_cache_headers(self, client, fake_redis):
-        channel = "analysis:progress:task-sse3"
-        fake_redis.publish(
-            channel, json.dumps({"step": 0, "done": True})
-        )
+        done_event = {"step": 0, "done": True, "label": "Queued"}
+        fake_redis.set("analysis:state:task-sse3", json.dumps(done_event))
 
         with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
             resp = client.get("/stream/task-sse3")
