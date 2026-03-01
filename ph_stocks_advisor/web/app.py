@@ -33,7 +33,7 @@ from ph_stocks_advisor.export.formatter import (
 from ph_stocks_advisor.export.html import _body_to_html
 from ph_stocks_advisor.infra.config import get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
-from ph_stocks_advisor.web.rate_limit import check_and_increment
+from ph_stocks_advisor.web.rate_limit import check_limit
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ def create_app() -> Flask:
         # --- Per-user daily rate limit --------------------------------
         user = get_current_user()
         user_id = (user or {}).get("email", "anonymous")
-        allowed, count = check_and_increment(
+        allowed, count = check_limit(
             r, user_id, settings.daily_analysis_limit
         )
         if not allowed:
@@ -205,8 +205,10 @@ def create_app() -> Flask:
                 "reset_at": next_midnight.isoformat(),
             }), 429
 
-        # Dispatch analysis to the Celery worker
-        task = analyse_stock.delay(symbol)
+        # Dispatch analysis to the Celery worker.
+        # Pass user_id so the task can increment the rate-limit counter
+        # only on success (failed analyses do not consume quota).
+        task = analyse_stock.delay(symbol, user_id=user_id)
 
         # Store the lock so concurrent requests join this task
         r.set(inflight_key, task.id, ex=_INFLIGHT_TTL)

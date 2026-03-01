@@ -38,6 +38,56 @@ def _daily_key(user_id: str) -> str:
     return f"{_RATE_LIMIT_PREFIX}{user_id}:{today}"
 
 
+def check_limit(
+    r: redis_lib.Redis,
+    user_id: str,
+    limit: int,
+) -> tuple[bool, int]:
+    """Check whether the user may perform another analysis today.
+
+    This is a **read-only** check — it does *not* increment the counter.
+    Call :func:`increment` separately after a successful analysis.
+
+    Returns
+    -------
+    tuple[bool, int]
+        ``(allowed, current_count)``.
+    """
+    key = _daily_key(user_id)
+    current = r.get(key)
+    current_count = int(current) if current is not None else 0
+
+    if current_count >= limit:
+        logger.info(
+            "Rate limit reached for %s (%d/%d)", user_id, current_count, limit
+        )
+        return False, current_count
+
+    return True, current_count
+
+
+def increment(
+    r: redis_lib.Redis,
+    user_id: str,
+) -> int:
+    """Increment the daily analysis counter for *user_id*.
+
+    Call this only after a successful first-time analysis so that
+    failed or cached requests are never counted.
+
+    Returns the new count.
+    """
+    key = _daily_key(user_id)
+    new_count = r.incr(key)
+
+    # Set expiry only on the first increment (when the key was just created).
+    if new_count == 1:
+        ttl = _seconds_until_utc_midnight()
+        r.expire(key, ttl)
+
+    return new_count
+
+
 def check_and_increment(
     r: redis_lib.Redis,
     user_id: str,
@@ -55,6 +105,10 @@ def check_and_increment(
     The key automatically expires at the next 00:00 UTC so counters
     reset daily without a cron job.
 
+    .. deprecated::
+        Prefer :func:`check_limit` + :func:`increment` so that only
+        successful analyses consume quota.
+
     Parameters
     ----------
     r:
@@ -71,25 +125,11 @@ def check_and_increment(
         may proceed; *count* is the user's total for today **after**
         the increment (or the current total if denied).
     """
-    key = _daily_key(user_id)
-
-    # Atomically read+check+increment via a short pipeline.
-    current = r.get(key)
-    current_count = int(current) if current is not None else 0
-
-    if current_count >= limit:
-        logger.info(
-            "Rate limit reached for %s (%d/%d)", user_id, current_count, limit
-        )
+    allowed, current_count = check_limit(r, user_id, limit)
+    if not allowed:
         return False, current_count
 
-    new_count = r.incr(key)
-
-    # Set expiry only on the first increment (when the key was just created).
-    if new_count == 1:
-        ttl = _seconds_until_utc_midnight()
-        r.expire(key, ttl)
-
+    new_count = increment(r, user_id)
     return True, new_count
 
 

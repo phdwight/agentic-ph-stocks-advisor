@@ -110,7 +110,7 @@ class TestAnalyseDedup:
         assert resp.status_code == 200
         assert data["status"] == "started"
         assert data["task_id"] == "task-abc-123"
-        mock_delay.assert_called_once_with("TEL")
+        mock_delay.assert_called_once_with("TEL", user_id="dev@localhost")
         # Lock should be stored in Redis
         assert fake_redis.get("analysis:inflight:TEL") == "task-abc-123"
 
@@ -144,7 +144,7 @@ class TestAnalyseDedup:
         data = resp.get_json()
         assert data["status"] == "started"
         assert data["task_id"] == "task-sm-001"
-        mock_delay.assert_called_once_with("SM")
+        mock_delay.assert_called_once_with("SM", user_id="dev@localhost")
 
     def test_cancel_clears_inflight_lock(self, client, fake_redis):
         """Cancelling a task should remove its inflight lock."""

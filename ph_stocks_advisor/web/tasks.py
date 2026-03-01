@@ -35,7 +35,7 @@ def _clear_inflight_lock(symbol: str) -> None:
 
 
 @celery_app.task(bind=True, name="analyse_stock")
-def analyse_stock(self, symbol: str) -> dict:
+def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
     """Run the full multi-agent analysis for a stock symbol.
 
     Returns a dict with ``symbol``, ``verdict``, and ``report_id``
@@ -51,6 +51,7 @@ def analyse_stock(self, symbol: str) -> dict:
         STEP_VALIDATING,
         publish_progress,
     )
+    from ph_stocks_advisor.web.rate_limit import increment as rl_increment
 
     task_id = self.request.id
     logger.info("Starting analysis for %s (task %s)", symbol, task_id)
@@ -79,6 +80,22 @@ def analyse_stock(self, symbol: str) -> dict:
             report_id = repo.save(record)
         finally:
             repo.close()
+
+        # Count this successful analysis against the user's daily quota.
+        try:
+            import redis as redis_lib
+            from ph_stocks_advisor.infra.config import get_settings
+
+            rl_redis = redis_lib.from_url(
+                get_settings().redis_url, decode_responses=True
+            )
+            rl_increment(rl_redis, user_id)
+        except Exception:
+            logger.warning(
+                "Failed to increment rate-limit counter for %s",
+                user_id,
+                exc_info=True,
+            )
 
         logger.info(
             "Analysis for %s complete — verdict=%s, report_id=%d",

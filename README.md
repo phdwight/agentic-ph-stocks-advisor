@@ -420,4 +420,4 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth2 client secret |
 | `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
 | `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
-| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max new analyses per user per UTC day (resets at 00:00 UTC) |
+| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per UTC day (failed queries are not counted; resets at 00:00 UTC) |
