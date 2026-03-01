@@ -45,19 +45,30 @@ def analyse_stock(self, symbol: str) -> dict:
     from ph_stocks_advisor.graph.workflow import run_analysis
     from ph_stocks_advisor.infra.config import get_repository
     from ph_stocks_advisor.infra.repository import ReportRecord
+    from ph_stocks_advisor.web.progress import (
+        STEP_FETCHING,
+        STEP_SAVING,
+        publish_progress,
+    )
 
-    logger.info("Starting analysis for %s (task %s)", symbol, self.request.id)
+    task_id = self.request.id
+    logger.info("Starting analysis for %s (task %s)", symbol, task_id)
+
+    # Notify the SSE stream that the analysis has begun.
+    publish_progress(task_id, STEP_FETCHING)
 
     try:
-        result = run_analysis(symbol)
+        result = run_analysis(symbol, task_id=task_id)
         report: FinalReport | None = result.get("final_report")
 
         if report is None:
             error_msg = result.get("error", "Analysis produced no report.")
             logger.error("Analysis for %s failed: %s", symbol, error_msg)
+            publish_progress(task_id, STEP_SAVING, done=True, error=error_msg)
             return {"symbol": symbol, "error": error_msg}
 
         # Persist to database
+        publish_progress(task_id, STEP_SAVING)
         repo = get_repository()
         try:
             record = ReportRecord.from_final_report(report)
@@ -71,11 +82,22 @@ def analyse_stock(self, symbol: str) -> dict:
             report.verdict.value,
             report_id,
         )
+        publish_progress(
+            task_id,
+            STEP_SAVING,
+            done=True,
+            symbol=symbol,
+            verdict=report.verdict.value,
+            report_id=report_id,
+        )
         return {
             "symbol": symbol,
             "verdict": report.verdict.value,
             "report_id": report_id,
         }
+    except Exception as exc:
+        publish_progress(task_id, STEP_SAVING, done=True, error=str(exc))
+        raise
     finally:
         # Always clear the inflight dedup lock so a new analysis can run
         _clear_inflight_lock(symbol)

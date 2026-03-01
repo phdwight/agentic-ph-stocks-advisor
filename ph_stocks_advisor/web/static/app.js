@@ -223,8 +223,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (t.status === "pending") {
         const step = t.step || 0;
-        const stepLabels = ["Queued", "Fetching data", "Running agents", "Consolidating", "Saving report"];
-        const stepLabel = stepLabels[Math.min(step, stepLabels.length - 1)];
+        const stepLabels = ["Queued", "Validating symbol", "Fetching data", "Running agents", "Consolidating", "Saving report"];
+        const stepLabel = t.stepLabel || stepLabels[Math.min(step, stepLabels.length - 1)];
         row.className = "tracker-row tracker-row-pending";
         row.innerHTML = `
           <td><span class="chip-symbol">${sym}</span></td>
@@ -284,6 +284,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const taskId = btn.dataset.task;
         btn.disabled = true;
         btn.textContent = "…";
+        // Close any open SSE connection for this symbol.
+        if (activeSources[sym]) {
+          activeSources[sym].close();
+          delete activeSources[sym];
+        }
         try {
           await fetch(`/cancel/${taskId}`, { method: "POST" });
         } catch { /* best-effort */ }
@@ -298,9 +303,6 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================================================================== */
 
   setInterval(() => {
-    const tasks = loadTasks();
-    let dirty = false;
-
     document.querySelectorAll(".tracker-elapsed[data-ts]").forEach(el => {
       const secs = Math.floor((Date.now() - parseInt(el.dataset.ts)) / 1000);
       if (secs < 60) {
@@ -311,27 +313,6 @@ document.addEventListener("DOMContentLoaded", () => {
         el.textContent = `${m}m ${s < 10 ? "0" : ""}${s}s`;
       }
     });
-
-    // Advance step indicators based on elapsed time
-    for (const sym of Object.keys(tasks)) {
-      const t = tasks[sym];
-      if (t.status !== "pending") continue;
-      const elapsed = (Date.now() - t.ts) / 1000;
-      let newStep = 0;
-      if (elapsed > 45) newStep = 4;
-      else if (elapsed > 30) newStep = 3;
-      else if (elapsed > 15) newStep = 2;
-      else if (elapsed > 5)  newStep = 1;
-      if ((t.step || 0) !== newStep) {
-        t.step = newStep;
-        dirty = true;
-      }
-    }
-
-    if (dirty) {
-      saveTasks(tasks);
-      renderTracker();
-    }
   }, 1000);
 
   /* ================================================================== */
@@ -389,10 +370,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (data.task_id) {
-        // Analysis dispatched — now add the card
+        // Analysis dispatched — open SSE stream for real-time updates
         addTask(symbol, data.task_id);
         renderTracker();
-        pollStatus(data.task_id, symbol);
+        streamStatus(data.task_id, symbol);
       } else {
         flashError(data.error || "Something went wrong.");
       }
@@ -402,9 +383,69 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   /* ================================================================== */
-  /*  Polling                                                           */
+  /*  SSE streaming (primary) + polling fallback                        */
   /* ================================================================== */
 
+  /** Active EventSource handles keyed by symbol so we can close them. */
+  const activeSources = {};
+
+  /**
+   * Open an SSE connection to /stream/<taskId> for real-time progress.
+   * Falls back to polling if EventSource is unsupported or the
+   * connection fails.
+   */
+  function streamStatus(taskId, symbol) {
+    if (typeof EventSource === "undefined") {
+      // Browser doesn't support SSE — fall back to polling
+      pollStatus(taskId, symbol);
+      return;
+    }
+
+    const source = new EventSource(`/stream/${taskId}`);
+    activeSources[symbol] = source;
+
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Update the step indicator with the real server label.
+        if (!data.done) {
+          updateTask(symbol, "pending", {
+            step: data.step || 0,
+            stepLabel: data.label || undefined,
+          });
+          renderTracker();
+        }
+
+        if (data.done) {
+          source.close();
+          delete activeSources[symbol];
+
+          if (data.error) {
+            updateTask(symbol, "error", { msg: data.error });
+          } else {
+            updateTask(symbol, "done", {
+              verdict: data.verdict || "",
+              report_id: data.report_id,
+            });
+            setTimeout(() => { removeTask(symbol); renderTracker(); }, 8000);
+          }
+          renderTracker();
+        }
+      } catch { /* malformed event — ignore */ }
+    };
+
+    source.onerror = () => {
+      // SSE connection failed — close and fall back to polling.
+      source.close();
+      delete activeSources[symbol];
+      pollStatus(taskId, symbol);
+    };
+  }
+
+  /**
+   * Polling fallback — used when SSE is unavailable or drops.
+   */
   function pollStatus(taskId, symbol) {
     const interval = setInterval(async () => {
       try {
@@ -456,10 +497,10 @@ document.addEventListener("DOMContentLoaded", () => {
   saveTasks(boot);
   renderTracker();
 
-  // Resume polling for any tasks still pending
+  // Resume SSE streams for any tasks still pending
   for (const sym of Object.keys(boot)) {
     if (boot[sym].status === "pending" && boot[sym].taskId) {
-      pollStatus(boot[sym].taskId, sym);
+      streamStatus(boot[sym].taskId, sym);
     }
   }
 

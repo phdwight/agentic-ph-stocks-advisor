@@ -167,7 +167,7 @@ ph-advisor-web --host 0.0.0.0         # expose to network
 ph-advisor-web --debug                # enable Flask debug mode
 ```
 
-The web interface lets you enter a stock symbol, kicks off the analysis in the background, and displays the report in the browser once complete. You can also browse report history for any symbol.
+The web interface lets you enter a stock symbol, kicks off the analysis in the background, and streams real-time progress to the browser via **Server-Sent Events (SSE)**. Each workflow step (validation, data fetching, agent execution, consolidation, saving) publishes events through Redis Pub/Sub; the frontend receives them instantly via `/stream/<task_id>`. A polling fallback (`/status/<task_id>`) is available for browsers without SSE support. Once complete, the report is displayed in the browser.
 
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis. Reports are **shared** — they are not tied to any user — but each authenticated user only sees the stocks they have personally requested to analyse. A `user_symbols` table tracks which symbols each user has analysed; anonymous users (auth disabled) see all reports. Authenticated user profiles (name, email, provider, login timestamps) are saved to a `users` table on every sign-in (upserted by `oid`).
 
@@ -308,6 +308,7 @@ ph_stocks_advisor/
 │   ├── rate_limit.py          #   Per-user daily analysis rate limiting (Redis)
 │   ├── celery_app.py          #   Celery instance & configuration
 │   ├── tasks.py               #   Celery task definitions (analyse_stock)
+│   ├── progress.py            #   Redis Pub/Sub progress publisher + subscriber (SSE)
 │   ├── templates/             #   Jinja2 HTML templates
 │   │   ├── base.html          #     Shared layout
 │   │   ├── index.html         #     Landing page with analysis form
@@ -317,7 +318,7 @@ ph_stocks_advisor/
 │   │   └── no_report.html     #     404 / no report found
 │   └── static/                #   Static assets
 │       ├── style.css          #     Main stylesheet (dark glassmorphism theme)
-│       ├── app.js             #     Client-side Celery task polling
+│       ├── app.js             #     Client-side SSE streaming (polling fallback)
 │       └── report-viz.js      #     Report data visualization enhancements
 ├── export/                    # Pluggable output formatters (Open/Closed)
 │   ├── __init__.py            #   FORMATTER_REGISTRY & get_formatter()
@@ -366,7 +367,8 @@ tests/
 ├── test_consolidator.py
 ├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py
-└── test_repository.py
+├── test_repository.py
+└── test_sse.py                # SSE progress streaming tests
 ```
 
 ## Environment Variables

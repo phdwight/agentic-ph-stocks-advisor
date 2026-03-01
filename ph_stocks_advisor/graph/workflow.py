@@ -89,6 +89,7 @@ def _make_specialist_node(
     agent_class: type,
     state_key: str,
     llm: BaseChatModel,
+    task_id: str | None = None,
 ) -> Callable[[GraphState], GraphState]:
     """Return a node function that runs *agent_class* and writes *state_key*."""
 
@@ -96,6 +97,19 @@ def _make_specialist_node(
         try:
             agent = agent_class(llm)
             result = agent.run(state["symbol"])
+
+            # Publish per-agent completion to the SSE stream.
+            if task_id:
+                from ph_stocks_advisor.web.progress import (
+                    STEP_AGENTS,
+                    publish_progress,
+                )
+                publish_progress(
+                    task_id,
+                    STEP_AGENTS,
+                    agent=agent_class.__name__,
+                )
+
             return {state_key: result}  # type: ignore[return-value]
         except Exception as exc:
             logger.error(
@@ -109,11 +123,21 @@ def _make_specialist_node(
     return _node
 
 
-def _make_validate_node() -> Callable[[GraphState], GraphState]:
+def _make_validate_node(
+    task_id: str | None = None,
+) -> Callable[[GraphState], GraphState]:
     """Return the validation gate node."""
 
     def _validate(state: GraphState) -> GraphState:
         symbol = state["symbol"]
+
+        if task_id:
+            from ph_stocks_advisor.web.progress import (
+                STEP_VALIDATING,
+                publish_progress,
+            )
+            publish_progress(task_id, STEP_VALIDATING)
+
         try:
             validate_symbol(symbol)
             return {}  # type: ignore[return-value]
@@ -123,10 +147,20 @@ def _make_validate_node() -> Callable[[GraphState], GraphState]:
     return _validate
 
 
-def _make_consolidate_node(llm: BaseChatModel) -> Callable[[GraphState], GraphState]:
+def _make_consolidate_node(
+    llm: BaseChatModel,
+    task_id: str | None = None,
+) -> Callable[[GraphState], GraphState]:
     """Return the consolidator node."""
 
     def _consolidate(state: GraphState) -> GraphState:
+        if task_id:
+            from ph_stocks_advisor.web.progress import (
+                STEP_CONSOLIDATING,
+                publish_progress,
+            )
+            publish_progress(task_id, STEP_CONSOLIDATING)
+
         agent = ConsolidatorAgent(llm)
         advisor_state = AdvisorState(
             symbol=state["symbol"],
@@ -147,7 +181,7 @@ def _make_consolidate_node(llm: BaseChatModel) -> Callable[[GraphState], GraphSt
 # ---------------------------------------------------------------------------
 
 
-def _build_graph_impl(llm: BaseChatModel | None = None):
+def _build_graph_impl(llm: BaseChatModel | None = None, task_id: str | None = None):
     """
     Internal graph builder used by both the CLI and LangGraph Studio.
 
@@ -156,6 +190,9 @@ def _build_graph_impl(llm: BaseChatModel | None = None):
     llm : BaseChatModel | None
         The language model to inject into every agent node.  When ``None``
         the default LLM from ``get_llm()`` is used.
+    task_id : str | None
+        Optional Celery task ID.  When provided, nodes publish real-time
+        progress events to Redis Pub/Sub for the SSE stream.
 
     Topology:
         START ──┬── price_agent ────────┐
@@ -172,17 +209,17 @@ def _build_graph_impl(llm: BaseChatModel | None = None):
     workflow = StateGraph(GraphState)
 
     # Validation gate — runs first to ensure the symbol exists
-    workflow.add_node("validate", _make_validate_node())
+    workflow.add_node("validate", _make_validate_node(task_id=task_id))
 
     # Dynamically register specialist nodes from the registry
     specialist_names: list[str] = []
     for node_name, state_key, agent_class in AGENT_REGISTRY:
-        node_fn = _make_specialist_node(agent_class, state_key, llm)
+        node_fn = _make_specialist_node(agent_class, state_key, llm, task_id=task_id)
         workflow.add_node(node_name, node_fn)
         specialist_names.append(node_name)
 
     # Consolidator
-    workflow.add_node("consolidator", _make_consolidate_node(llm))
+    workflow.add_node("consolidator", _make_consolidate_node(llm, task_id=task_id))
 
     # START → validate
     workflow.add_edge("__start__", "validate")
@@ -220,7 +257,11 @@ def build_graph(config: RunnableConfig) -> Any:
     return _build_graph_impl()
 
 
-def run_analysis(symbol: str, llm: BaseChatModel | None = None) -> dict[str, Any]:
+def run_analysis(
+    symbol: str,
+    llm: BaseChatModel | None = None,
+    task_id: str | None = None,
+) -> dict[str, Any]:
     """
     Run the full multi-agent analysis for a PSE stock symbol.
 
@@ -230,12 +271,15 @@ def run_analysis(symbol: str, llm: BaseChatModel | None = None) -> dict[str, Any
         PSE ticker symbol (e.g. "TEL", "BDO", "SM", "ALI").
     llm : BaseChatModel | None
         Optional LLM override.  Uses the default ``get_llm()`` when ``None``.
+    task_id : str | None
+        Optional Celery task ID.  When provided, progress events are
+        published to Redis Pub/Sub for the SSE stream.
 
     Returns
     -------
     dict
         The final state dict containing all analyses and the final report.
     """
-    graph = _build_graph_impl(llm=llm)
+    graph = _build_graph_impl(llm=llm, task_id=task_id)
     initial_state: GraphState = {"symbol": symbol.upper().replace(".PS", "")}
     return graph.invoke(initial_state)

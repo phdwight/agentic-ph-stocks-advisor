@@ -16,8 +16,10 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
+import json
+
 import redis as redis_lib
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from markupsafe import Markup
@@ -260,6 +262,35 @@ def create_app() -> Flask:
 
         # RETRY, etc.
         return jsonify({"state": result.state, "done": False})
+
+    @app.route("/stream/<task_id>")
+    def stream(task_id: str):
+        """SSE endpoint that pushes real-time progress events for a task.
+
+        Uses Redis Pub/Sub so that the Celery worker can publish step
+        updates and this endpoint relays them to the browser via
+        ``text/event-stream``.
+
+        The stream auto-closes after a terminal (``done=true``) event
+        or when the client disconnects.  Clients that do not support
+        SSE can fall back to ``/status/<task_id>`` polling.
+        """
+        from ph_stocks_advisor.web.progress import subscribe_progress
+
+        def generate():
+            for event in subscribe_progress(task_id):
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("done"):
+                    break
+
+        return Response(
+            generate(),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.route("/cancel/<task_id>", methods=["POST"])
     def cancel(task_id: str):
