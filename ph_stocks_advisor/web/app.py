@@ -93,6 +93,44 @@ def create_app() -> Flask:
         return {"current_user": get_current_user()}
 
     # ------------------------------------------------------------------
+    # Health check
+    # ------------------------------------------------------------------
+
+    @app.route("/healthz")
+    def healthz():
+        """Heartbeat endpoint for liveness / readiness probes.
+
+        Returns 200 with per-dependency status when the service is
+        operational.  Returns 503 if any critical dependency (Redis,
+        database) is unreachable — this lets orchestrators (Docker,
+        Azure Container Apps) detect and restart unhealthy replicas.
+        """
+        checks: dict[str, str] = {}
+        healthy = True
+
+        # ── Redis ────────────────────────────────────────────────────
+        try:
+            r = get_redis()
+            r.ping()
+            checks["redis"] = "ok"
+        except Exception as exc:
+            checks["redis"] = f"error: {exc}"
+            healthy = False
+
+        # ── Database ─────────────────────────────────────────────────
+        try:
+            repo = get_repository()
+            repo.list_recent_symbols(limit=1)
+            repo.close()
+            checks["database"] = "ok"
+        except Exception as exc:
+            checks["database"] = f"error: {exc}"
+            healthy = False
+
+        status_code = 200 if healthy else 503
+        return jsonify({"status": "healthy" if healthy else "unhealthy", "checks": checks}), status_code
+
+    # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
 

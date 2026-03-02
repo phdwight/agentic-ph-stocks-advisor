@@ -22,9 +22,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Only the minimal runtime libs needed by psycopg2
+# Runtime libs: libpq5 for psycopg2, curl for health checks
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 && \
+    apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Bring the pre-built venv from the builder

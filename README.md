@@ -169,6 +169,17 @@ ph-advisor-web --debug                # use Flask dev server with auto-reload
 
 The web interface lets you enter a stock symbol, kicks off the analysis in the background, and streams real-time progress to the browser via **Server-Sent Events (SSE)**. Each workflow step (validation, data fetching, agent execution, consolidation, saving) publishes events through Redis Pub/Sub; the frontend receives them instantly via `/stream/<task_id>`. A polling fallback (`/status/<task_id>`) is available for browsers without SSE support. Once complete, the report is displayed in the browser.
 
+### Health Check
+
+A `/healthz` heartbeat endpoint verifies that both Redis and the database are reachable:
+
+```bash
+curl http://localhost:5000/healthz
+# {"checks":{"database":"ok","redis":"ok"},"status":"healthy"}
+```
+
+Returns **200** when all dependencies are healthy, **503** otherwise. This endpoint does not require authentication and is used by Docker healthchecks and Azure Container Apps liveness/readiness probes to detect and restart unhealthy replicas.
+
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis. Reports are **shared** — they are not tied to any user — but each authenticated user only sees the stocks they have personally requested to analyse. A `user_symbols` table tracks which symbols each user has analysed; anonymous users (auth disabled) see all reports. Authenticated user profiles (name, email, provider, login timestamps) are saved to a `users` table on every sign-in (upserted by `oid`).
 
 ### Authentication (Microsoft Entra ID + Google OAuth2)
@@ -368,6 +379,7 @@ tests/
 ├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py
 ├── test_dedup.py               # Concurrent analysis deduplication tests
+├── test_healthz.py             # Heartbeat endpoint tests
 ├── test_rate_limit.py          # Per-user daily rate limiting tests
 ├── test_repository.py
 └── test_sse.py                # SSE progress streaming tests

@@ -314,6 +314,30 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
             memory: '2Gi'
           }
           env: sharedEnv
+          probes: [
+            {
+              type: 'liveness'
+              httpGet: {
+                path: '/healthz'
+                port: 5000
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 15
+              failureThreshold: 3
+              timeoutSeconds: 5
+            }
+            {
+              type: 'readiness'
+              httpGet: {
+                path: '/healthz'
+                port: 5000
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+              failureThreshold: 3
+              timeoutSeconds: 5
+            }
+          ]
         }
       ]
       scale: {

@@ -90,6 +90,12 @@ services:
       REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-20}
     volumes:
       - ./output:/app/output
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     entrypoint: ["ph-advisor-web"]
     command: ["--host", "0.0.0.0", "--port", "5000"]
 
