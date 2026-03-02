@@ -33,7 +33,7 @@ from ph_stocks_advisor.export.formatter import (
 from ph_stocks_advisor.export.html import _body_to_html
 from ph_stocks_advisor.infra.config import get_redis, get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
-from ph_stocks_advisor.web.rate_limit import check_limit
+from ph_stocks_advisor.web.rate_limit import reserve as rl_reserve
 
 logger = logging.getLogger(__name__)
 
@@ -214,10 +214,10 @@ def create_app() -> Flask:
                 "task_id": existing_task_id,
             })
 
-        # --- Per-user daily rate limit --------------------------------
+        # --- Per-user daily rate limit (atomic reserve) ----------------
         user = get_current_user()
         user_id = (user or {}).get("email", "anonymous")
-        allowed, count = check_limit(
+        allowed, count = rl_reserve(
             r, user_id, settings.daily_analysis_limit
         )
         if not allowed:
@@ -239,8 +239,8 @@ def create_app() -> Flask:
             }), 429
 
         # Dispatch analysis to the Celery worker.
-        # Pass user_id so the task can increment the rate-limit counter
-        # only on success (failed analyses do not consume quota).
+        # The slot is already reserved.  If the analysis fails the worker
+        # calls ``release()`` to return the slot to the user's quota.
         task = analyse_stock.delay(symbol, user_id=user_id)
 
         # Store the lock so concurrent requests join this task

@@ -49,7 +49,7 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
         STEP_VALIDATING,
         publish_progress,
     )
-    from ph_stocks_advisor.web.rate_limit import increment as rl_increment
+    from ph_stocks_advisor.web.rate_limit import release as rl_release
 
     task_id = self.request.id
     logger.info("Starting analysis for %s (task %s)", symbol, task_id)
@@ -64,6 +64,18 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
         if report is None:
             error_msg = result.get("error", "Analysis produced no report.")
             logger.error("Analysis for %s failed: %s", symbol, error_msg)
+            # Release the reserved rate-limit slot so the user can retry.
+            try:
+                from ph_stocks_advisor.infra.config import get_redis
+
+                rl_redis = get_redis()
+                rl_release(rl_redis, user_id)
+            except Exception:
+                logger.warning(
+                    "Failed to release rate-limit slot for %s",
+                    user_id,
+                    exc_info=True,
+                )
             # Use STEP_VALIDATING if the error came from symbol validation,
             # otherwise use STEP_SAVING as a generic failure step.
             error_step = STEP_VALIDATING if result.get("error") else STEP_SAVING
@@ -78,19 +90,6 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
             report_id = repo.save(record)
         finally:
             repo.close()
-
-        # Count this successful analysis against the user's daily quota.
-        try:
-            from ph_stocks_advisor.infra.config import get_redis
-
-            rl_redis = get_redis()
-            rl_increment(rl_redis, user_id)
-        except Exception:
-            logger.warning(
-                "Failed to increment rate-limit counter for %s",
-                user_id,
-                exc_info=True,
-            )
 
         logger.info(
             "Analysis for %s complete — verdict=%s, report_id=%d",

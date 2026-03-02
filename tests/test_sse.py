@@ -100,6 +100,21 @@ class FakeRedisWithPubSub:
         import fnmatch
         return [k for k in self._store if fnmatch.fnmatch(k, pattern)]
 
+    def decr(self, key: str) -> int:
+        val = int(self._store.get(key, 0)) - 1
+        self._store[key] = str(val)
+        return val
+
+    def eval(self, script: str, numkeys: int, *args) -> list:  # noqa: A003
+        """Emulate the atomic reserve Lua script."""
+        key = args[0]
+        limit = int(args[1])
+        current = int(self._store.get(key, 0))
+        if current >= limit:
+            return [0, current]
+        new = self.incr(key)
+        return [1, new]
+
     # Pub/Sub interface
     def publish(self, channel: str, message: str) -> int:
         self._pubsub_queues.setdefault(channel, []).append(message)

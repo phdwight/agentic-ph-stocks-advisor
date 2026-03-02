@@ -22,6 +22,27 @@ logger = logging.getLogger(__name__)
 # Redis key prefix for daily analysis counters.
 _RATE_LIMIT_PREFIX = "ratelimit:analyse:"
 
+# Lua script: atomically check the counter and conditionally INCR.
+# Returns {1, new_count} when allowed (incremented),
+# or     {0, current_count} when the limit is reached (unchanged).
+# This eliminates the race between a separate GET and INCR.
+_RESERVE_LUA = """
+local key   = KEYS[1]
+local limit = tonumber(ARGV[1])
+local ttl   = tonumber(ARGV[2])
+
+local current = tonumber(redis.call('GET', key) or '0')
+if current >= limit then
+    return {0, current}
+end
+
+local new = redis.call('INCR', key)
+if new == 1 then
+    redis.call('EXPIRE', key, ttl)
+end
+return {1, new}
+"""
+
 
 def _seconds_until_utc_midnight() -> int:
     """Return the number of seconds from now until the next 00:00 UTC."""
@@ -38,20 +59,76 @@ def _daily_key(user_id: str) -> str:
     return f"{_RATE_LIMIT_PREFIX}{user_id}:{today}"
 
 
+# ---------------------------------------------------------------------------
+# Atomic reserve / release API  (preferred)
+# ---------------------------------------------------------------------------
+
+
+def reserve(
+    r: redis_lib.Redis,
+    user_id: str,
+    limit: int,
+) -> tuple[bool, int]:
+    """Atomically check the daily quota and reserve a slot if available.
+
+    Uses a server-side Lua script so the check-then-increment is a
+    single atomic Redis operation — no race window between concurrent
+    requests from the same user.
+
+    Returns
+    -------
+    tuple[bool, int]
+        ``(allowed, count)`` — *allowed* is ``True`` and *count* is the
+        new total after reservation, or ``False`` and the current total
+        when the limit has been reached.
+    """
+    key = _daily_key(user_id)
+    ttl = _seconds_until_utc_midnight()
+
+    allowed_int, count = r.eval(_RESERVE_LUA, 1, key, limit, ttl)
+    allowed = bool(int(allowed_int))
+
+    if not allowed:
+        logger.info(
+            "Rate limit reached for %s (%d/%d)", user_id, count, limit
+        )
+
+    return allowed, int(count)
+
+
+def release(
+    r: redis_lib.Redis,
+    user_id: str,
+) -> int:
+    """Release a previously reserved slot (e.g. after a failed analysis).
+
+    Decrements the counter, clamping at zero so a spurious release
+    can never produce a negative count.
+
+    Returns the count after the release.
+    """
+    key = _daily_key(user_id)
+    new_count = r.decr(key)
+    if new_count < 0:
+        r.set(key, "0")
+        new_count = 0
+    return new_count
+
+
+# ---------------------------------------------------------------------------
+# Legacy helpers (kept for backward compatibility)
+# ---------------------------------------------------------------------------
+
+
 def check_limit(
     r: redis_lib.Redis,
     user_id: str,
     limit: int,
 ) -> tuple[bool, int]:
-    """Check whether the user may perform another analysis today.
+    """Read-only check — does *not* reserve a slot.
 
-    This is a **read-only** check — it does *not* increment the counter.
-    Call :func:`increment` separately after a successful analysis.
-
-    Returns
-    -------
-    tuple[bool, int]
-        ``(allowed, current_count)``.
+    .. deprecated::
+        Use :func:`reserve` instead for race-free limiting.
     """
     key = _daily_key(user_id)
     current = r.get(key)
@@ -70,17 +147,14 @@ def increment(
     r: redis_lib.Redis,
     user_id: str,
 ) -> int:
-    """Increment the daily analysis counter for *user_id*.
+    """Increment the daily counter (non-atomic with check_limit).
 
-    Call this only after a successful first-time analysis so that
-    failed or cached requests are never counted.
-
-    Returns the new count.
+    .. deprecated::
+        Use :func:`reserve` instead for race-free limiting.
     """
     key = _daily_key(user_id)
     new_count = r.incr(key)
 
-    # Set expiry only on the first increment (when the key was just created).
     if new_count == 1:
         ttl = _seconds_until_utc_midnight()
         r.expire(key, ttl)
@@ -93,37 +167,10 @@ def check_and_increment(
     user_id: str,
     limit: int,
 ) -> tuple[bool, int]:
-    """Check whether the user may perform another analysis today.
-
-    If the current count is below *limit*, the counter is atomically
-    incremented and ``(True, new_count)`` is returned.
-
-    If the user has already reached or exceeded *limit*,
-    ``(False, current_count)`` is returned and the counter is **not**
-    incremented.
-
-    The key automatically expires at the next 00:00 UTC so counters
-    reset daily without a cron job.
+    """Legacy non-atomic check + increment.
 
     .. deprecated::
-        Prefer :func:`check_limit` + :func:`increment` so that only
-        successful analyses consume quota.
-
-    Parameters
-    ----------
-    r:
-        A Redis client with ``decode_responses=True``.
-    user_id:
-        A stable identifier for the user (typically their e-mail).
-    limit:
-        Maximum number of analyses allowed per UTC day.
-
-    Returns
-    -------
-    tuple[bool, int]
-        ``(allowed, count)`` — *allowed* is ``True`` when the request
-        may proceed; *count* is the user's total for today **after**
-        the increment (or the current total if denied).
+        Use :func:`reserve` instead for race-free limiting.
     """
     allowed, current_count = check_limit(r, user_id, limit)
     if not allowed:

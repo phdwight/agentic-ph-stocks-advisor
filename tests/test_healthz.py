@@ -22,26 +22,46 @@ import ph_stocks_advisor.web.app as _app_mod
 class FakeRedis:
     """Minimal Redis stub that supports ping and basic key ops."""
 
+    def __init__(self) -> None:
+        self._store: dict[str, str] = {}
+
     def ping(self) -> bool:
         return True
 
     def get(self, key: str) -> str | None:
-        return None
+        return self._store.get(key)
 
     def set(self, key: str, value: str, ex: int | None = None) -> None:  # noqa: A003
-        pass
+        self._store[key] = value
 
     def incr(self, key: str) -> int:
-        return 1
+        val = int(self._store.get(key, 0)) + 1
+        self._store[key] = str(val)
+        return val
+
+    def decr(self, key: str) -> int:
+        val = int(self._store.get(key, 0)) - 1
+        self._store[key] = str(val)
+        return val
 
     def expire(self, key: str, seconds: int) -> None:
         pass
 
     def delete(self, key: str) -> None:
-        pass
+        self._store.pop(key, None)
 
     def scan_iter(self, pattern: str) -> list[str]:
         return []
+
+    def eval(self, script: str, numkeys: int, *args) -> list:  # noqa: A003
+        """Emulate the atomic reserve Lua script."""
+        key = args[0]
+        limit = int(args[1])
+        current = int(self._store.get(key, 0))
+        if current >= limit:
+            return [0, current]
+        new = self.incr(key)
+        return [1, new]
 
 
 class FailingRedis(FakeRedis):

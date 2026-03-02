@@ -3,8 +3,8 @@ Tests for the per-user daily analysis rate limiting.
 
 Verifies that users are limited to ``DAILY_ANALYSIS_LIMIT`` new analyses
 per UTC day, that cached and in-flight results bypass the limit, that
-the counter resets at 00:00 UTC, and that only **successful first-time
-analyses** consume quota (failed analyses do not count).
+the counter resets at 00:00 UTC, and that the atomic reserve/release
+mechanism prevents race-condition over-counts.
 """
 
 from __future__ import annotations
@@ -25,7 +25,11 @@ import ph_stocks_advisor.web.tasks as _tasks_mod
 
 
 class FakeRedis:
-    """In-memory dict that mimics a Redis client for rate-limit tests."""
+    """In-memory dict that mimics a Redis client for rate-limit tests.
+
+    Supports ``eval`` for Lua scripts by executing the atomic
+    reserve logic directly in Python (matching the Lua semantics).
+    """
 
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
@@ -41,6 +45,11 @@ class FakeRedis:
         self._store[key] = str(val)
         return val
 
+    def decr(self, key: str) -> int:
+        val = int(self._store.get(key, 0)) - 1
+        self._store[key] = str(val)
+        return val
+
     def expire(self, key: str, seconds: int) -> None:
         pass  # no-op for tests
 
@@ -49,6 +58,22 @@ class FakeRedis:
 
     def scan_iter(self, pattern: str) -> list[str]:
         return [k for k in self._store if fnmatch.fnmatch(k, pattern)]
+
+    def ping(self) -> bool:
+        return True
+
+    def eval(self, script: str, numkeys: int, *args) -> list:  # noqa: A003
+        """Emulate the atomic reserve Lua script."""
+        key = args[0]
+        limit = int(args[1])
+        # ttl = int(args[2])  # ignored in tests
+
+        current = int(self._store.get(key, 0))
+        if current >= limit:
+            return [0, current]
+
+        new = self.incr(key)
+        return [1, new]
 
 
 def _seed_counter(fake_redis: FakeRedis, user_id: str, count: int) -> None:
@@ -108,7 +133,75 @@ def client(fake_redis, _rate_limit_env):
 
 
 # ---------------------------------------------------------------------------
-# Unit tests — check_limit (read-only gate)
+# Unit tests — atomic reserve (primary API)
+# ---------------------------------------------------------------------------
+
+
+class TestReserve:
+    """Direct tests for the atomic reserve function."""
+
+    def test_allowed_when_no_usage(self, fake_redis):
+        allowed, count = _rl_mod.reserve(fake_redis, "user@test.com", 5)
+        assert allowed is True
+        assert count == 1
+
+    def test_reserves_slot_atomically(self, fake_redis):
+        """Each reserve call increments the counter."""
+        for expected in range(1, 4):
+            allowed, count = _rl_mod.reserve(fake_redis, "user@test.com", 5)
+            assert allowed is True
+            assert count == expected
+
+    def test_blocked_when_at_limit(self, fake_redis):
+        for _ in range(5):
+            _rl_mod.reserve(fake_redis, "user@test.com", 5)
+        allowed, count = _rl_mod.reserve(fake_redis, "user@test.com", 5)
+        assert allowed is False
+        assert count == 5
+
+    def test_blocked_when_pre_seeded_at_limit(self, fake_redis):
+        _seed_counter(fake_redis, "user@test.com", 5)
+        allowed, count = _rl_mod.reserve(fake_redis, "user@test.com", 5)
+        assert allowed is False
+        assert count == 5
+
+    def test_different_users_separate(self, fake_redis):
+        for _ in range(3):
+            _rl_mod.reserve(fake_redis, "alice@test.com", 3)
+        allowed_a, _ = _rl_mod.reserve(fake_redis, "alice@test.com", 3)
+        allowed_b, _ = _rl_mod.reserve(fake_redis, "bob@test.com", 3)
+        assert allowed_a is False
+        assert allowed_b is True
+
+
+class TestRelease:
+    """Direct tests for the release function."""
+
+    def test_release_decrements_counter(self, fake_redis):
+        _rl_mod.reserve(fake_redis, "user@test.com", 5)
+        _rl_mod.reserve(fake_redis, "user@test.com", 5)
+        new_count = _rl_mod.release(fake_redis, "user@test.com")
+        assert new_count == 1
+
+    def test_release_clamps_at_zero(self, fake_redis):
+        """Releasing when counter is 0 should not go negative."""
+        new_count = _rl_mod.release(fake_redis, "user@test.com")
+        assert new_count == 0
+
+    def test_release_restores_quota(self, fake_redis):
+        """After release, a previously exhausted user can reserve again."""
+        for _ in range(3):
+            _rl_mod.reserve(fake_redis, "user@test.com", 3)
+        allowed, _ = _rl_mod.reserve(fake_redis, "user@test.com", 3)
+        assert allowed is False
+
+        _rl_mod.release(fake_redis, "user@test.com")
+        allowed, _ = _rl_mod.reserve(fake_redis, "user@test.com", 3)
+        assert allowed is True
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — check_limit (legacy read-only gate)
 # ---------------------------------------------------------------------------
 
 
@@ -249,10 +342,9 @@ class TestGetRemaining:
 class TestAnalyseRateLimit:
     """The /analyse endpoint enforces the daily per-user limit.
 
-    Because the counter is only incremented on *successful* task
-    completion (inside the Celery worker), the endpoint uses a
-    read-only ``check_limit`` gate.  To simulate a user who has
-    already exhausted their quota we pre-seed the Redis counter.
+    The counter is atomically reserved at dispatch time via ``reserve()``.
+    If the analysis later fails, the worker calls ``release()`` to
+    return the slot.
     """
 
     def test_requests_succeed_when_quota_available(self, client, fake_redis):
@@ -279,8 +371,8 @@ class TestAnalyseRateLimit:
         data = resp.get_json()
         assert "limit" in data["error"].lower()
 
-    def test_submission_does_not_increment_counter(self, client, fake_redis):
-        """Dispatching a task must NOT consume quota (increment happens in worker)."""
+    def test_submission_reserves_a_slot(self, client, fake_redis):
+        """Dispatching a task atomically reserves a rate-limit slot."""
         task = MagicMock()
         task.id = "task-001"
 
@@ -290,7 +382,23 @@ class TestAnalyseRateLimit:
             client.post("/analyse", data={"symbol": "ABC"})
 
         remaining = _rl_mod.get_remaining(fake_redis, "dev@localhost", 3)
-        assert remaining == 3  # counter unchanged
+        assert remaining == 2  # one slot consumed
+
+    def test_fourth_request_blocked_after_three(self, client, fake_redis):
+        """After 3 successful dispatches (limit=3), 4th is rejected."""
+        task = MagicMock()
+        task.id = "task-001"
+
+        with patch.object(
+            _tasks_mod.analyse_stock, "delay", return_value=task
+        ):
+            for i in range(3):
+                task.id = f"task-{i}"
+                resp = client.post("/analyse", data={"symbol": f"SYM{i}"})
+                assert resp.status_code == 200
+
+            resp = client.post("/analyse", data={"symbol": "EXTRA"})
+            assert resp.status_code == 429
 
     def test_cached_report_does_not_count(self, client, fake_redis):
         """Serving a cached report should not consume a rate-limit slot."""
