@@ -146,7 +146,7 @@ def client(fake_redis, monkeypatch):
 
     with (
         patch.object(_app_mod, "get_repository", return_value=mock_repo),
-        patch.object(_app_mod, "_get_redis", return_value=fake_redis),
+        patch.object(_app_mod, "get_redis", return_value=fake_redis),
     ):
         app = _app_mod.create_app()
         app.config["TESTING"] = True

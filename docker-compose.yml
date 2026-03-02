@@ -79,6 +79,15 @@ services:
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-ph-stocks-advisor}
+      # ── Gunicorn tuning ───────────────────────────────────────────────────
+      WEB_WORKERS: ${WEB_WORKERS:-4}
+      WEB_WORKER_CLASS: ${WEB_WORKER_CLASS:-gevent}
+      WEB_WORKER_CONNECTIONS: ${WEB_WORKER_CONNECTIONS:-1000}
+      WEB_TIMEOUT: ${WEB_TIMEOUT:-120}
+      # ── Connection pools ─────────────────────────────────────────────────
+      PG_POOL_MIN: ${PG_POOL_MIN:-2}
+      PG_POOL_MAX: ${PG_POOL_MAX:-10}
+      REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-20}
     volumes:
       - ./output:/app/output
     entrypoint: ["ph-advisor-web"]
@@ -99,7 +108,7 @@ services:
     volumes:
       - ./output:/app/output
     entrypoint: ["celery"]
-    command: ["-A", "ph_stocks_advisor.web.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    command: ["-A", "ph_stocks_advisor.web.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=${CELERY_CONCURRENCY:-4}", "--pool=prefork"]
 
   # ── PH Stocks Advisor CLI (one-shot analysis) ─────────────────────────────
   advisor:

@@ -31,7 +31,7 @@ from ph_stocks_advisor.export.formatter import (
     parse_sections,
 )
 from ph_stocks_advisor.export.html import _body_to_html
-from ph_stocks_advisor.infra.config import get_repository, get_settings
+from ph_stocks_advisor.infra.config import get_redis, get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
 from ph_stocks_advisor.web.rate_limit import check_limit
 
@@ -44,11 +44,6 @@ REPORT_MAX_AGE_DAYS = 5
 _INFLIGHT_PREFIX = "analysis:inflight:"
 # How long the lock lives before auto-expiring (seconds).
 _INFLIGHT_TTL = 10 * 60  # 10 minutes
-
-
-def _get_redis() -> redis_lib.Redis:
-    """Return a Redis client using the configured URL."""
-    return redis_lib.from_url(get_settings().redis_url, decode_responses=True)
 
 
 def create_app() -> Flask:
@@ -166,7 +161,7 @@ def create_app() -> Flask:
                 })
 
         # No fresh report — check for an in-flight analysis (dedup)
-        r = _get_redis()
+        r = get_redis()
         inflight_key = f"{_INFLIGHT_PREFIX}{symbol}"
         existing_task_id = r.get(inflight_key)
         if existing_task_id:
@@ -302,7 +297,7 @@ def create_app() -> Flask:
         celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
 
         # Clear the inflight lock so a new analysis can be dispatched
-        r = _get_redis()
+        r = get_redis()
         for key in r.scan_iter(f"{_INFLIGHT_PREFIX}*"):
             if r.get(key) == task_id:
                 r.delete(key)
@@ -403,10 +398,30 @@ def create_app() -> Flask:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+# Default Gunicorn tuning — can be overridden via environment variables.
+_DEFAULT_WORKERS = 4
+_DEFAULT_THREADS = 2
+_DEFAULT_WORKER_CLASS = "gevent"
+
 
 def main() -> None:
-    """Run the Flask development server."""
+    """Start the web server.
+
+    * **Production** (default): launches Gunicorn with sensible defaults.
+      Tuning knobs via environment variables:
+
+      - ``WEB_WORKERS``      — number of worker processes (default: 4)
+      - ``WEB_THREADS``      — threads per worker, gthread only (default: 2)
+      - ``WEB_WORKER_CLASS``  — Gunicorn worker class (default: gevent)
+      - ``WEB_WORKER_CONNECTIONS`` — max simultaneous clients per worker,
+        gevent only (default: 1000)
+      - ``WEB_TIMEOUT``      — worker timeout in seconds (default: 120)
+
+    * **Development** (``--debug``): falls back to Flask's built-in
+      Werkzeug server with auto-reload.
+    """
     import argparse
+    import os
 
     parser = argparse.ArgumentParser(description="PH Stocks Advisor Web UI")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
@@ -414,8 +429,40 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    app = create_app()
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    if args.debug:
+        # Development: use Flask's built-in server with auto-reload.
+        app = create_app()
+        app.run(host=args.host, port=args.port, debug=True)
+    else:
+        # Production: launch Gunicorn.
+        from gunicorn.app.wsgiapp import WSGIApplication  # noqa: WPS433
+
+        workers = os.getenv("WEB_WORKERS", str(_DEFAULT_WORKERS))
+        threads = os.getenv("WEB_THREADS", str(_DEFAULT_THREADS))
+        worker_class = os.getenv("WEB_WORKER_CLASS", _DEFAULT_WORKER_CLASS)
+        timeout = os.getenv("WEB_TIMEOUT", "120")
+        worker_connections = os.getenv("WEB_WORKER_CONNECTIONS", "1000")
+
+        # Gunicorn reads sys.argv — replace it with our own flags.
+        import sys
+
+        sys.argv = [
+            "gunicorn",
+            "--bind", f"{args.host}:{args.port}",
+            "--workers", workers,
+            "--worker-class", worker_class,
+            "--timeout", timeout,
+            "--worker-connections", worker_connections,
+            "--access-logfile", "-",
+            "--error-logfile", "-",
+            "ph_stocks_advisor.web.app:create_app()",
+        ]
+
+        # --threads is only relevant for gthread workers.
+        if worker_class == "gthread":
+            sys.argv.insert(-1, "--threads")
+            sys.argv.insert(-1, threads)
+        WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]").run()
 
 
 if __name__ == "__main__":

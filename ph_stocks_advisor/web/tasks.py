@@ -23,12 +23,10 @@ _INFLIGHT_PREFIX = "analysis:inflight:"
 
 def _clear_inflight_lock(symbol: str) -> None:
     """Remove the inflight dedup lock for *symbol* from Redis."""
-    import redis as redis_lib
-
-    from ph_stocks_advisor.infra.config import get_settings
+    from ph_stocks_advisor.infra.config import get_redis
 
     try:
-        r = redis_lib.from_url(get_settings().redis_url, decode_responses=True)
+        r = get_redis()
         r.delete(f"{_INFLIGHT_PREFIX}{symbol}")
     except Exception:
         logger.debug("Could not clear inflight lock for %s", symbol, exc_info=True)
@@ -83,12 +81,9 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
 
         # Count this successful analysis against the user's daily quota.
         try:
-            import redis as redis_lib
-            from ph_stocks_advisor.infra.config import get_settings
+            from ph_stocks_advisor.infra.config import get_redis
 
-            rl_redis = redis_lib.from_url(
-                get_settings().redis_url, decode_responses=True
-            )
+            rl_redis = get_redis()
             rl_increment(rl_redis, user_id)
         except Exception:
             logger.warning(

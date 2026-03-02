@@ -20,6 +20,8 @@ dependencies = [
     "redis>=5.0",
     "msal>=1.28",
     "flask-session>=0.5",
+    "gunicorn>=22.0",
+    "gevent>=24.0",
 ]
 
 [project.optional-dependencies]

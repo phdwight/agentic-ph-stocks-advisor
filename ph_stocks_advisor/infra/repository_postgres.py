@@ -2,17 +2,27 @@
 PostgreSQL implementation of the report repository.
 
 Used in production environments.  Requires `psycopg2` (or `psycopg2-binary`).
+
+Uses a **thread-safe connection pool** (``psycopg2.pool.ThreadedConnectionPool``)
+so multiple Gunicorn threads / Celery workers share a bounded set of
+database connections instead of opening one per request.
 """
 
 from __future__ import annotations
 
+import logging
+import os
+from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Optional
+from typing import Generator, Optional
 
 import psycopg2  # type: ignore[import-untyped]
 import psycopg2.extras  # type: ignore[import-untyped]
+import psycopg2.pool  # type: ignore[import-untyped]
 
 from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
+
+logger = logging.getLogger(__name__)
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS reports (
@@ -56,188 +66,222 @@ CREATE TABLE IF NOT EXISTS users (
 
 
 class PostgresReportRepository(AbstractReportRepository):
-    """PostgreSQL-backed repository — for production / multi-user use."""
+    """PostgreSQL-backed repository with thread-safe connection pooling.
 
-    def __init__(self, dsn: str) -> None:
-        """
-        Args:
-            dsn: PostgreSQL connection string, e.g.
-                 ``"host=localhost dbname=ph_advisor user=app password=secret"``
-                 or a full URI ``"postgresql://user:pass@host:5432/dbname"``.
-        """
+    Connections are borrowed from a ``ThreadedConnectionPool`` for each
+    operation and returned immediately after use, keeping the total
+    connection count bounded regardless of how many Gunicorn workers or
+    threads are active.
+
+    Pool size is configurable via environment variables:
+
+    * ``PG_POOL_MIN`` — minimum idle connections (default: 2)
+    * ``PG_POOL_MAX`` — maximum connections   (default: 10)
+    """
+
+    def __init__(
+        self,
+        dsn: str,
+        *,
+        min_conn: int | None = None,
+        max_conn: int | None = None,
+    ) -> None:
         self._dsn = dsn
-        self._conn: psycopg2.extensions.connection | None = None
+        self._min_conn = min_conn or int(os.getenv("PG_POOL_MIN", "2"))
+        self._max_conn = max_conn or int(os.getenv("PG_POOL_MAX", "10"))
+        self._pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
-    def _get_conn(self) -> psycopg2.extensions.connection:
-        if self._conn is None or self._conn.closed:
-            self._conn = psycopg2.connect(self._dsn)
-        return self._conn
+    def _get_pool(self) -> psycopg2.pool.ThreadedConnectionPool:
+        """Lazily create the connection pool on first use."""
+        if self._pool is None or self._pool.closed:
+            self._pool = psycopg2.pool.ThreadedConnectionPool(
+                self._min_conn,
+                self._max_conn,
+                self._dsn,
+            )
+            logger.info(
+                "PostgreSQL connection pool created (min=%d, max=%d).",
+                self._min_conn,
+                self._max_conn,
+            )
+        return self._pool
+
+    @contextmanager
+    def _conn(self) -> Generator[psycopg2.extensions.connection, None, None]:
+        """Borrow a connection from the pool, auto-return on exit."""
+        pool = self._get_pool()
+        conn = pool.getconn()
+        try:
+            yield conn
+        finally:
+            pool.putconn(conn)
 
     def initialize(self) -> None:
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(_CREATE_TABLE_SQL)
-            cur.execute(_CREATE_INDEX_SQL)
-            cur.execute(_CREATE_USER_SYMBOLS_SQL)
-            cur.execute(_CREATE_USERS_SQL)
-        conn.commit()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_CREATE_TABLE_SQL)
+                cur.execute(_CREATE_INDEX_SQL)
+                cur.execute(_CREATE_USER_SYMBOLS_SQL)
+                cur.execute(_CREATE_USERS_SQL)
+            conn.commit()
 
     def save(self, record: ReportRecord) -> int:
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO reports
-                    (symbol, verdict, summary, price_section, dividend_section,
-                     movement_section, valuation_section, controversy_section, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (
-                    record.symbol,
-                    record.verdict,
-                    record.summary,
-                    record.price_section,
-                    record.dividend_section,
-                    record.movement_section,
-                    record.valuation_section,
-                    record.controversy_section,
-                    record.created_at or datetime.now(tz=UTC),
-                ),
-            )
-            row = cur.fetchone()
-            record_id: int = row[0]  # type: ignore[index]
-        conn.commit()
-        record.id = record_id
-        return record_id
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO reports
+                        (symbol, verdict, summary, price_section, dividend_section,
+                         movement_section, valuation_section, controversy_section, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (
+                        record.symbol,
+                        record.verdict,
+                        record.summary,
+                        record.price_section,
+                        record.dividend_section,
+                        record.movement_section,
+                        record.valuation_section,
+                        record.controversy_section,
+                        record.created_at or datetime.now(tz=UTC),
+                    ),
+                )
+                row = cur.fetchone()
+                record_id: int = row[0]  # type: ignore[index]
+            conn.commit()
+            record.id = record_id
+            return record_id
 
     def get_by_id(self, record_id: int) -> Optional[ReportRecord]:
-        conn = self._get_conn()
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute("SELECT * FROM reports WHERE id = %s", (record_id,))
-            row = cur.fetchone()
-        return self._row_to_record(row) if row else None
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM reports WHERE id = %s", (record_id,))
+                row = cur.fetchone()
+            return self._row_to_record(row) if row else None
 
     def get_latest_by_symbol(self, symbol: str) -> Optional[ReportRecord]:
-        conn = self._get_conn()
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM reports WHERE symbol = %s ORDER BY created_at DESC LIMIT 1",
-                (symbol.upper(),),
-            )
-            row = cur.fetchone()
-        return self._row_to_record(row) if row else None
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM reports WHERE symbol = %s ORDER BY created_at DESC LIMIT 1",
+                    (symbol.upper(),),
+                )
+                row = cur.fetchone()
+            return self._row_to_record(row) if row else None
 
     def list_by_symbol(self, symbol: str, limit: int = 10) -> list[ReportRecord]:
-        conn = self._get_conn()
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM reports WHERE symbol = %s ORDER BY created_at DESC LIMIT %s",
-                (symbol.upper(), limit),
-            )
-            rows = cur.fetchall()
-        return [self._row_to_record(r) for r in rows]
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM reports WHERE symbol = %s ORDER BY created_at DESC LIMIT %s",
+                    (symbol.upper(), limit),
+                )
+                rows = cur.fetchall()
+            return [self._row_to_record(r) for r in rows]
 
     def list_recent_symbols(self, limit: int = 50) -> list[ReportRecord]:
-        conn = self._get_conn()
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute(
-                """
-                SELECT DISTINCT ON (symbol) *
-                FROM reports
-                ORDER BY symbol, created_at DESC
-                """,
-            )
-            all_rows = cur.fetchall()
-        # Sort by created_at descending across symbols, then apply limit
-        all_rows.sort(key=lambda r: r["created_at"], reverse=True)
-        return [self._row_to_record(r) for r in all_rows[:limit]]
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (symbol) *
+                    FROM reports
+                    ORDER BY symbol, created_at DESC
+                    """,
+                )
+                all_rows = cur.fetchall()
+            # Sort by created_at descending across symbols, then apply limit
+            all_rows.sort(key=lambda r: r["created_at"], reverse=True)
+            return [self._row_to_record(r) for r in all_rows[:limit]]
 
     # ------------------------------------------------------------------
     # Per-user symbol tracking
     # ------------------------------------------------------------------
 
     def add_user_symbol(self, user_id: str, symbol: str) -> None:
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO user_symbols (user_id, symbol)
-                VALUES (%s, %s)
-                ON CONFLICT (user_id, symbol) DO NOTHING
-                """,
-                (user_id, symbol.upper()),
-            )
-        conn.commit()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO user_symbols (user_id, symbol)
+                    VALUES (%s, %s)
+                    ON CONFLICT (user_id, symbol) DO NOTHING
+                    """,
+                    (user_id, symbol.upper()),
+                )
+            conn.commit()
 
     def list_user_symbols(
         self, user_id: str, limit: int = 50
     ) -> list[ReportRecord]:
-        conn = self._get_conn()
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute(
-                """
-                SELECT DISTINCT ON (r.symbol) r.*
-                FROM reports r
-                WHERE r.symbol IN (
-                    SELECT symbol FROM user_symbols WHERE user_id = %s
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (r.symbol) r.*
+                    FROM reports r
+                    WHERE r.symbol IN (
+                        SELECT symbol FROM user_symbols WHERE user_id = %s
+                    )
+                    ORDER BY r.symbol, r.created_at DESC
+                    """,
+                    (user_id,),
                 )
-                ORDER BY r.symbol, r.created_at DESC
-                """,
-                (user_id,),
-            )
-            all_rows = cur.fetchall()
-        all_rows.sort(key=lambda r: r["created_at"], reverse=True)
-        return [self._row_to_record(r) for r in all_rows[:limit]]
+                all_rows = cur.fetchall()
+            all_rows.sort(key=lambda r: r["created_at"], reverse=True)
+            return [self._row_to_record(r) for r in all_rows[:limit]]
 
     def close(self) -> None:
-        if self._conn and not self._conn.closed:
-            self._conn.close()
-            self._conn = None
+        """Close all pooled connections and release resources."""
+        if self._pool and not self._pool.closed:
+            self._pool.closeall()
+            self._pool = None
 
     # ------------------------------------------------------------------
     # User persistence
     # ------------------------------------------------------------------
 
     def save_user(self, user: UserRecord) -> None:
-        conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO users (oid, name, email, provider, created_at, last_login_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (oid) DO UPDATE SET
-                    name          = EXCLUDED.name,
-                    email         = EXCLUDED.email,
-                    provider      = EXCLUDED.provider,
-                    last_login_at = EXCLUDED.last_login_at
-                """,
-                (
-                    user.oid,
-                    user.name,
-                    user.email,
-                    user.provider,
-                    user.created_at,
-                    user.last_login_at or datetime.now(tz=UTC),
-                ),
-            )
-        conn.commit()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (oid, name, email, provider, created_at, last_login_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (oid) DO UPDATE SET
+                        name          = EXCLUDED.name,
+                        email         = EXCLUDED.email,
+                        provider      = EXCLUDED.provider,
+                        last_login_at = EXCLUDED.last_login_at
+                    """,
+                    (
+                        user.oid,
+                        user.name,
+                        user.email,
+                        user.provider,
+                        user.created_at,
+                        user.last_login_at or datetime.now(tz=UTC),
+                    ),
+                )
+            conn.commit()
 
     def get_user(self, oid: str) -> Optional[UserRecord]:
-        conn = self._get_conn()
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute("SELECT * FROM users WHERE oid = %s", (oid,))
-            row = cur.fetchone()
-        if row is None:
-            return None
-        return UserRecord(
-            oid=row["oid"],
-            name=row["name"],
-            email=row["email"],
-            provider=row["provider"],
-            created_at=row["created_at"],
-            last_login_at=row["last_login_at"],
-        )
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM users WHERE oid = %s", (oid,))
+                row = cur.fetchone()
+            if row is None:
+                return None
+            return UserRecord(
+                oid=row["oid"],
+                name=row["name"],
+                email=row["email"],
+                provider=row["provider"],
+                created_at=row["created_at"],
+                last_login_at=row["last_login_at"],
+            )
 
     @staticmethod
     def _row_to_record(row) -> ReportRecord:

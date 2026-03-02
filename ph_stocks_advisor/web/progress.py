@@ -28,7 +28,7 @@ from typing import Any, Generator
 
 import redis as redis_lib
 
-from ph_stocks_advisor.infra.config import get_settings
+from ph_stocks_advisor.infra.config import get_redis, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,8 @@ def _state_key(task_id: str) -> str:
 
 
 def _get_redis() -> redis_lib.Redis:
-    return redis_lib.from_url(get_settings().redis_url, decode_responses=True)
+    """Return a pooled Redis client from the shared pool."""
+    return get_redis()
 
 
 # ---------------------------------------------------------------------------

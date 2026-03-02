@@ -74,7 +74,7 @@ The project ships with a multi-stage `Dockerfile` and a Compose v2 file with fou
 |-----------|------|
 | **db** | PostgreSQL 16 — persistent report storage |
 | **redis** | Redis 7 — Celery message broker & result backend |
-| **web** | Flask web UI (port 5000) |
+| **web** | Flask web UI via Gunicorn + gevent (port 5000) |
 | **worker** | Celery worker — runs stock analyses in the background |
 | **advisor** | One-shot CLI analysis (optional) |
 
@@ -161,10 +161,10 @@ ph-advisor-html MREIT -o mreit.html   # custom output path
 ### Web UI
 
 ```bash
-ph-advisor-web                        # start on http://127.0.0.1:5000
+ph-advisor-web                        # start with Gunicorn on http://127.0.0.1:5000
 ph-advisor-web --port 8080            # custom port
 ph-advisor-web --host 0.0.0.0         # expose to network
-ph-advisor-web --debug                # enable Flask debug mode
+ph-advisor-web --debug                # use Flask dev server with auto-reload
 ```
 
 The web interface lets you enter a stock symbol, kicks off the analysis in the background, and streams real-time progress to the browser via **Server-Sent Events (SSE)**. Each workflow step (validation, data fetching, agent execution, consolidation, saving) publishes events through Redis Pub/Sub; the frontend receives them instantly via `/stream/<task_id>`. A polling fallback (`/status/<task_id>`) is available for browsers without SSE support. Once complete, the report is displayed in the browser.
@@ -353,7 +353,7 @@ ph_stocks_advisor/
 │   └── workflow.py            # LangGraph workflow & agent registry
 └── infra/
     ├── __init__.py
-    ├── config.py              # Settings & LLM / repository factory
+    ├── config.py              # Settings, LLM / repository factory & Redis pool
     ├── repository.py          # Abstract repository interface
     ├── repository_sqlite.py   # SQLite implementation (default)
     └── repository_postgres.py # PostgreSQL implementation
@@ -367,6 +367,8 @@ tests/
 ├── test_consolidator.py
 ├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py
+├── test_dedup.py               # Concurrent analysis deduplication tests
+├── test_rate_limit.py          # Per-user daily rate limiting tests
 ├── test_repository.py
 └── test_sse.py                # SSE progress streaming tests
 ```
@@ -421,3 +423,12 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
 | `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
 | `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per UTC day (failed queries are not counted; resets at 00:00 UTC) |
+| `WEB_WORKERS` | No | `4` | Gunicorn worker processes |
+| `WEB_WORKER_CLASS` | No | `gevent` | Gunicorn worker class (`gevent`, `gthread`, `sync`, etc.) |
+| `WEB_WORKER_CONNECTIONS` | No | `1000` | Max simultaneous connections per gevent worker |
+| `WEB_THREADS` | No | `2` | Threads per Gunicorn worker (only used with `gthread` worker class) |
+| `WEB_TIMEOUT` | No | `120` | Gunicorn worker timeout in seconds |
+| `PG_POOL_MIN` | No | `2` | Minimum PostgreSQL connections in pool |
+| `PG_POOL_MAX` | No | `10` | Maximum PostgreSQL connections in pool |
+| `REDIS_MAX_CONNECTIONS` | No | `20` | Maximum connections in the shared Redis pool |
+| `CELERY_CONCURRENCY` | No | `4` | Celery worker concurrency (prefork processes) |

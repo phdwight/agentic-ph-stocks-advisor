@@ -78,7 +78,7 @@ def client(fake_redis, monkeypatch):
 
     with (
         patch.object(_app_mod, "get_repository", return_value=mock_repo),
-        patch.object(_app_mod, "_get_redis", return_value=fake_redis),
+        patch.object(_app_mod, "get_redis", return_value=fake_redis),
     ):
         app = _app_mod.create_app()
         app.config["TESTING"] = True
@@ -169,13 +169,13 @@ class TestInflightLockCleanup:
         """_clear_inflight_lock should remove the Redis key for the symbol."""
         fake_redis.set("analysis:inflight:SM", "task-sm-001", ex=600)
 
-        with patch("redis.from_url", return_value=fake_redis):
+        with patch("ph_stocks_advisor.infra.config.get_redis", return_value=fake_redis):
             _tasks_mod._clear_inflight_lock("SM")
 
         assert fake_redis.get("analysis:inflight:SM") is None
 
     def test_clear_inflight_lock_handles_redis_failure(self):
         """If Redis is down, _clear_inflight_lock should not raise."""
-        with patch("redis.from_url", side_effect=Exception("Redis down")):
+        with patch("ph_stocks_advisor.infra.config.get_redis", side_effect=Exception("Redis down")):
             # Should not raise
             _tasks_mod._clear_inflight_lock("TEL")

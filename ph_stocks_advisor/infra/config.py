@@ -148,6 +148,35 @@ def get_settings() -> Settings:
     return Settings()
 
 
+# ---------------------------------------------------------------------------
+# Redis connection pool (shared across threads / Gunicorn workers)
+# ---------------------------------------------------------------------------
+
+_redis_pool: "redis_lib.ConnectionPool | None" = None
+
+
+def get_redis() -> "redis_lib.Redis":
+    """Return a Redis client backed by a shared ``ConnectionPool``.
+
+    The pool is created lazily on first call and reused thereafter,
+    keeping the total number of Redis connections bounded regardless
+    of how many Gunicorn threads or Flask requests are active.
+
+    Pool size is configurable via ``REDIS_MAX_CONNECTIONS`` (default: 20).
+    """
+    import redis as redis_lib  # local import to avoid cost at module level
+
+    global _redis_pool
+    if _redis_pool is None:
+        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "20"))
+        _redis_pool = redis_lib.ConnectionPool.from_url(
+            get_settings().redis_url,
+            max_connections=max_conn,
+            decode_responses=True,
+        )
+    return redis_lib.Redis(connection_pool=_redis_pool)
+
+
 def _parse_tz(name: str) -> dt.tzinfo:
     """Parse a timezone string into a :class:`datetime.tzinfo`.
 

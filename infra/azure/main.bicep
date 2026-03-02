@@ -247,6 +247,15 @@ var sharedEnv = [
   { name: 'GOOGLE_CLIENT_ID', secretRef: 'google-client-id' }
   { name: 'GOOGLE_CLIENT_SECRET', secretRef: 'google-client-secret' }
   { name: 'GOOGLE_REDIRECT_PATH', value: '/auth/google/callback' }
+  // Gunicorn tuning — gevent handles SSE streams efficiently
+  { name: 'WEB_WORKERS', value: '4' }
+  { name: 'WEB_WORKER_CLASS', value: 'gevent' }
+  { name: 'WEB_WORKER_CONNECTIONS', value: '1000' }
+  { name: 'WEB_TIMEOUT', value: '120' }
+  // Connection pools
+  { name: 'PG_POOL_MIN', value: '2' }
+  { name: 'PG_POOL_MAX', value: '10' }
+  { name: 'REDIS_MAX_CONNECTIONS', value: '20' }
 ]
 
 var secrets = [
@@ -298,22 +307,24 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           image: imageName
           command: ['ph-advisor-web']
           args: ['--host', '0.0.0.0', '--port', '5000']
+          // Gunicorn with gevent workers handles SSE streams
+          // efficiently — each stream is a lightweight greenlet.
           resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
+            cpu: json('1')
+            memory: '2Gi'
           }
           env: sharedEnv
         }
       ]
       scale: {
         minReplicas: 1
-        maxReplicas: 3
+        maxReplicas: 10
         rules: [
           {
             name: 'http-scaling'
             http: {
               metadata: {
-                concurrentRequests: '50'
+                concurrentRequests: '100'
               }
             }
           }
@@ -340,7 +351,7 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'worker'
           image: imageName
           command: ['celery']
-          args: ['-A', 'ph_stocks_advisor.web.celery_app:celery_app', 'worker', '--loglevel=info', '--concurrency=2']
+          args: ['-A', 'ph_stocks_advisor.web.celery_app:celery_app', 'worker', '--loglevel=info', '--concurrency=4', '--pool=prefork']
           resources: {
             cpu: json('1')
             memory: '2Gi'
@@ -350,7 +361,7 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
       ]
       scale: {
         minReplicas: 1
-        maxReplicas: 3
+        maxReplicas: 10
       }
     }
   }
