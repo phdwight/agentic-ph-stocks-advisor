@@ -65,7 +65,8 @@ def create_app() -> Flask:
     # to the default signed-cookie sessions (safe now that we no longer
     # store the large MSAL token cache in the session).
     try:
-        session_redis = get_redis()
+        from ph_stocks_advisor.infra.config import get_redis_raw
+        session_redis = get_redis_raw()
         session_redis.ping()
         app.config["SESSION_TYPE"] = "redis"
         app.config["SESSION_PERMANENT"] = False

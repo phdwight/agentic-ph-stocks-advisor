@@ -153,6 +153,7 @@ def get_settings() -> Settings:
 # ---------------------------------------------------------------------------
 
 _redis_pool: "redis_lib.ConnectionPool | None" = None
+_redis_pool_raw: "redis_lib.ConnectionPool | None" = None
 
 
 def get_redis() -> "redis_lib.Redis":
@@ -175,6 +176,26 @@ def get_redis() -> "redis_lib.Redis":
             decode_responses=True,
         )
     return redis_lib.Redis(connection_pool=_redis_pool)
+
+
+def get_redis_raw() -> "redis_lib.Redis":
+    """Return a Redis client that does **not** decode responses.
+
+    Flask-Session (and any other consumer that stores binary / pickled
+    data) must use this client.  The pool is separate from the
+    ``decode_responses=True`` pool returned by :func:`get_redis`.
+    """
+    import redis as redis_lib
+
+    global _redis_pool_raw
+    if _redis_pool_raw is None:
+        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "10"))
+        _redis_pool_raw = redis_lib.ConnectionPool.from_url(
+            get_settings().redis_url,
+            max_connections=max_conn,
+            decode_responses=False,
+        )
+    return redis_lib.Redis(connection_pool=_redis_pool_raw)
 
 
 def _parse_tz(name: str) -> dt.tzinfo:
