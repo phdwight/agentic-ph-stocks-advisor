@@ -81,7 +81,7 @@ services:
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-ph-stocks-advisor}
       # ── Gunicorn tuning ───────────────────────────────────────────────────
       WEB_WORKERS: ${WEB_WORKERS:-4}
-      WEB_WORKER_CLASS: ${WEB_WORKER_CLASS:-gevent}
+      WEB_WORKER_CLASS: ${WEB_WORKER_CLASS:-ph_stocks_advisor.web.worker.GeventWorkerNoSSL}
       WEB_WORKER_CONNECTIONS: ${WEB_WORKER_CONNECTIONS:-1000}
       WEB_TIMEOUT: ${WEB_TIMEOUT:-120}
       # ── Connection pools ─────────────────────────────────────────────────

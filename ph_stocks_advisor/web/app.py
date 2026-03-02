@@ -439,7 +439,7 @@ def create_app() -> Flask:
 # Default Gunicorn tuning — can be overridden via environment variables.
 _DEFAULT_WORKERS = 4
 _DEFAULT_THREADS = 2
-_DEFAULT_WORKER_CLASS = "gevent"
+_DEFAULT_WORKER_CLASS = "ph_stocks_advisor.web.worker.GeventWorkerNoSSL"
 
 
 def main() -> None:

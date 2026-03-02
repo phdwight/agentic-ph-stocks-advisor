@@ -247,9 +247,10 @@ var sharedEnv = [
   { name: 'GOOGLE_CLIENT_ID', secretRef: 'google-client-id' }
   { name: 'GOOGLE_CLIENT_SECRET', secretRef: 'google-client-secret' }
   { name: 'GOOGLE_REDIRECT_PATH', value: '/auth/google/callback' }
-  // Gunicorn tuning — gevent handles SSE streams efficiently
+  // Gunicorn tuning — custom gevent worker skips SSL monkey-patching
+  // to avoid infinite recursion on Python 3.12 + OpenSSL ≥ 3.5
   { name: 'WEB_WORKERS', value: '4' }
-  { name: 'WEB_WORKER_CLASS', value: 'gevent' }
+  { name: 'WEB_WORKER_CLASS', value: 'ph_stocks_advisor.web.worker.GeventWorkerNoSSL' }
   { name: 'WEB_WORKER_CONNECTIONS', value: '1000' }
   { name: 'WEB_TIMEOUT', value: '120' }
   // Connection pools
