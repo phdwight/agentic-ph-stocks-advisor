@@ -18,7 +18,6 @@ from datetime import UTC, datetime, timedelta
 
 import json
 
-import redis as redis_lib
 from flask import Flask, Response, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -42,6 +41,8 @@ REPORT_MAX_AGE_DAYS = 5
 
 # Redis key prefix for in-flight analysis dedup locks.
 _INFLIGHT_PREFIX = "analysis:inflight:"
+# Reverse mapping: task_id -> symbol, for O(1) cancel lookup.
+_INFLIGHT_TASK_PREFIX = "analysis:task:"
 # How long the lock lives before auto-expiring (seconds).
 _INFLIGHT_TTL = 10 * 60  # 10 minutes
 
@@ -57,16 +58,18 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = settings.flask_secret_key
     app.config["SESSION_COOKIE_SECURE"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # Cache static assets in browsers for 1 hour; reduces load at scale.
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 
     # Try server-side Redis sessions.  If Redis is unreachable fall back
     # to the default signed-cookie sessions (safe now that we no longer
     # store the large MSAL token cache in the session).
     try:
-        r = redis_lib.from_url(settings.redis_url, socket_connect_timeout=3)
-        r.ping()
+        session_redis = get_redis()
+        session_redis.ping()
         app.config["SESSION_TYPE"] = "redis"
         app.config["SESSION_PERMANENT"] = False
-        app.config["SESSION_REDIS"] = r
+        app.config["SESSION_REDIS"] = session_redis
         from flask_session import Session
         Session(app)
         logger.info("Server-side Redis sessions enabled.")
@@ -121,7 +124,7 @@ def create_app() -> Flask:
         try:
             repo = get_repository()
             repo.list_recent_symbols(limit=1)
-            repo.close()
+
             checks["database"] = "ok"
         except Exception as exc:
             checks["database"] = f"error: {exc}"
@@ -154,8 +157,6 @@ def create_app() -> Flask:
                 recent = repo.list_recent_symbols(limit=50)
         except Exception:
             recent = []
-        finally:
-            repo.close()
         return render_template("index.html", recent_stocks=recent)
 
     @app.route("/analyse", methods=["POST"])
@@ -170,10 +171,7 @@ def create_app() -> Flask:
 
         # Check for a recent report (within REPORT_MAX_AGE_DAYS)
         repo = get_repository()
-        try:
-            record = repo.get_latest_by_symbol(symbol)
-        finally:
-            repo.close()
+        record = repo.get_latest_by_symbol(symbol)
 
         if record and record.created_at:
             age = datetime.now(tz=UTC) - record.created_at
@@ -189,7 +187,6 @@ def create_app() -> Flask:
                     try:
                         repo2 = get_repository()
                         repo2.add_user_symbol(user["email"], symbol)
-                        repo2.close()
                     except Exception:
                         logger.debug("Failed to record user-symbol link.")
                 return jsonify({
@@ -245,13 +242,14 @@ def create_app() -> Flask:
 
         # Store the lock so concurrent requests join this task
         r.set(inflight_key, task.id, ex=_INFLIGHT_TTL)
+        # Reverse mapping for O(1) cancel lookup (avoids scan_iter)
+        r.set(f"{_INFLIGHT_TASK_PREFIX}{task.id}", symbol, ex=_INFLIGHT_TTL)
 
         # Track symbol for the current user.
         if user and user.get("email"):
             try:
                 repo2 = get_repository()
                 repo2.add_user_symbol(user["email"], symbol)
-                repo2.close()
             except Exception:
                 logger.debug("Failed to record user-symbol link.")
 
@@ -334,12 +332,12 @@ def create_app() -> Flask:
 
         celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
 
-        # Clear the inflight lock so a new analysis can be dispatched
+        # Clear the inflight lock via O(1) reverse lookup (no keyspace scan)
         r = get_redis()
-        for key in r.scan_iter(f"{_INFLIGHT_PREFIX}*"):
-            if r.get(key) == task_id:
-                r.delete(key)
-                break
+        reverse_key = f"{_INFLIGHT_TASK_PREFIX}{task_id}"
+        symbol = r.get(reverse_key)
+        if symbol:
+            r.delete(f"{_INFLIGHT_PREFIX}{symbol}", reverse_key)
 
         return jsonify({"status": "cancelled", "task_id": task_id})
 
@@ -349,10 +347,7 @@ def create_app() -> Flask:
         """Display the latest report for a symbol."""
         symbol = symbol.upper().replace(".PS", "")
         repo = get_repository()
-        try:
-            record = repo.get_latest_by_symbol(symbol)
-        finally:
-            repo.close()
+        record = repo.get_latest_by_symbol(symbol)
 
         if record is None:
             return render_template("no_report.html", symbol=symbol), 404
@@ -384,10 +379,7 @@ def create_app() -> Flask:
         """List all saved reports for a symbol."""
         symbol = symbol.upper().replace(".PS", "")
         repo = get_repository()
-        try:
-            records = repo.list_by_symbol(symbol, limit=20)
-        finally:
-            repo.close()
+        records = repo.list_by_symbol(symbol, limit=20)
 
         formatted = []
         for r in records:
@@ -407,10 +399,7 @@ def create_app() -> Flask:
     def report_by_id(report_id: int):
         """Display a specific report by its database ID."""
         repo = get_repository()
-        try:
-            record = repo.get_by_id(report_id)
-        finally:
-            repo.close()
+        record = repo.get_by_id(report_id)
 
         if record is None:
             return render_template("no_report.html", symbol="unknown"), 404

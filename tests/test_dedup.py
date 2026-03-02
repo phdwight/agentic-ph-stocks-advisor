@@ -43,8 +43,9 @@ class FakeRedis:
     def expire(self, key: str, seconds: int) -> None:
         pass  # no-op for tests
 
-    def delete(self, key: str) -> None:
-        self._store.pop(key, None)
+    def delete(self, *keys: str) -> None:
+        for key in keys:
+            self._store.pop(key, None)
 
     def scan_iter(self, pattern: str) -> list[str]:
         return [k for k in self._store if fnmatch.fnmatch(k, pattern)]
@@ -128,6 +129,8 @@ class TestAnalyseDedup:
         mock_delay.assert_called_once_with("TEL", user_id="dev@localhost")
         # Lock should be stored in Redis
         assert fake_redis.get("analysis:inflight:TEL") == "task-abc-123"
+        # Reverse mapping for O(1) cancel should also be stored
+        assert fake_redis.get("analysis:task:task-abc-123") == "TEL"
 
     def test_second_request_joins_inflight_task(self, client, fake_redis):
         """Second concurrent request should reuse the in-flight task."""
@@ -162,14 +165,16 @@ class TestAnalyseDedup:
         mock_delay.assert_called_once_with("SM", user_id="dev@localhost")
 
     def test_cancel_clears_inflight_lock(self, client, fake_redis):
-        """Cancelling a task should remove its inflight lock."""
+        """Cancelling a task should remove its inflight lock via reverse mapping."""
         fake_redis.set("analysis:inflight:TEL", "task-abc-123", ex=600)
+        fake_redis.set("analysis:task:task-abc-123", "TEL", ex=600)
 
         with patch.object(_tasks_mod, "celery_app"):
             resp = client.post("/cancel/task-abc-123")
 
         assert resp.status_code == 200
         assert fake_redis.get("analysis:inflight:TEL") is None
+        assert fake_redis.get("analysis:task:task-abc-123") is None
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +186,18 @@ class TestInflightLockCleanup:
     """Verify the worker clears the inflight lock after task completion."""
 
     def test_clear_inflight_lock_deletes_key(self, fake_redis):
-        """_clear_inflight_lock should remove the Redis key for the symbol."""
+        """_clear_inflight_lock should remove both the symbol key and reverse mapping."""
+        fake_redis.set("analysis:inflight:SM", "task-sm-001", ex=600)
+        fake_redis.set("analysis:task:task-sm-001", "SM", ex=600)
+
+        with patch("ph_stocks_advisor.infra.config.get_redis", return_value=fake_redis):
+            _tasks_mod._clear_inflight_lock("SM", task_id="task-sm-001")
+
+        assert fake_redis.get("analysis:inflight:SM") is None
+        assert fake_redis.get("analysis:task:task-sm-001") is None
+
+    def test_clear_inflight_lock_without_task_id(self, fake_redis):
+        """_clear_inflight_lock without task_id should only remove symbol key."""
         fake_redis.set("analysis:inflight:SM", "task-sm-001", ex=600)
 
         with patch("ph_stocks_advisor.infra.config.get_redis", return_value=fake_redis):
@@ -193,4 +209,4 @@ class TestInflightLockCleanup:
         """If Redis is down, _clear_inflight_lock should not raise."""
         with patch("ph_stocks_advisor.infra.config.get_redis", side_effect=Exception("Redis down")):
             # Should not raise
-            _tasks_mod._clear_inflight_lock("TEL")
+            _tasks_mod._clear_inflight_lock("TEL", task_id="task-tel-001")

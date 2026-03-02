@@ -168,7 +168,7 @@ def get_redis() -> "redis_lib.Redis":
 
     global _redis_pool
     if _redis_pool is None:
-        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "20"))
+        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "10"))
         _redis_pool = redis_lib.ConnectionPool.from_url(
             get_settings().redis_url,
             max_connections=max_conn,
@@ -215,14 +215,26 @@ def get_llm(settings: Settings | None = None) -> BaseChatModel:
     )
 
 
+_repository: "AbstractReportRepository | None" = None
+
+
 def get_repository(settings: Settings | None = None) -> AbstractReportRepository:
-    """
-    Factory that returns the correct repository implementation
-    based on the DB_BACKEND environment variable.
+    """Return a **shared** repository instance (singleton).
+
+    The repository is created and initialised once, then reused for
+    every subsequent call.  This is critical for performance: the
+    PostgreSQL backend maintains a ``ThreadedConnectionPool`` that
+    borrows / returns connections automatically — creating a new
+    repository per request would spin up a new pool each time and
+    exhaust database connections under load.
 
     Follows the Dependency Inversion Principle: callers receive an
     abstract interface, never a concrete class.
     """
+    global _repository
+    if _repository is not None:
+        return _repository
+
     s = settings or get_settings()
     if s.db_backend.lower() == "postgres":
         from ph_stocks_advisor.infra.repository_postgres import PostgresReportRepository
@@ -233,4 +245,16 @@ def get_repository(settings: Settings | None = None) -> AbstractReportRepository
 
         repo = SQLiteReportRepository(db_path=s.sqlite_path)
     repo.initialize()
+    _repository = repo
     return repo
+
+
+def _reset_repository() -> None:
+    """Close and discard the cached repository (for testing only)."""
+    global _repository
+    if _repository is not None:
+        try:
+            _repository.close()
+        except Exception:
+            pass
+        _repository = None

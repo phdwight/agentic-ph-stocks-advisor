@@ -441,6 +441,43 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `WEB_THREADS` | No | `2` | Threads per Gunicorn worker (only used with `gthread` worker class) |
 | `WEB_TIMEOUT` | No | `120` | Gunicorn worker timeout in seconds |
 | `PG_POOL_MIN` | No | `2` | Minimum PostgreSQL connections in pool |
-| `PG_POOL_MAX` | No | `10` | Maximum PostgreSQL connections in pool |
-| `REDIS_MAX_CONNECTIONS` | No | `20` | Maximum connections in the shared Redis pool |
+| `PG_POOL_MAX` | No | `5` | Maximum PostgreSQL connections in pool |
+| `REDIS_MAX_CONNECTIONS` | No | `10` | Maximum connections in the shared Redis pool |
 | `CELERY_CONCURRENCY` | No | `4` | Celery worker concurrency (prefork processes) |
+
+## Scaling Tiers
+
+The Bicep template defaults to minimal resources. Override via deploy parameters to scale up — no code changes needed.
+
+| Parameter | Hobby (~100/mo) | Small (~1K users) | Scale (100K+) |
+|-----------|----------------:|-------------------:|--------------:|
+| `pgSkuName` / `pgSkuTier` | B1ms / Burstable | B1ms / Burstable | D2ds_v5 / GeneralPurpose |
+| `webCpu` / `webMemory` | 0.25 / 0.5Gi | 0.5 / 1Gi | 2 / 4Gi |
+| `workerCpu` / `workerMemory` | 0.25 / 0.5Gi | 0.5 / 1Gi | 1 / 2Gi |
+| `redisCpu` / `redisMemory` | 0.25 / 0.5Gi | 0.25 / 0.5Gi | 0.5 / 1Gi |
+| `redisMaxMemory` | 64mb | 128mb | 512mb |
+| `webWorkers` | 1 | 2 | 4 |
+| `pgPoolMax` | 5 | 10 | 20 |
+| `redisMaxConnections` | 10 | 20 | 50 |
+| `celeryConcurrency` | 2 | 4 | 4 |
+| `webMaxReplicas` | 1 | 3 | 10 |
+| `workerMaxReplicas` | 1 | 3 | 10 |
+| **Est. monthly cost** | **~$100** | **~$176** | **~$340** |
+
+Deploy defaults are the **Hobby** tier. To scale up:
+
+```bash
+# Small tier (~1K users)
+az deployment group create ... --parameters main.bicepparam \
+  --parameters webCpu='0.5' webMemory='1Gi' workerCpu='0.5' workerMemory='1Gi' \
+    redisMaxMemory='128mb' webWorkers='2' pgPoolMax='10' redisMaxConnections='20' \
+    celeryConcurrency='4' webMaxReplicas=3 workerMaxReplicas=3
+
+# Scale tier (100K+ users)
+az deployment group create ... --parameters main.bicepparam \
+  --parameters pgSkuName='Standard_D2ds_v5' pgSkuTier='GeneralPurpose' \
+    webCpu='2' webMemory='4Gi' workerCpu='1' workerMemory='2Gi' \
+    redisCpu='0.5' redisMemory='1Gi' redisMaxMemory='512mb' \
+    webWorkers='4' pgPoolMax='20' redisMaxConnections='50' \
+    celeryConcurrency='4' webMaxReplicas=10 workerMaxReplicas=10
+```

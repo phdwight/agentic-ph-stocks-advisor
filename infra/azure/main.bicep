@@ -78,8 +78,58 @@ param googleClientSecret string = ''
 @description('Secret key for the SQLAdmin session middleware.')
 param adminSecretKey string = 'sqladmin-change-me-in-production'
 
+@description('PostgreSQL SKU name. Use Standard_B1ms (Burstable) for low traffic, Standard_D2ds_v5 (GeneralPurpose) for high traffic.')
+param pgSkuName string = 'Standard_B1ms'
+
+@description('PostgreSQL SKU tier. Must match pgSkuName: Burstable for B-series, GeneralPurpose for D-series.')
+@allowed(['Burstable', 'GeneralPurpose'])
+param pgSkuTier string = 'Burstable'
+
 @description('Docker image tag to deploy.')
 param imageTag string = 'latest'
+
+// ── Scaling parameters ──────────────────────────────────────────────────────
+// Defaults are sized for hobby / low-traffic (~100 users/month).
+// Override via deploy parameters for higher tiers — see README.
+
+@description('Web container CPU cores. 0.25 hobby, 0.5 small, 2 high traffic.')
+param webCpu string = '0.25'
+
+@description('Web container memory. 0.5Gi hobby, 1Gi small, 4Gi high traffic.')
+param webMemory string = '0.5Gi'
+
+@description('Worker container CPU cores. 0.25 hobby, 0.5 small, 1 high traffic.')
+param workerCpu string = '0.25'
+
+@description('Worker container memory. 0.5Gi hobby, 1Gi small, 2Gi high traffic.')
+param workerMemory string = '0.5Gi'
+
+@description('Redis container CPU cores. 0.25 hobby/small, 0.5 high traffic.')
+param redisCpu string = '0.25'
+
+@description('Redis container memory. 0.5Gi hobby/small, 1Gi high traffic.')
+param redisMemory string = '0.5Gi'
+
+@description('Redis maxmemory limit. 64mb hobby, 128mb small, 512mb high traffic.')
+param redisMaxMemory string = '64mb'
+
+@description('Gunicorn worker processes. 1 hobby, 2 small, 4 high traffic.')
+param webWorkers string = '1'
+
+@description('Max PostgreSQL connections in the pool. 5 hobby, 10 small, 20 high traffic.')
+param pgPoolMax string = '5'
+
+@description('Max Redis connections in the shared pool. 10 hobby, 20 small, 50 high traffic.')
+param redisMaxConnections string = '10'
+
+@description('Max web replicas for autoscaling. 1 hobby, 3 small, 10 high traffic.')
+param webMaxReplicas int = 1
+
+@description('Max worker replicas for autoscaling. 1 hobby, 3 small, 10 high traffic.')
+param workerMaxReplicas int = 1
+
+@description('Celery worker concurrency (prefork processes). 2 hobby, 4 small/high traffic.')
+param celeryConcurrency string = '2'
 
 // ── Derived names ───────────────────────────────────────────────────────────
 
@@ -122,8 +172,8 @@ resource pgServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview'
   name: pgServerName
   location: location
   sku: {
-    name: 'Standard_B1ms'
-    tier: 'Burstable'
+    name: pgSkuName
+    tier: pgSkuTier
   }
   properties: {
     version: '16'
@@ -200,10 +250,10 @@ resource redisApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'redis'
           image: 'docker.io/redis:7-alpine'
           command: ['redis-server']
-          args: ['--maxmemory', '128mb', '--maxmemory-policy', 'allkeys-lru']
+          args: ['--maxmemory', redisMaxMemory, '--maxmemory-policy', 'allkeys-lru']
           resources: {
-            cpu: json('0.25')
-            memory: '0.5Gi'
+            cpu: json(redisCpu)
+            memory: redisMemory
           }
         }
       ]
@@ -249,14 +299,14 @@ var sharedEnv = [
   { name: 'GOOGLE_REDIRECT_PATH', value: '/auth/google/callback' }
   // Gunicorn tuning — custom gevent worker skips SSL monkey-patching
   // to avoid infinite recursion on Python 3.12 + OpenSSL ≥ 3.5
-  { name: 'WEB_WORKERS', value: '4' }
+  { name: 'WEB_WORKERS', value: webWorkers }
   { name: 'WEB_WORKER_CLASS', value: 'ph_stocks_advisor.web.worker.GeventWorkerNoSSL' }
   { name: 'WEB_WORKER_CONNECTIONS', value: '1000' }
   { name: 'WEB_TIMEOUT', value: '120' }
   // Connection pools
   { name: 'PG_POOL_MIN', value: '2' }
-  { name: 'PG_POOL_MAX', value: '10' }
-  { name: 'REDIS_MAX_CONNECTIONS', value: '20' }
+  { name: 'PG_POOL_MAX', value: pgPoolMax }
+  { name: 'REDIS_MAX_CONNECTIONS', value: redisMaxConnections }
 ]
 
 var secrets = [
@@ -311,8 +361,8 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           // Gunicorn with gevent workers handles SSE streams
           // efficiently — each stream is a lightweight greenlet.
           resources: {
-            cpu: json('1')
-            memory: '2Gi'
+            cpu: json(webCpu)
+            memory: webMemory
           }
           env: sharedEnv
           probes: [
@@ -343,7 +393,7 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
       ]
       scale: {
         minReplicas: 1
-        maxReplicas: 10
+        maxReplicas: webMaxReplicas
         rules: [
           {
             name: 'http-scaling'
@@ -376,17 +426,17 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'worker'
           image: imageName
           command: ['celery']
-          args: ['-A', 'ph_stocks_advisor.web.celery_app:celery_app', 'worker', '--loglevel=info', '--concurrency=4', '--pool=prefork']
+          args: ['-A', 'ph_stocks_advisor.web.celery_app:celery_app', 'worker', '--loglevel=info', '--concurrency=${celeryConcurrency}', '--pool=prefork']
           resources: {
-            cpu: json('1')
-            memory: '2Gi'
+            cpu: json(workerCpu)
+            memory: workerMemory
           }
           env: sharedEnv
         }
       ]
       scale: {
         minReplicas: 1
-        maxReplicas: 10
+        maxReplicas: workerMaxReplicas
       }
     }
   }

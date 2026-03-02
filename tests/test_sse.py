@@ -93,8 +93,9 @@ class FakeRedisWithPubSub:
     def expire(self, key: str, seconds: int) -> None:
         pass
 
-    def delete(self, key: str) -> None:
-        self._store.pop(key, None)
+    def delete(self, *keys: str) -> None:
+        for key in keys:
+            self._store.pop(key, None)
 
     def scan_iter(self, pattern: str) -> list[str]:
         import fnmatch

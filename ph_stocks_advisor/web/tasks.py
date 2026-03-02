@@ -17,17 +17,21 @@ from ph_stocks_advisor.web.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-# Redis key prefix — must match the one in app.py.
+# Redis key prefixes — must match the ones in app.py.
 _INFLIGHT_PREFIX = "analysis:inflight:"
+_INFLIGHT_TASK_PREFIX = "analysis:task:"
 
 
-def _clear_inflight_lock(symbol: str) -> None:
-    """Remove the inflight dedup lock for *symbol* from Redis."""
+def _clear_inflight_lock(symbol: str, task_id: str | None = None) -> None:
+    """Remove the inflight dedup lock and reverse mapping for *symbol*."""
     from ph_stocks_advisor.infra.config import get_redis
 
     try:
         r = get_redis()
-        r.delete(f"{_INFLIGHT_PREFIX}{symbol}")
+        keys_to_delete = [f"{_INFLIGHT_PREFIX}{symbol}"]
+        if task_id:
+            keys_to_delete.append(f"{_INFLIGHT_TASK_PREFIX}{task_id}")
+        r.delete(*keys_to_delete)
     except Exception:
         logger.debug("Could not clear inflight lock for %s", symbol, exc_info=True)
 
@@ -85,11 +89,8 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
         # Persist to database
         publish_progress(task_id, STEP_SAVING)
         repo = get_repository()
-        try:
-            record = ReportRecord.from_final_report(report)
-            report_id = repo.save(record)
-        finally:
-            repo.close()
+        record = ReportRecord.from_final_report(report)
+        report_id = repo.save(record)
 
         logger.info(
             "Analysis for %s complete — verdict=%s, report_id=%d",
@@ -115,4 +116,4 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
         raise
     finally:
         # Always clear the inflight dedup lock so a new analysis can run
-        _clear_inflight_lock(symbol)
+        _clear_inflight_lock(symbol, task_id=task_id)

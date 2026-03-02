@@ -88,7 +88,7 @@ class PostgresReportRepository(AbstractReportRepository):
     ) -> None:
         self._dsn = dsn
         self._min_conn = min_conn or int(os.getenv("PG_POOL_MIN", "2"))
-        self._max_conn = max_conn or int(os.getenv("PG_POOL_MAX", "10"))
+        self._max_conn = max_conn or int(os.getenv("PG_POOL_MAX", "5"))
         self._pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
     def _get_pool(self) -> psycopg2.pool.ThreadedConnectionPool:

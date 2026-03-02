@@ -13,7 +13,7 @@ import tempfile
 
 import pytest
 
-from ph_stocks_advisor.infra.config import Settings, get_repository
+from ph_stocks_advisor.infra.config import Settings, get_repository, _reset_repository
 from ph_stocks_advisor.data.models import FinalReport, Verdict
 from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
 from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
@@ -22,6 +22,14 @@ from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_repo_singleton():
+    """Reset the cached singleton between tests so each gets a fresh repo."""
+    _reset_repository()
+    yield
+    _reset_repository()
 
 
 @pytest.fixture
