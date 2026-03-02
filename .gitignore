@@ -9,3 +9,6 @@ build/
 *.db
 db/
 output/
+.python-version
+.langgraph_api/
+flask_session/
