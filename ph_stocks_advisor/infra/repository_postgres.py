@@ -65,6 +65,15 @@ CREATE TABLE IF NOT EXISTS users (
 );
 """
 
+# ── Schema migrations (idempotent) ──────────────────────────────────────────
+_MIGRATIONS_SQL = [
+    # Added in v2 — user_type column for NORMAL(0)/ELEVATED(1) privileges
+    """
+    ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS user_type INTEGER NOT NULL DEFAULT 0;
+    """,
+]
+
 
 class PostgresReportRepository(AbstractReportRepository):
     """PostgreSQL-backed repository with thread-safe connection pooling.
@@ -124,6 +133,8 @@ class PostgresReportRepository(AbstractReportRepository):
                 cur.execute(_CREATE_INDEX_SQL)
                 cur.execute(_CREATE_USER_SYMBOLS_SQL)
                 cur.execute(_CREATE_USERS_SQL)
+                for migration in _MIGRATIONS_SQL:
+                    cur.execute(migration)
             conn.commit()
 
     def save(self, record: ReportRecord) -> int:
