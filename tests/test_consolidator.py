@@ -7,6 +7,8 @@ don't support structured output).
 
 from __future__ import annotations
 
+import pytest
+
 from tests.conftest import make_mock_llm, make_structured_mock_llm
 from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
 from ph_stocks_advisor.data.models import (
@@ -39,6 +41,12 @@ class TestConsolidatorStructuredOutput:
         assert "solid stock" in report.summary
         # Verify with_structured_output was called with the right model
         llm.with_structured_output.assert_called_once_with(ConsolidationResponse)
+        # Verify sections are populated from state
+        assert report.price_section == "Price looks healthy."
+        assert report.dividend_section == "Dividends are good."
+        assert report.movement_section == "Trending up."
+        assert report.valuation_section == "Undervalued."
+        assert report.controversy_section == "Minor risk."
 
     def test_not_buy_via_structured_output(self, sample_advisor_state: AdvisorState):
         response = ConsolidationResponse(
@@ -52,21 +60,6 @@ class TestConsolidatorStructuredOutput:
 
         assert report.verdict == Verdict.NOT_BUY
 
-    def test_sections_populated_from_state(self, sample_advisor_state: AdvisorState):
-        response = ConsolidationResponse(
-            verdict=Verdict.BUY,
-            justification="Good.",
-            summary="Report.",
-        )
-        llm = make_structured_mock_llm(response)
-        agent = ConsolidatorAgent(llm)
-        report = agent.run(sample_advisor_state)
-
-        assert report.price_section == "Price looks healthy."
-        assert report.dividend_section == "Dividends are good."
-        assert report.movement_section == "Trending up."
-        assert report.valuation_section == "Undervalued."
-        assert report.controversy_section == "Minor risk."
 
 
 # ---------------------------------------------------------------------------
@@ -106,24 +99,23 @@ class TestConsolidatorRegexFallback:
 
 
 class TestExtractVerdict:
-    def test_buy(self):
-        assert ConsolidatorAgent._extract_verdict("Verdict: BUY") == Verdict.BUY
-
-    def test_not_buy(self):
-        assert ConsolidatorAgent._extract_verdict("Verdict: NOT BUY") == Verdict.NOT_BUY
+    @pytest.mark.parametrize("text,expected", [
+        ("Verdict: BUY", Verdict.BUY),
+        ("Verdict: NOT BUY", Verdict.NOT_BUY),
+        ("**Verdict: BUY**", Verdict.BUY),
+        ("**Verdict: NOT BUY**", Verdict.NOT_BUY),
+        ("no verdict here", Verdict.NOT_BUY),
+        ("Analysis complete. Overall: BUY", Verdict.BUY),
+        ("Analysis complete. Overall: NOT BUY", Verdict.NOT_BUY),
+        ("**verdict: not buy**", Verdict.NOT_BUY),
+        ("**Verdict: Buy**", Verdict.BUY),
+    ])
+    def test_basic_verdict_extraction(self, text, expected):
+        assert ConsolidatorAgent._extract_verdict(text) == expected
 
     def test_not_buy_takes_precedence(self):
         text = "You should BUY only if... Verdict: NOT BUY"
         assert ConsolidatorAgent._extract_verdict(text) == Verdict.NOT_BUY
-
-    def test_defaults_to_not_buy(self):
-        assert ConsolidatorAgent._extract_verdict("no verdict here") == Verdict.NOT_BUY
-
-    def test_structured_bold_verdict_buy(self):
-        assert ConsolidatorAgent._extract_verdict("**Verdict: BUY**") == Verdict.BUY
-
-    def test_structured_bold_verdict_not_buy(self):
-        assert ConsolidatorAgent._extract_verdict("**Verdict: NOT BUY**") == Verdict.NOT_BUY
 
     def test_not_buy_with_buyers_after_verdict(self):
         """Regression: 'buyers' after **Verdict: NOT BUY** must not flip to BUY."""

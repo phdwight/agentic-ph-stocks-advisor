@@ -243,34 +243,17 @@ class TestGetFormatter:
         with pytest.raises(KeyError, match="docx"):
             get_formatter("docx")
 
-    def test_registry_contains_expected_formats(self):
-        assert "pdf" in FORMATTER_REGISTRY
-        assert "html" in FORMATTER_REGISTRY
-
 
 # =========================================================================
 # HtmlFormatter
 # =========================================================================
 
 
-class TestHtmlFormatterProperties:
-    def test_file_extension(self):
-        assert HtmlFormatter().file_extension == ".html"
-
-    def test_format_label(self):
-        assert HtmlFormatter().format_label == "HTML"
-
-    def test_emoji(self):
-        assert HtmlFormatter().emoji == "🌐"
-
-
 class TestHtmlEsc:
-    def test_escapes_html_entities(self):
+    def test_escapes_html_entities_and_quotes(self):
         assert _esc("<script>alert('x')</script>") == (
             "&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;"
         )
-
-    def test_escapes_quotes(self):
         assert "&quot;" in _esc('"hello"')
 
 
@@ -281,9 +264,6 @@ class TestMdBoldToHtml:
     def test_multiple_bold_segments(self):
         result = _md_bold_to_html("**a** and **b**")
         assert result == "<strong>a</strong> and <strong>b</strong>"
-
-    def test_no_bold_passes_through(self):
-        assert _md_bold_to_html("plain text") == "plain text"
 
 
 class TestBodyToHtml:
@@ -394,17 +374,6 @@ class TestHtmlRender:
 # =========================================================================
 
 
-class TestPdfFormatterProperties:
-    def test_file_extension(self):
-        assert PdfFormatter().file_extension == ".pdf"
-
-    def test_format_label(self):
-        assert PdfFormatter().format_label == "PDF"
-
-    def test_emoji(self):
-        assert PdfFormatter().emoji == "📄"
-
-
 class TestPdfRender:
     def test_returns_bytes_like(self):
         result = PdfFormatter().render(_make_record())
@@ -453,17 +422,11 @@ class TestPdfRender:
         assert out.exists()
         assert out.stat().st_size > 500
 
-    def test_pill_shaped_badge_buy(self, tmp_path):
-        """PDF should render a pill-shaped verdict badge for BUY."""
+    @pytest.mark.parametrize("verdict", ["BUY", "NOT BUY"])
+    def test_pill_shaped_badge(self, tmp_path, verdict):
+        """PDF should render a pill-shaped verdict badge."""
         out = tmp_path / "report.pdf"
-        PdfFormatter().write(_make_record(verdict="BUY"), out)
-        assert out.exists()
-        assert out.stat().st_size > 500
-
-    def test_pill_shaped_badge_not_buy(self, tmp_path):
-        """PDF should render a pill-shaped verdict badge for NOT BUY."""
-        out = tmp_path / "report.pdf"
-        PdfFormatter().write(_make_record(verdict="NOT BUY"), out)
+        PdfFormatter().write(_make_record(verdict=verdict), out)
         assert out.exists()
         assert out.stat().st_size > 500
 

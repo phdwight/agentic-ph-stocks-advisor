@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from tests.conftest import make_mock_llm
 from ph_stocks_advisor.agents.specialists import (
     ControversyAgent,
@@ -17,66 +19,62 @@ from ph_stocks_advisor.agents.specialists import (
     PriceAgent,
     ValuationAgent,
 )
-from ph_stocks_advisor.data.models import (
-    ControversyInfo,
-    DividendInfo,
-    FairValueEstimate,
-    PriceMovement,
-    StockPrice,
+
+
+@pytest.mark.parametrize(
+    "agent_cls,patch_target,fixture_name,response_text,assertion",
+    [
+        (
+            PriceAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_stock_price",
+            "sample_stock_price",
+            "Price is near 52-week midpoint.",
+            lambda r: r.data.symbol == "TEL" and "52-week" in r.analysis,
+        ),
+        (
+            DividendAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_dividend_info",
+            "sample_dividend_info",
+            "Dividend yield is attractive at 6%.",
+            lambda r: r.data.dividend_yield == 0.06 and "attractive" in r.analysis,
+        ),
+        (
+            MovementAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_price_movement",
+            "sample_price_movement",
+            "Stock has been in an uptrend.",
+            lambda r: r.data.trend.value == "uptrend" and "uptrend" in r.analysis,
+        ),
+        (
+            ValuationAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_fair_value",
+            "sample_fair_value",
+            "Stock appears undervalued by 10%.",
+            lambda r: r.data.discount_pct > 0 and "undervalued" in r.analysis,
+        ),
+        (
+            ControversyAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_controversy_info",
+            "sample_controversy_info",
+            "One notable spike but overall manageable risk.",
+            lambda r: len(r.data.sudden_spikes) == 1 and "spike" in r.analysis,
+        ),
+    ],
+    ids=["price", "dividend", "movement", "valuation", "controversy"],
 )
-
-
-class TestPriceAgent:
-    @patch("ph_stocks_advisor.agents.specialists.fetch_stock_price")
-    def test_run_returns_analysis(self, mock_fetch, sample_stock_price):
-        mock_fetch.return_value = sample_stock_price
-        llm = make_mock_llm("Price is near 52-week midpoint.")
-        agent = PriceAgent(llm)
+def test_agent_run_returns_analysis(
+    agent_cls,
+    patch_target,
+    fixture_name,
+    response_text,
+    assertion,
+    request,
+):
+    """Each specialist agent fetches data, invokes the LLM, and returns analysis."""
+    sample_data = request.getfixturevalue(fixture_name)
+    with patch(patch_target, return_value=sample_data):
+        llm = make_mock_llm(response_text)
+        agent = agent_cls(llm)
         result = agent.run("TEL")
-        assert result.data.symbol == "TEL"
-        assert "52-week" in result.analysis
+        assert assertion(result), f"Assertion failed for {agent_cls.__name__}"
         llm.invoke.assert_called_once()
-
-
-class TestDividendAgent:
-    @patch("ph_stocks_advisor.agents.specialists.fetch_dividend_info")
-    def test_run_returns_analysis(self, mock_fetch, sample_dividend_info):
-        mock_fetch.return_value = sample_dividend_info
-        llm = make_mock_llm("Dividend yield is attractive at 6%.")
-        agent = DividendAgent(llm)
-        result = agent.run("TEL")
-        assert result.data.dividend_yield == 0.06
-        assert "attractive" in result.analysis
-
-
-class TestMovementAgent:
-    @patch("ph_stocks_advisor.agents.specialists.fetch_price_movement")
-    def test_run_returns_analysis(self, mock_fetch, sample_price_movement):
-        mock_fetch.return_value = sample_price_movement
-        llm = make_mock_llm("Stock has been in an uptrend.")
-        agent = MovementAgent(llm)
-        result = agent.run("TEL")
-        assert result.data.trend.value == "uptrend"
-        assert "uptrend" in result.analysis
-
-
-class TestValuationAgent:
-    @patch("ph_stocks_advisor.agents.specialists.fetch_fair_value")
-    def test_run_returns_analysis(self, mock_fetch, sample_fair_value):
-        mock_fetch.return_value = sample_fair_value
-        llm = make_mock_llm("Stock appears undervalued by 10%.")
-        agent = ValuationAgent(llm)
-        result = agent.run("TEL")
-        assert result.data.discount_pct > 0
-        assert "undervalued" in result.analysis
-
-
-class TestControversyAgent:
-    @patch("ph_stocks_advisor.agents.specialists.fetch_controversy_info")
-    def test_run_returns_analysis(self, mock_fetch, sample_controversy_info):
-        mock_fetch.return_value = sample_controversy_info
-        llm = make_mock_llm("One notable spike but overall manageable risk.")
-        agent = ControversyAgent(llm)
-        result = agent.run("TEL")
-        assert len(result.data.sudden_spikes) == 1
-        assert "spike" in result.analysis

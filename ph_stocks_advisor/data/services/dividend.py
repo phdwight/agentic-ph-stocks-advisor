@@ -22,7 +22,6 @@ from ph_stocks_advisor.data.clients.pse_edge_company_dividends import (
     fetch_company_dividend_announcements,
 )
 from ph_stocks_advisor.data.models import DividendInfo
-from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news
 
 logger = logging.getLogger(__name__)
 
@@ -172,9 +171,6 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             revenue_trend=revenue_trend,
             free_cash_flow_trend=fcf_trend,
             dividend_sustainability_note=sustainability_note,
-            recent_dividend_news=search_dividend_news(
-                symbol, company_name=str(profile.get("companyName", "")),
-            ),
             recent_declared_dividends=declared_dividends,
             dividend_announcements=dividend_announcements,
         )

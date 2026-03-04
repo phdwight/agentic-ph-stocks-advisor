@@ -93,8 +93,11 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_user():
-        """Make ``current_user`` available in every template."""
-        return {"current_user": get_current_user()}
+        """Make ``current_user`` and ``auth_enabled`` available in every template."""
+        return {
+            "current_user": get_current_user(),
+            "auth_enabled": get_settings().auth_enabled,
+        }
 
     # ------------------------------------------------------------------
     # Health check
@@ -176,30 +179,56 @@ def create_app() -> Flask:
         is_elevated = (user or {}).get("user_type", 0) == UserType.ELEVATED
 
         # Check for a recent report (within REPORT_MAX_AGE_DAYS).
-        # Elevated users bypass the cache so they can re-analyse stocks.
+        # Elevated users bypass the multi-day cache but are still subject
+        # to a per-stock daily cooldown (one analysis per UTC day).
         repo = get_repository()
         record = repo.get_latest_by_symbol(symbol)
 
-        if not is_elevated and record and record.created_at:
-            age = datetime.now(tz=UTC) - record.created_at
-            if age <= timedelta(days=REPORT_MAX_AGE_DAYS):
-                logger.info(
-                    "Fresh report found for %s (age=%s), serving cached.",
-                    symbol,
-                    age,
-                )
-                # Track symbol for the current user.
-                if user and user.get("email"):
-                    try:
-                        repo2 = get_repository()
-                        repo2.add_user_symbol(user["email"], symbol)
-                    except Exception:
-                        logger.debug("Failed to record user-symbol link.")
-                return jsonify({
-                    "status": "cached",
-                    "symbol": symbol,
-                    "report_id": record.id,
-                })
+        if record and record.created_at:
+            now = datetime.now(tz=UTC)
+            age = now - record.created_at
+
+            if is_elevated:
+                # Elevated cooldown: same UTC calendar day → blocked.
+                report_date = record.created_at.date()
+                today_utc = now.date()
+                if report_date == today_utc:
+                    next_midnight = (now + timedelta(days=1)).replace(
+                        hour=0, minute=0, second=0, microsecond=0,
+                    )
+                    logger.info(
+                        "Elevated cooldown: %s already analysed today, "
+                        "next window %s.",
+                        symbol,
+                        next_midnight.isoformat(),
+                    )
+                    return jsonify({
+                        "error": (
+                            f"{symbol} was already analysed today. "
+                            "You can re-analyse after midnight UTC."
+                        ),
+                        "reset_at": next_midnight.isoformat(),
+                    }), 429
+            else:
+                # Normal users: serve the cached report if still fresh.
+                if age <= timedelta(days=REPORT_MAX_AGE_DAYS):
+                    logger.info(
+                        "Fresh report found for %s (age=%s), serving cached.",
+                        symbol,
+                        age,
+                    )
+                    # Track symbol for the current user.
+                    if user and user.get("email"):
+                        try:
+                            repo2 = get_repository()
+                            repo2.add_user_symbol(user["email"], symbol)
+                        except Exception:
+                            logger.debug("Failed to record user-symbol link.")
+                    return jsonify({
+                        "status": "cached",
+                        "symbol": symbol,
+                        "report_id": record.id,
+                    })
 
         # No fresh report — check for an in-flight analysis (dedup)
         r = get_redis()

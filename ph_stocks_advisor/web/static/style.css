@@ -214,6 +214,47 @@ a:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Dev user-type toggle (local mode) */
+.dev-type-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-type-toggle {
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  letter-spacing: 0.05em;
+  transition: all 0.2s;
+  background: transparent;
+  text-transform: uppercase;
+}
+
+.nav-type-toggle.normal {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.nav-type-toggle.normal:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-type-toggle.elevated {
+  color: #f0b429;
+  border-color: #f0b429;
+  background: rgba(240, 180, 41, 0.08);
+}
+
+.nav-type-toggle.elevated:hover {
+  background: rgba(240, 180, 41, 0.15);
+}
+
 /* ---------- Hero / Landing ---------- */
 
 .hero {

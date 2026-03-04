@@ -20,9 +20,9 @@ START → Validate ──────►├── Movement Agent ─────
 |-------|---------------|
 | **Price Agent** | Current price vs 52-week range, price catalysts |
 | **Dividend Agent** | Yield, payout ratio, sustainability, REIT rules (RA 9856), income/revenue/FCF trends, structured dividend announcements (ex-date, rate, payment date) |
-| **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance, web news |
+| **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance; LLM-driven web search via tool calling |
 | **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
-| **Controversy Agent** | Price spike detection, risk factors, web news & controversies |
+| **Controversy Agent** | Price spike detection, risk factors; LLM-driven web search for news & controversies via tool calling |
 | **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict (via structured output; regex fallback) |
 
 ### Data Sources
@@ -34,7 +34,7 @@ The data layer cascades through multiple sources for resilience:
 | **DragonFi** (`api.dragonfi.ph`) | Not required | Primary — price, dividends, valuation, financials, news, symbol validation |
 | **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history, spike detection, declared dividend disclosures (SEC Form 6-1), and company dividend announcements page (ex-date, rate, payment date) |
 | **TradingView Scanner** | Not required | Multi-period performance & volatility |
-| **Tavily** | Optional | Web search for dividend news, general news, and controversies |
+| **Tavily** | Optional | Web search for dividend news, general news, and controversies — invoked by the LLM via tool calling (not called automatically) |
 
 ## SOLID Principles Applied
 
@@ -186,10 +186,10 @@ Reports are automatically persisted to a local SQLite database (`reports.db` by 
 
 Every user is assigned a **user type** that controls access privileges:
 
-| Type | Value | Rate Limit | Cache Bypass |
-|------|-------|------------|--------------|
-| **Normal** | `0` | 5 analyses/day (configurable via `DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served |
-| **Elevated** | `1` | Unlimited | Yes — can re-analyse stocks even when a fresh report exists |
+| Type | Value | Rate Limit | Cache Bypass | Per-Stock Cooldown |
+|------|-------|------------|--------------|-------------------|
+| **Normal** | `0` | 5 analyses/day (configurable via `DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served | N/A (cache rules apply) |
+| **Elevated** | `1` | Unlimited | Yes — can re-analyse stocks | 1 per UTC day per stock — re-analysis available after 00:00 UTC |
 
 All new users start as **Normal**. An administrator can promote a user to **Elevated** via the SQLAdmin panel (Admin → Users → edit `user_type`). The user type is stored in the `users` table and read from the database on each login — it cannot be changed by the user themselves. Login upserts intentionally do **not** overwrite the `user_type` column.
 
@@ -349,9 +349,10 @@ ph_stocks_advisor/
 │   └── html.py                #   HtmlFormatter (pure-Python, ph-advisor-html)
 ├── agents/
 │   ├── __init__.py
-│   ├── specialists.py         # 5 specialist agent classes
+│   ├── specialists.py         # 5 specialist agent classes (3 with LLM tool calling for web search)
 │   ├── consolidator.py        # Consolidator agent
-│   └── prompts.py             # Prompt templates per agent
+│   ├── prompts.py             # Prompt templates per agent
+│   └── web_search_tools.py    # LangChain @tool wrappers for Tavily web search
 ├── data/
 │   ├── __init__.py
 │   ├── models.py              # Pydantic data models & graph state
@@ -383,7 +384,6 @@ ph_stocks_advisor/
 
 tests/
 ├── conftest.py                # Shared fixtures & mock helpers
-├── test_models.py
 ├── test_tools.py
 ├── test_agents.py
 ├── test_auth.py               # Entra ID auth blueprint tests

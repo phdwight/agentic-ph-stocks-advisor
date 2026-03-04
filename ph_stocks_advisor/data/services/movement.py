@@ -18,7 +18,6 @@ from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_profile
 from ph_stocks_advisor.data.models import PriceMovement, TrendDirection
 from ph_stocks_advisor.data.services.price import detect_price_catalysts
 from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
-from ph_stocks_advisor.data.clients.tavily_search import search_stock_news
 from ph_stocks_advisor.data.clients.tradingview import (
     fetch_tradingview_snapshot,
     format_tv_performance_summary,
@@ -61,10 +60,6 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
     # Fetch profile once — used for catalysts in all branches
     profile = fetch_stock_profile(symbol)
     catalysts = detect_price_catalysts(profile) if profile else []
-
-    # Tavily web news for movement context
-    company_name = profile.get("companyName", "") if profile else ""
-    web_news = search_stock_news(symbol, company_name=company_name)
 
     if not hist.empty:
         closes = hist["Close"].tolist()
@@ -109,7 +104,6 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
             price_catalysts=catalysts,
             candlestick_patterns=candlestick_patterns,
             performance_summary=perf_summary,
-            web_news=web_news,
         )
 
     # Fallback: use DragonFi 52-week range + TradingView performance data
@@ -152,7 +146,6 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
             monthly_prices=[],
             price_catalysts=catalysts,
             performance_summary=perf_summary,
-            web_news=web_news,
         )
 
     return PriceMovement(symbol=symbol)

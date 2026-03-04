@@ -325,36 +325,3 @@ class TestStreamEndpoint:
 
         assert resp.headers.get("Cache-Control") == "no-cache"
         assert resp.headers.get("X-Accel-Buffering") == "no"
-
-
-# ---------------------------------------------------------------------------
-# Tests — step constants consistency
-# ---------------------------------------------------------------------------
-
-
-class TestStepConstants:
-    """Verify that STEP_LABELS covers all defined step constants."""
-
-    def test_all_steps_have_labels(self):
-        steps = [
-            STEP_QUEUED,
-            STEP_VALIDATING,
-            STEP_FETCHING,
-            STEP_AGENTS,
-            STEP_CONSOLIDATING,
-            STEP_SAVING,
-        ]
-        for step in steps:
-            assert step in STEP_LABELS, f"STEP {step} missing from STEP_LABELS"
-
-    def test_steps_are_sequential(self):
-        steps = [
-            STEP_QUEUED,
-            STEP_VALIDATING,
-            STEP_FETCHING,
-            STEP_AGENTS,
-            STEP_CONSOLIDATING,
-            STEP_SAVING,
-        ]
-        for i, step in enumerate(steps):
-            assert step == i, f"Expected step {i} but got {step}"

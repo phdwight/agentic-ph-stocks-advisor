@@ -39,12 +39,17 @@ def make_mock_llm(response_text: str = "Mock analysis.") -> MagicMock:
     The mock does NOT support ``with_structured_output`` — calling it
     raises ``NotImplementedError`` so the consolidator falls back to
     regex-based verdict extraction.
+
+    ``bind_tools`` returns the same mock so tool-calling agents
+    go through the standard invoke path and receive an ``AIMessage``
+    (whose ``tool_calls`` defaults to ``[]``, so no tools are invoked).
     """
     llm = MagicMock()
     llm.invoke.return_value = AIMessage(content=response_text)
     llm.with_structured_output.side_effect = NotImplementedError(
         "mock LLM does not support structured output"
     )
+    llm.bind_tools.return_value = llm
     return llm
 
 

@@ -96,14 +96,17 @@ def get_current_user() -> dict[str, Any] | None:
 
     When authentication is disabled (no identity provider configured),
     a deterministic dev user is returned so that per-user symbol
-    tracking still works during local development.
+    tracking still works during local development.  The ``user_type``
+    (normal / elevated) can be toggled via ``/auth/switch-type``.
     """
     user = session.get("user")
     if user:
         return user
     settings = get_settings()
     if not settings.auth_enabled:
-        return _DEV_USER
+        dev = dict(_DEV_USER)
+        dev["user_type"] = session.get("dev_user_type", 0)
+        return dev
     return None
 
 
@@ -366,6 +369,26 @@ def google_callback():
 
     next_url = session.pop("next_url", None) or url_for("index")
     return redirect(next_url)
+
+
+# ---------------------------------------------------------------------------
+# Local dev user-type toggle
+# ---------------------------------------------------------------------------
+
+
+@auth_bp.route("/switch-type", methods=["POST"])
+def switch_type():
+    """Toggle user type between NORMAL (0) and ELEVATED (1).
+
+    Only functional when OAuth is disabled (local development).
+    """
+    settings = get_settings()
+    if settings.auth_enabled:
+        return redirect(url_for("index"))
+
+    current = session.get("dev_user_type", 0)
+    session["dev_user_type"] = 0 if current == 1 else 1
+    return redirect(request.referrer or url_for("index"))
 
 
 # ---------------------------------------------------------------------------

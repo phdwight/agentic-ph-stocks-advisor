@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
-
 from ph_stocks_advisor.infra.repository import UserRecord
 from ph_stocks_advisor.web.app import create_app
 
@@ -142,18 +141,9 @@ def google_client(google_app):
 class TestLoginRequired:
     """Protected routes redirect unauthenticated users to /auth/login."""
 
-    def test_index_redirects_when_not_logged_in(self, client):
-        resp = client.get("/")
-        assert resp.status_code == 302
-        assert "/auth/login" in resp.headers["Location"]
-
-    def test_report_redirects_when_not_logged_in(self, client):
-        resp = client.get("/report/TEL")
-        assert resp.status_code == 302
-        assert "/auth/login" in resp.headers["Location"]
-
-    def test_history_redirects_when_not_logged_in(self, client):
-        resp = client.get("/history/TEL")
+    @pytest.mark.parametrize("path", ["/", "/report/TEL", "/history/TEL"])
+    def test_route_redirects_when_not_logged_in(self, client, path):
+        resp = client.get(path)
         assert resp.status_code == 302
         assert "/auth/login" in resp.headers["Location"]
 
@@ -222,33 +212,10 @@ class TestSignin:
 class TestCallback:
     """The /auth/callback route exchanges the code for tokens."""
 
-    @patch("ph_stocks_advisor.web.auth._build_msal_app")
-    def test_callback_sets_session_user(self, mock_msal, client):
-        mock_app = MagicMock()
-        mock_app.acquire_token_by_authorization_code.return_value = {
-            "id_token_claims": {
-                "name": "Juan Dela Cruz",
-                "preferred_username": "juan@example.com",
-                "oid": "user-oid-123",
-            }
-        }
-        mock_msal.return_value = mock_app
-
-        with client.session_transaction() as sess:
-            sess["auth_state"] = "test-state"
-
-        resp = client.get("/auth/callback?code=test-code&state=test-state")
-        assert resp.status_code == 302  # redirect to index
-
-        with client.session_transaction() as sess:
-            assert sess["user"]["name"] == "Juan Dela Cruz"
-            assert sess["user"]["email"] == "juan@example.com"
-            assert sess["user"]["provider"] == "microsoft"
-
     @patch("ph_stocks_advisor.web.auth.get_repository")
     @patch("ph_stocks_advisor.web.auth._build_msal_app")
-    def test_callback_persists_user_in_database(self, mock_msal, mock_repo, client):
-        """After Microsoft sign-in, the user record is saved to the DB."""
+    def test_callback_sets_session_and_persists_user(self, mock_msal, mock_repo, client):
+        """MS callback sets session user and persists to DB."""
         mock_app = MagicMock()
         mock_app.acquire_token_by_authorization_code.return_value = {
             "id_token_claims": {
@@ -271,7 +238,13 @@ class TestCallback:
         with client.session_transaction() as sess:
             sess["auth_state"] = "test-state"
 
-        client.get("/auth/callback?code=test-code&state=test-state")
+        resp = client.get("/auth/callback?code=test-code&state=test-state")
+        assert resp.status_code == 302  # redirect to index
+
+        with client.session_transaction() as sess:
+            assert sess["user"]["name"] == "Juan Dela Cruz"
+            assert sess["user"]["email"] == "juan@example.com"
+            assert sess["user"]["provider"] == "microsoft"
 
         repo_instance.save_user.assert_called_once()
         saved_user = repo_instance.save_user.call_args[0][0]
@@ -374,46 +347,13 @@ class TestGoogleSignin:
 class TestGoogleCallback:
     """The /auth/google/callback route exchanges the code for user info."""
 
-    @patch("ph_stocks_advisor.web.auth.http_requests.get")
-    @patch("ph_stocks_advisor.web.auth.http_requests.post")
-    def test_google_callback_sets_session_user(
-        self, mock_post, mock_get, google_client
-    ):
-        # Mock token exchange.
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=lambda: {"access_token": "fake-access-token"},
-        )
-        # Mock userinfo.
-        mock_get.return_value = MagicMock(
-            status_code=200,
-            json=lambda: {
-                "name": "Maria Santos",
-                "email": "maria@gmail.com",
-                "sub": "google-sub-456",
-            },
-        )
-
-        with google_client.session_transaction() as sess:
-            sess["google_state"] = "test-google-state"
-
-        resp = google_client.get(
-            "/auth/google/callback?code=test-code&state=test-google-state"
-        )
-        assert resp.status_code == 302
-
-        with google_client.session_transaction() as sess:
-            assert sess["user"]["name"] == "Maria Santos"
-            assert sess["user"]["email"] == "maria@gmail.com"
-            assert sess["user"]["provider"] == "google"
-
     @patch("ph_stocks_advisor.web.auth.get_repository")
     @patch("ph_stocks_advisor.web.auth.http_requests.get")
     @patch("ph_stocks_advisor.web.auth.http_requests.post")
-    def test_google_callback_persists_user_in_database(
+    def test_google_callback_sets_session_and_persists_user(
         self, mock_post, mock_get, mock_repo, google_client
     ):
-        """After Google sign-in, the user record is saved to the DB."""
+        """Google callback sets session user and persists to DB."""
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"access_token": "fake-access-token"},
@@ -439,9 +379,15 @@ class TestGoogleCallback:
         with google_client.session_transaction() as sess:
             sess["google_state"] = "test-google-state"
 
-        google_client.get(
+        resp = google_client.get(
             "/auth/google/callback?code=test-code&state=test-google-state"
         )
+        assert resp.status_code == 302
+
+        with google_client.session_transaction() as sess:
+            assert sess["user"]["name"] == "Maria Santos"
+            assert sess["user"]["email"] == "maria@gmail.com"
+            assert sess["user"]["provider"] == "google"
 
         repo_instance.save_user.assert_called_once()
         saved_user = repo_instance.save_user.call_args[0][0]
@@ -493,3 +439,54 @@ class TestGoogleLogout:
 
         with google_client.session_transaction() as sess:
             assert "user" not in sess
+
+
+# ---------------------------------------------------------------------------
+# Tests — Local dev user-type toggle
+# ---------------------------------------------------------------------------
+
+
+class TestSwitchType:
+    """When auth is disabled, users can toggle between NORMAL and ELEVATED."""
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_switch_toggles_to_elevated(self, mock_repo, anon_client):
+        mock_repo.return_value = MagicMock()
+        mock_repo.return_value.list_user_symbols.return_value = []
+
+        # Default is NORMAL (0); first switch should set ELEVATED (1).
+        resp = anon_client.post("/auth/switch-type")
+        assert resp.status_code == 302
+        with anon_client.session_transaction() as sess:
+            assert sess["dev_user_type"] == 1
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_switch_toggles_back_to_normal(self, mock_repo, anon_client):
+        mock_repo.return_value = MagicMock()
+        mock_repo.return_value.list_user_symbols.return_value = []
+
+        # Set to elevated first, then toggle back.
+        with anon_client.session_transaction() as sess:
+            sess["dev_user_type"] = 1
+        resp = anon_client.post("/auth/switch-type")
+        assert resp.status_code == 302
+        with anon_client.session_transaction() as sess:
+            assert sess["dev_user_type"] == 0
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_current_user_reflects_toggled_type(self, mock_repo, anon_client):
+        mock_repo.return_value = MagicMock()
+        mock_repo.return_value.list_user_symbols.return_value = []
+
+        # Toggle to elevated.
+        anon_client.post("/auth/switch-type")
+        # The index page should be accessible and the user type updated.
+        resp = anon_client.get("/")
+        assert resp.status_code == 200
+
+    def test_switch_type_ignored_when_auth_enabled(self, client):
+        """When OAuth is configured, the switch-type endpoint is a no-op redirect."""
+        resp = client.post("/auth/switch-type")
+        assert resp.status_code == 302
+        # Should redirect to index, not toggle anything.
+        assert "/" in resp.headers["Location"]

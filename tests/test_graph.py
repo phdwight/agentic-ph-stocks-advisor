@@ -34,27 +34,16 @@ class TestBuildGraph:
         graph = _build_graph_impl(llm=mock_llm)
         assert graph is not None
 
-    def test_graph_has_expected_nodes(self):
-        """All specialist, validation, and consolidator nodes should be present."""
-        mock_llm = MagicMock()
-        graph = _build_graph_impl(llm=mock_llm)
-        node_names = set(graph.get_graph().nodes.keys())
-        expected = {
-            "validate",
-            "price_agent",
-            "dividend_agent",
-            "movement_agent",
-            "valuation_agent",
-            "controversy_agent",
-            "consolidator",
-        }
-        assert expected.issubset(node_names)
-
     def test_registry_drives_node_creation(self):
-        """Every agent in AGENT_REGISTRY should result in a graph node."""
+        """Every agent in AGENT_REGISTRY should result in a graph node,
+        and all expected infrastructure nodes should be present."""
         mock_llm = MagicMock()
         graph = _build_graph_impl(llm=mock_llm)
         node_names = set(graph.get_graph().nodes.keys())
+        # Check infrastructure nodes
+        for name in ("validate", "consolidator"):
+            assert name in node_names
+        # Check all registered agent nodes
         for node_name, _key, _cls in AGENT_REGISTRY:
             assert node_name in node_names
 

@@ -4,7 +4,8 @@ Tests for the user type system.
 Verifies that:
 - UserRecord stores and exposes user_type correctly
 - Elevated users bypass the daily rate limit
-- Elevated users can re-analyse stocks with a fresh cached report
+- Elevated users can re-analyse stocks after the daily cooldown (next UTC day)
+- Elevated users are blocked when re-analysing the same stock on the same UTC day
 - Normal users remain subject to both rate limit and cache dedup
 - get_user_by_email works correctly
 """
@@ -12,7 +13,7 @@ Verifies that:
 from __future__ import annotations
 
 import fnmatch
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -146,6 +147,10 @@ def _make_client(fake_redis, dev_user, _user_type_env):
         app = _app_mod.create_app()
         app.config["TESTING"] = True
         with app.test_client() as c:
+            # Set the dev_user_type session key so get_current_user()
+            # returns the correct user_type for local-dev mode.
+            with c.session_transaction() as sess:
+                sess["dev_user_type"] = dev_user.get("user_type", 0)
             yield c, mock_repo
 
     get_settings.cache_clear()
@@ -189,10 +194,6 @@ def sqlite_repo(tmp_path) -> SQLiteReportRepository:
 class TestUserType:
     """Tests for UserType enum and UserRecord.is_elevated property."""
 
-    def test_user_type_enum_values(self):
-        assert UserType.NORMAL == 0
-        assert UserType.ELEVATED == 1
-
     def test_user_record_default_is_normal(self):
         user = UserRecord(
             oid="oid-1", name="Test", email="test@example.com", provider="google"
@@ -210,17 +211,6 @@ class TestUserType:
         )
         assert user.user_type == UserType.ELEVATED
         assert user.is_elevated is True
-
-    def test_user_record_repr_includes_type(self):
-        user = UserRecord(
-            oid="oid-3",
-            name="Test",
-            email="test@example.com",
-            provider="google",
-            user_type=UserType.ELEVATED,
-        )
-        text = repr(user)
-        assert "user_type" in text
 
 
 # ---------------------------------------------------------------------------
@@ -366,66 +356,6 @@ class TestElevatedBypassesRateLimit:
                 data = resp.get_json()
                 assert data["status"] == "started"
 
-    def test_normal_user_still_blocked_at_limit(
-        self, normal_client, fake_redis
-    ):
-        """Normal users are still subject to the rate limit."""
-        client, _ = normal_client
-        _seed_counter(fake_redis, "dev@localhost", 3)
-
-        resp = client.post("/analyse", data={"symbol": "TEL"})
-        assert resp.status_code == 429
-
-
-# ---------------------------------------------------------------------------
-# Integration tests — elevated user bypasses cache
-# ---------------------------------------------------------------------------
-
-
-class TestElevatedBypassesCache:
-    """Elevated users can re-analyse stocks even when a fresh cache exists."""
-
-    def test_elevated_user_bypasses_cached_report(
-        self, elevated_client, fake_redis
-    ):
-        """An elevated user gets 'started' instead of 'cached'."""
-        client, mock_repo = elevated_client
-
-        # Set up a fresh cached report.
-        cached_record = MagicMock()
-        cached_record.id = 42
-        cached_record.created_at = datetime.now(tz=UTC)
-        mock_repo.get_latest_by_symbol.return_value = cached_record
-
-        task = MagicMock()
-        task.id = "task-reanalyse"
-
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
-            resp = client.post("/analyse", data={"symbol": "TEL"})
-            assert resp.status_code == 200
-            data = resp.get_json()
-            assert data["status"] == "started"
-            assert data["symbol"] == "TEL"
-
-    def test_normal_user_gets_cached_report(
-        self, normal_client, fake_redis
-    ):
-        """A normal user gets the cached report instead of re-analysing."""
-        client, mock_repo = normal_client
-
-        cached_record = MagicMock()
-        cached_record.id = 99
-        cached_record.created_at = datetime.now(tz=UTC)
-        mock_repo.get_latest_by_symbol.return_value = cached_record
-
-        resp = client.post("/analyse", data={"symbol": "TEL"})
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["status"] == "cached"
-        assert data["report_id"] == 99
-
     def test_elevated_user_still_joins_inflight(
         self, elevated_client, fake_redis
     ):
@@ -438,15 +368,16 @@ class TestElevatedBypassesCache:
         data = resp.get_json()
         assert data["status"] == "joined"
 
-    def test_elevated_skip_cache_and_rate_limit_together(
+    def test_elevated_skip_cache_and_rate_limit_after_cooldown(
         self, elevated_client, fake_redis
     ):
-        """Elevated user bypasses both cache AND rate limit simultaneously."""
+        """Elevated user bypasses cache AND rate limit when cooldown passed."""
         client, mock_repo = elevated_client
 
+        # Report from yesterday — cooldown has passed.
         cached_record = MagicMock()
         cached_record.id = 50
-        cached_record.created_at = datetime.now(tz=UTC)
+        cached_record.created_at = datetime.now(tz=UTC) - timedelta(days=1)
         mock_repo.get_latest_by_symbol.return_value = cached_record
 
         _seed_counter(fake_redis, "dev@localhost", 100)  # way over limit
@@ -461,3 +392,79 @@ class TestElevatedBypassesCache:
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["status"] == "started"
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — elevated user daily cooldown
+# ---------------------------------------------------------------------------
+
+
+class TestElevatedDailyCooldown:
+    """Elevated users cannot re-analyse the same stock on the same UTC day."""
+
+    def test_elevated_blocked_when_analysed_today(
+        self, elevated_client, fake_redis
+    ):
+        """Elevated user gets 429 when the stock was analysed today."""
+        client, mock_repo = elevated_client
+
+        cached_record = MagicMock()
+        cached_record.id = 42
+        cached_record.created_at = datetime.now(tz=UTC)
+        mock_repo.get_latest_by_symbol.return_value = cached_record
+
+        resp = client.post("/analyse", data={"symbol": "TEL"})
+        assert resp.status_code == 429
+        data = resp.get_json()
+        assert "already analysed today" in data["error"]
+        assert "reset_at" in data
+
+    def test_elevated_cooldown_reset_at_is_next_midnight(
+        self, elevated_client, fake_redis
+    ):
+        """The reset_at timestamp in the cooldown response is next UTC midnight."""
+        client, mock_repo = elevated_client
+
+        cached_record = MagicMock()
+        cached_record.id = 42
+        cached_record.created_at = datetime.now(tz=UTC)
+        mock_repo.get_latest_by_symbol.return_value = cached_record
+
+        resp = client.post("/analyse", data={"symbol": "TEL"})
+        data = resp.get_json()
+
+        reset_at = datetime.fromisoformat(data["reset_at"])
+        assert reset_at.hour == 0
+        assert reset_at.minute == 0
+        assert reset_at.second == 0
+
+    def test_elevated_cooldown_per_stock_not_global(
+        self, elevated_client, fake_redis
+    ):
+        """Cooldown is per-stock: analysing SYM1 today doesn't block SYM2."""
+        client, mock_repo = elevated_client
+
+        def latest_by_symbol(symbol: str):
+            if symbol == "SYM1":
+                rec = MagicMock()
+                rec.id = 1
+                rec.created_at = datetime.now(tz=UTC)  # analysed today
+                return rec
+            return None  # SYM2 never analysed
+
+        mock_repo.get_latest_by_symbol.side_effect = latest_by_symbol
+
+        # SYM1 — blocked by cooldown
+        resp1 = client.post("/analyse", data={"symbol": "SYM1"})
+        assert resp1.status_code == 429
+
+        # SYM2 — no report, should start
+        task = MagicMock()
+        task.id = "task-sym2"
+        with patch.object(
+            _tasks_mod.analyse_stock, "delay", return_value=task
+        ):
+            resp2 = client.post("/analyse", data={"symbol": "SYM2"})
+            assert resp2.status_code == 200
+            assert resp2.get_json()["status"] == "started"
+

@@ -59,6 +59,16 @@ If ``recent_dividend_news`` contains web search results about dividend
 declarations, ex-dates, or payout amounts, incorporate those details
 into your analysis. Mention any upcoming or recently announced dividends.
 
+**Web Search Tool — ``search_dividend_news``:**
+You have access to a ``search_dividend_news`` tool that searches the web
+for recent dividend announcements, declarations, ex-dates, and payout
+amounts.  Call this tool if:
+  • The data above lacks recent dividend context or news
+  • You want to verify or enrich the dividend information
+  • ``dividend_announcements`` is empty and you want to check for
+    any upcoming or recently declared dividends
+Pass the stock symbol as the argument (e.g., ``{{"symbol": "TEL"}}``).
+
 **IMPORTANT — ``recent_declared_dividends`` from PSE EDGE:**
 If this field is non-empty, it contains **official** cash-dividend declarations
 filed with the SEC/PSE. These are the most authoritative source for dividend
@@ -116,12 +126,20 @@ Given the 1-year price movement data for **{symbol}**, write a concise analysis
       one-day fluke.
     • A large bullish candle after a drawdown may indicate a recovery
       bounce.
-  Always tie the chart events to ``web_news`` if possible (e.g. "the
+  Always tie the chart events to news context if possible (e.g. "the
   Feb 10 gap-down coincided with news about Semirara Mining exposure").
-- **If ``web_news`` contains recent news articles, use them to EXPLAIN the
-  reasons behind any significant price movements, drawdowns, or rallies.
-  Cite specific events (e.g. subsidiary exposure, regulatory changes,
-  commodity-price swings) rather than speaking in generalities.**
+
+**Web Search Tool — ``search_stock_news``:**
+You have access to a ``search_stock_news`` tool that searches the web
+for recent news, analyst coverage, and corporate events.  Call this
+tool if:
+  • You see significant price movements, drawdowns, or rallies that
+    need explanation
+  • You notice unusual candlestick patterns or volume spikes
+  • The data lacks context about what is driving the price
+Pass the stock symbol as the argument (e.g., ``{{"symbol": "TEL"}}``).
+Use the results to EXPLAIN the reasons behind price movements — cite
+specific events rather than speaking in generalities.
 - **MULTI-PERIOD PERFORMANCE — ``performance_summary``:**
   If this field is non-empty it contains TradingView-sourced percentage
   changes over 1-week, 1-month, 3-month, 6-month, and 1-year horizons,
@@ -162,9 +180,19 @@ Given the following anomaly / risk data for **{symbol}**, write a concise analys
 (3-5 sentences) covering:
 - Whether any sudden price spikes are a concern
 - General risk factors an investor should be aware of
-- If ``web_news`` contains recent news articles or controversy search results,
-  summarise the most relevant findings. Mention any regulatory concerns,
-  legal issues, or significant corporate events if found.
+- Any relevant news or controversies you can find
+
+**Web Search Tools — ``search_stock_news`` and ``search_stock_controversies``:**
+You have access to two web search tools:
+  • ``search_stock_news`` — recent news, analyst coverage, and events
+  • ``search_stock_controversies`` — controversies, regulatory issues,
+    SEC filings, legal disputes, or other negative events
+Call one or both tools if:
+  • Sudden spikes are detected and you need to investigate causes
+  • Risk factors are present and you want more context
+  • You want to check for any recent controversies or regulatory issues
+Pass the stock symbol as the argument (e.g., ``{{"symbol": "TEL"}}``).
+Summarise the most relevant findings in your analysis.
 
 Data:
 {data}

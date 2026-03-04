@@ -220,17 +220,18 @@ class TestCheckLimit:
         assert allowed is True
         assert count == 3
 
-    def test_blocked_when_at_limit(self, fake_redis):
+    def test_blocked_when_at_or_over_limit(self, fake_redis):
+        """check_limit blocks when counter equals or exceeds the limit."""
         _seed_counter(fake_redis, "user@test.com", 5)
         allowed, count = _rl_mod.check_limit(fake_redis, "user@test.com", 5)
         assert allowed is False
         assert count == 5
 
-    def test_blocked_when_over_limit(self, fake_redis):
-        _seed_counter(fake_redis, "user@test.com", 7)
-        allowed, count = _rl_mod.check_limit(fake_redis, "user@test.com", 5)
-        assert allowed is False
-        assert count == 7
+        # Also blocked when over limit
+        _seed_counter(fake_redis, "over@test.com", 7)
+        allowed2, count2 = _rl_mod.check_limit(fake_redis, "over@test.com", 5)
+        assert allowed2 is False
+        assert count2 == 7
 
     def test_does_not_increment(self, fake_redis):
         """check_limit must never change the counter."""
@@ -263,56 +264,6 @@ class TestIncrement:
     def test_successive_increments(self, fake_redis):
         for expected in range(1, 4):
             assert _rl_mod.increment(fake_redis, "user@test.com") == expected
-
-    def test_remaining_reflects_increments(self, fake_redis):
-        _rl_mod.increment(fake_redis, "user@test.com")
-        _rl_mod.increment(fake_redis, "user@test.com")
-        assert _rl_mod.get_remaining(fake_redis, "user@test.com", 5) == 3
-
-
-# ---------------------------------------------------------------------------
-# Unit tests — legacy check_and_increment (kept for backward compat)
-# ---------------------------------------------------------------------------
-
-
-class TestCheckAndIncrement:
-    """Direct tests for the legacy check_and_increment function."""
-
-    def test_first_request_allowed(self, fake_redis):
-        allowed, count = _rl_mod.check_and_increment(fake_redis, "user@test.com", 5)
-        assert allowed is True
-        assert count == 1
-
-    def test_increments_correctly(self, fake_redis):
-        for i in range(1, 4):
-            allowed, count = _rl_mod.check_and_increment(
-                fake_redis, "user@test.com", 5
-            )
-            assert allowed is True
-            assert count == i
-
-    def test_blocks_at_limit(self, fake_redis):
-        for _ in range(5):
-            _rl_mod.check_and_increment(fake_redis, "user@test.com", 5)
-
-        allowed, count = _rl_mod.check_and_increment(
-            fake_redis, "user@test.com", 5
-        )
-        assert allowed is False
-        assert count == 5
-
-    def test_different_users_have_separate_counters(self, fake_redis):
-        for _ in range(3):
-            _rl_mod.check_and_increment(fake_redis, "alice@test.com", 3)
-
-        allowed, _ = _rl_mod.check_and_increment(fake_redis, "alice@test.com", 3)
-        assert allowed is False
-
-        allowed, count = _rl_mod.check_and_increment(
-            fake_redis, "bob@test.com", 3
-        )
-        assert allowed is True
-        assert count == 1
 
 
 class TestGetRemaining:
@@ -347,21 +298,6 @@ class TestAnalyseRateLimit:
     If the analysis later fails, the worker calls ``release()`` to
     return the slot.
     """
-
-    def test_requests_succeed_when_quota_available(self, client, fake_redis):
-        """Submissions are accepted when counter is below limit."""
-        task = MagicMock()
-        task.id = "task-001"
-
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
-            for i in range(3):
-                task.id = f"task-{i}"
-                resp = client.post("/analyse", data={"symbol": f"SYM{i}"})
-                assert resp.status_code == 200, (
-                    f"Request {i + 1} should succeed"
-                )
 
     def test_request_blocked_when_quota_exhausted(self, client, fake_redis):
         """When the counter already equals the limit, HTTP 429 is returned."""

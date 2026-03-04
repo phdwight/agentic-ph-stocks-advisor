@@ -107,7 +107,8 @@ class TestDividendAnnouncement:
         assert "ex-date Mar 04, 2026" in summary
         assert "payment Mar 20, 2026" in summary
 
-    def test_serialization_round_trip(self):
+    def test_announcements_serialize_round_trip(self):
+        """Announcements serialize to JSON and can be restored via model_dump."""
         ann = DividendAnnouncement(
             security_type="COMMON",
             dividend_type="Cash",
@@ -117,9 +118,16 @@ class TestDividendAnnouncement:
             payment_date="Jun 11, 2025",
             circular_number="C03323-2025",
         )
+        # Round-trip through model_dump
         data = ann.model_dump()
         restored = DividendAnnouncement(**data)
         assert restored == ann
+
+        # Also verify JSON serialization with parent model
+        info = DividendInfo(symbol="AREIT", dividend_announcements=[ann])
+        json_str = info.model_dump_json()
+        assert "Php0.58" in json_str
+        assert "dividend_announcements" in json_str
 
 
 # ---------------------------------------------------------------------------
@@ -128,10 +136,6 @@ class TestDividendAnnouncement:
 
 
 class TestDividendInfoWithAnnouncements:
-    def test_default_empty_announcements(self):
-        info = DividendInfo(symbol="TEL")
-        assert info.dividend_announcements == []
-
     def test_with_announcements(self):
         announcements = [
             DividendAnnouncement(
@@ -153,18 +157,6 @@ class TestDividendInfoWithAnnouncements:
         assert info.dividend_announcements[0].dividend_rate == "Php0.62"
         assert info.dividend_announcements[1].ex_date == "Aug 28, 2025"
 
-    def test_announcements_serialize_to_json(self):
-        ann = DividendAnnouncement(
-            dividend_rate="Php0.62",
-            ex_date="Mar 04, 2026",
-            payment_date="Mar 20, 2026",
-        )
-        info = DividendInfo(symbol="AREIT", dividend_announcements=[ann])
-        json_str = info.model_dump_json()
-        assert "Php0.62" in json_str
-        assert "Mar 04, 2026" in json_str
-        assert "dividend_announcements" in json_str
-
 
 # ---------------------------------------------------------------------------
 # HTML parser tests
@@ -172,12 +164,12 @@ class TestDividendInfoWithAnnouncements:
 
 
 class TestParseDividendRows:
-    def test_parses_three_rows(self):
+    def test_parses_rows_with_correct_fields(self):
+        """Verify all rows are parsed with correct field values."""
         rows = _parse_dividend_rows(SAMPLE_DIVIDEND_TABLE_HTML)
         assert len(rows) == 3
 
-    def test_first_row_fields(self):
-        rows = _parse_dividend_rows(SAMPLE_DIVIDEND_TABLE_HTML)
+        # First row
         first = rows[0]
         assert first.security_type == "COMMON"
         assert first.dividend_type == "Cash"
@@ -187,8 +179,7 @@ class TestParseDividendRows:
         assert first.payment_date == "Mar 20, 2026"
         assert first.circular_number == "C01040-2026"
 
-    def test_third_row_different_rate(self):
-        rows = _parse_dividend_rows(SAMPLE_DIVIDEND_TABLE_HTML)
+        # Third row has different rate
         third = rows[2]
         assert third.dividend_rate == "Php0.59"
         assert third.ex_date == "Aug 28, 2025"

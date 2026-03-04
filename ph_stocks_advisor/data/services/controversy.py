@@ -11,16 +11,9 @@ import logging
 
 import pandas as pd
 
-from ph_stocks_advisor.data.clients.dragonfi import (
-    fetch_stock_news,
-    fetch_stock_profile,
-)
+from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_news
 from ph_stocks_advisor.data.models import ControversyInfo
 from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
-from ph_stocks_advisor.data.clients.tavily_search import (
-    search_stock_controversies,
-    search_stock_news,
-)
 from ph_stocks_advisor.infra.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -100,25 +93,9 @@ def fetch_controversy_info(symbol: str) -> ControversyInfo:
     else:
         news_summary = "No recent news available from DragonFi."
 
-    # Web search via Tavily for richer news coverage
-    profile = fetch_stock_profile(symbol)
-    company_name = str(profile.get("companyName", "")) if profile else ""
-    web_general = search_stock_news(symbol, company_name=company_name)
-    web_controversy = search_stock_controversies(symbol, company_name=company_name)
-    web_news = ""
-    if web_general and not web_general.startswith("No "):
-        web_news += f"**Recent Web News:**\n{web_general}"
-    if web_controversy and not web_controversy.startswith("No "):
-        if web_news:
-            web_news += "\n\n"
-        web_news += f"**Controversy Search:**\n{web_controversy}"
-    if not web_news:
-        web_news = "No web news available (Tavily API key may not be configured)."
-
     return ControversyInfo(
         symbol=symbol,
         sudden_spikes=spikes,
         risk_factors=risk_factors,
         recent_news_summary=news_summary,
-        web_news=web_news,
     )

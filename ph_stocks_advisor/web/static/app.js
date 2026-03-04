@@ -357,10 +357,16 @@ document.addEventListener("DOMContentLoaded", () => {
             hour12: true,
             timeZoneName: "short",
           });
-          msg = msg.replace(
-            /Your quota resets at .+$/,
-            `Your quota resets at ${localTime}.`
-          );
+          // Localize any "midnight UTC" or "resets at midnight UTC" tail.
+          msg = msg
+            .replace(
+              /Your quota resets at .+$/,
+              `Your quota resets at ${localTime}.`
+            )
+            .replace(
+              /after midnight UTC\.?$/,
+              `after ${localTime}.`
+            );
         }
         flashError(msg);
         return;

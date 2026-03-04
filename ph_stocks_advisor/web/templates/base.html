@@ -21,8 +21,17 @@
       </a>
       {% if current_user %}
       <div class="nav-user">
+        {% if auth_enabled %}
         <span class="nav-user-name">{{ current_user.name or current_user.email }}</span>
         <a href="{{ url_for('auth.logout') }}" class="nav-logout">sign out</a>
+        {% else %}
+        <form method="post" action="{{ url_for('auth.switch_type') }}" class="dev-type-form">
+          <span class="nav-user-name">local dev</span>
+          <button type="submit" class="nav-type-toggle {{ 'elevated' if current_user.user_type == 1 else 'normal' }}">
+            {{ 'ELEVATED' if current_user.user_type == 1 else 'NORMAL' }}
+          </button>
+        </form>
+        {% endif %}
       </div>
       {% endif %}
     </div>
