@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS users (
     name          TEXT NOT NULL DEFAULT '',
     email         TEXT NOT NULL DEFAULT '',
     provider      TEXT NOT NULL DEFAULT '',
+    user_type     INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL,
     last_login_at TEXT NOT NULL
 );
@@ -185,8 +186,8 @@ class SQLiteReportRepository(AbstractReportRepository):
         conn = self._get_conn()
         conn.execute(
             """
-            INSERT INTO users (oid, name, email, provider, created_at, last_login_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (oid, name, email, provider, user_type, created_at, last_login_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(oid) DO UPDATE SET
                 name          = excluded.name,
                 email         = excluded.email,
@@ -198,6 +199,7 @@ class SQLiteReportRepository(AbstractReportRepository):
                 user.name,
                 user.email,
                 user.provider,
+                user.user_type,
                 user.created_at.isoformat(),
                 user.last_login_at.isoformat() if user.last_login_at else datetime.now(tz=UTC).isoformat(),
             ),
@@ -214,6 +216,24 @@ class SQLiteReportRepository(AbstractReportRepository):
             name=row["name"],
             email=row["email"],
             provider=row["provider"],
+            user_type=row["user_type"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            last_login_at=datetime.fromisoformat(row["last_login_at"]),
+        )
+
+    def get_user_by_email(self, email: str) -> Optional[UserRecord]:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM users WHERE email = ? LIMIT 1", (email,)
+        ).fetchone()
+        if row is None:
+            return None
+        return UserRecord(
+            oid=row["oid"],
+            name=row["name"],
+            email=row["email"],
+            provider=row["provider"],
+            user_type=row["user_type"],
             created_at=datetime.fromisoformat(row["created_at"]),
             last_login_at=datetime.fromisoformat(row["last_login_at"]),
         )

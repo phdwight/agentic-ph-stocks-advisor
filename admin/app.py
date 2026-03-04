@@ -63,6 +63,18 @@ class Report(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    oid = Column(String(255), primary_key=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(320), nullable=False)
+    provider = Column(String(50), nullable=False, server_default="microsoft")
+    avatar_url = Column(Text, nullable=False, server_default="")
+    user_type = Column(Integer, nullable=False, server_default="0")
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class UserSymbol(Base):
     __tablename__ = "user_symbols"
 
@@ -135,6 +147,40 @@ class UserSymbolAdmin(ModelView, model=UserSymbol):
     page_size = 25
 
 
+class UserAdmin(ModelView, model=User):
+    name = "User"
+    name_plural = "Users"
+    icon = "fa-solid fa-user-shield"
+
+    column_list = [
+        User.oid,
+        User.name,
+        User.email,
+        User.provider,
+        User.user_type,
+        User.created_at,
+    ]
+    column_searchable_list = [User.name, User.email]
+    column_sortable_list = [
+        User.oid,
+        User.name,
+        User.email,
+        User.provider,
+        User.user_type,
+        User.created_at,
+    ]
+    column_default_sort = ("created_at", True)
+
+    column_labels = {"user_type": "User Type (0=Normal, 1=Elevated)"}
+
+    form_columns = ["user_type"]  # only allow editing the user type
+
+    can_create = False  # users are created via OAuth login
+    can_delete = False
+    can_export = True
+    page_size = 25
+
+
 # ---------------------------------------------------------------------------
 # Starlette app + SQLAdmin wiring
 # ---------------------------------------------------------------------------
@@ -156,4 +202,5 @@ admin = Admin(
     title="PH Stocks Advisor — Admin",
 )
 admin.add_view(ReportAdmin)
+admin.add_view(UserAdmin)
 admin.add_view(UserSymbolAdmin)

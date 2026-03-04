@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
+from ph_stocks_advisor.infra.repository import UserRecord
 from ph_stocks_advisor.web.app import create_app
 
 
@@ -259,6 +260,12 @@ class TestCallback:
         mock_msal.return_value = mock_app
 
         repo_instance = MagicMock()
+        repo_instance.get_user.return_value = UserRecord(
+            oid="user-oid-123",
+            name="Juan Dela Cruz",
+            email="juan@example.com",
+            provider="microsoft",
+        )
         mock_repo.return_value = repo_instance
 
         with client.session_transaction() as sess:
@@ -421,6 +428,12 @@ class TestGoogleCallback:
         )
 
         repo_instance = MagicMock()
+        repo_instance.get_user.return_value = UserRecord(
+            oid="google-sub-456",
+            name="Maria Santos",
+            email="maria@gmail.com",
+            provider="google",
+        )
         mock_repo.return_value = repo_instance
 
         with google_client.session_transaction() as sess:

@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS users (
     name          VARCHAR(320) NOT NULL DEFAULT '',
     email         VARCHAR(320) NOT NULL DEFAULT '',
     provider      VARCHAR(20)  NOT NULL DEFAULT '',
+    user_type     INTEGER      NOT NULL DEFAULT 0,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     last_login_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -248,8 +249,8 @@ class PostgresReportRepository(AbstractReportRepository):
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO users (oid, name, email, provider, created_at, last_login_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO users (oid, name, email, provider, user_type, created_at, last_login_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (oid) DO UPDATE SET
                         name          = EXCLUDED.name,
                         email         = EXCLUDED.email,
@@ -261,6 +262,7 @@ class PostgresReportRepository(AbstractReportRepository):
                         user.name,
                         user.email,
                         user.provider,
+                        user.user_type,
                         user.created_at,
                         user.last_login_at or datetime.now(tz=UTC),
                     ),
@@ -279,6 +281,26 @@ class PostgresReportRepository(AbstractReportRepository):
                 name=row["name"],
                 email=row["email"],
                 provider=row["provider"],
+                user_type=row["user_type"],
+                created_at=row["created_at"],
+                last_login_at=row["last_login_at"],
+            )
+
+    def get_user_by_email(self, email: str) -> Optional[UserRecord]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM users WHERE email = %s LIMIT 1", (email,)
+                )
+                row = cur.fetchone()
+            if row is None:
+                return None
+            return UserRecord(
+                oid=row["oid"],
+                name=row["name"],
+                email=row["email"],
+                provider=row["provider"],
+                user_type=row["user_type"],
                 created_at=row["created_at"],
                 last_login_at=row["last_login_at"],
             )

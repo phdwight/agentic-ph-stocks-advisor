@@ -9,9 +9,23 @@ from __future__ import annotations
 
 import abc
 from datetime import UTC, datetime
+from enum import IntEnum
 from typing import Optional
 
 from ph_stocks_advisor.data.models import FinalReport
+
+
+class UserType(IntEnum):
+    """User privilege level.
+
+    NORMAL (0) — default; subject to daily analysis limits and
+    cached-report deduplication.
+    ELEVATED (1) — exempt from the daily limit and allowed to
+    re-analyse stocks that already have a cached report.
+    """
+
+    NORMAL = 0
+    ELEVATED = 1
 
 
 class UserRecord:
@@ -25,6 +39,7 @@ class UserRecord:
         provider: str,
         created_at: datetime | None = None,
         last_login_at: datetime | None = None,
+        user_type: int = UserType.NORMAL,
     ) -> None:
         self.oid = oid
         self.name = name
@@ -32,11 +47,17 @@ class UserRecord:
         self.provider = provider
         self.created_at = created_at or datetime.now(tz=UTC)
         self.last_login_at = last_login_at or datetime.now(tz=UTC)
+        self.user_type = user_type
+
+    @property
+    def is_elevated(self) -> bool:
+        """Return ``True`` if this user has elevated privileges."""
+        return self.user_type == UserType.ELEVATED
 
     def __repr__(self) -> str:
         return (
             f"UserRecord(oid={self.oid!r}, email={self.email!r}, "
-            f"provider={self.provider!r})"
+            f"provider={self.provider!r}, user_type={self.user_type})"
         )
 
 
@@ -158,6 +179,10 @@ class AbstractReportRepository(abc.ABC):
     @abc.abstractmethod
     def get_user(self, oid: str) -> Optional[UserRecord]:
         """Retrieve a user by their unique ``oid``, or ``None``."""
+
+    @abc.abstractmethod
+    def get_user_by_email(self, email: str) -> Optional[UserRecord]:
+        """Retrieve a user by their email address, or ``None``."""
 
     @abc.abstractmethod
     def close(self) -> None:

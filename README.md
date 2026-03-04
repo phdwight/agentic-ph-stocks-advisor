@@ -182,6 +182,17 @@ Returns **200** when all dependencies are healthy, **503** otherwise. This endpo
 
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis. Reports are **shared** — they are not tied to any user — but each authenticated user only sees the stocks they have personally requested to analyse. A `user_symbols` table tracks which symbols each user has analysed; anonymous users (auth disabled) see all reports. Authenticated user profiles (name, email, provider, login timestamps) are saved to a `users` table on every sign-in (upserted by `oid`).
 
+### User Types
+
+Every user is assigned a **user type** that controls access privileges:
+
+| Type | Value | Rate Limit | Cache Bypass |
+|------|-------|------------|--------------|
+| **Normal** | `0` | 5 analyses/day (configurable via `DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served |
+| **Elevated** | `1` | Unlimited | Yes — can re-analyse stocks even when a fresh report exists |
+
+All new users start as **Normal**. An administrator can promote a user to **Elevated** via the SQLAdmin panel (Admin → Users → edit `user_type`). The user type is stored in the `users` table and read from the database on each login — it cannot be changed by the user themselves. Login upserts intentionally do **not** overwrite the `user_type` column.
+
 ### Authentication (Microsoft Entra ID + Google OAuth2)
 
 The web UI supports **Microsoft Entra ID** and **Google** login with **passkey (FIDO2)** support. When at least one provider is configured, users must sign in before accessing any page. Both providers can be enabled simultaneously.
@@ -384,7 +395,8 @@ tests/
 ├── test_healthz.py             # Heartbeat endpoint tests
 ├── test_rate_limit.py          # Per-user daily rate limiting tests
 ├── test_repository.py
-└── test_sse.py                # SSE progress streaming tests
+├── test_sse.py                # SSE progress streaming tests
+└── test_user_type.py          # User type system (elevated bypass) tests
 ```
 
 ## Environment Variables

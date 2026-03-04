@@ -165,16 +165,22 @@ def create_app() -> Flask:
     def analyse():
         """Check for a fresh cached report; dispatch to Celery if stale/missing."""
         from ph_stocks_advisor.web.tasks import analyse_stock
+        from ph_stocks_advisor.infra.repository import UserType
 
         symbol = (request.form.get("symbol") or "").strip().upper().replace(".PS", "")
         if not symbol:
             return jsonify({"error": "Symbol is required"}), 400
 
-        # Check for a recent report (within REPORT_MAX_AGE_DAYS)
+        # Determine if the current user has elevated privileges.
+        user = get_current_user()
+        is_elevated = (user or {}).get("user_type", 0) == UserType.ELEVATED
+
+        # Check for a recent report (within REPORT_MAX_AGE_DAYS).
+        # Elevated users bypass the cache so they can re-analyse stocks.
         repo = get_repository()
         record = repo.get_latest_by_symbol(symbol)
 
-        if record and record.created_at:
+        if not is_elevated and record and record.created_at:
             age = datetime.now(tz=UTC) - record.created_at
             if age <= timedelta(days=REPORT_MAX_AGE_DAYS):
                 logger.info(
@@ -183,7 +189,6 @@ def create_app() -> Flask:
                     age,
                 )
                 # Track symbol for the current user.
-                user = get_current_user()
                 if user and user.get("email"):
                     try:
                         repo2 = get_repository()
@@ -213,28 +218,29 @@ def create_app() -> Flask:
             })
 
         # --- Per-user daily rate limit (atomic reserve) ----------------
-        user = get_current_user()
+        # Elevated users are exempt from the daily analysis limit.
         user_id = (user or {}).get("email", "anonymous")
-        allowed, count = rl_reserve(
-            r, user_id, settings.daily_analysis_limit
-        )
-        if not allowed:
-            logger.warning(
-                "User %s exceeded daily analysis limit (%d/%d).",
-                user_id,
-                count,
-                settings.daily_analysis_limit,
+        if not is_elevated:
+            allowed, count = rl_reserve(
+                r, user_id, settings.daily_analysis_limit
             )
-            next_midnight = (
-                datetime.now(tz=UTC) + timedelta(days=1)
-            ).replace(hour=0, minute=0, second=0, microsecond=0)
-            return jsonify({
-                "error": (
-                    f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
-                    "Your quota resets at midnight UTC."
-                ),
-                "reset_at": next_midnight.isoformat(),
-            }), 429
+            if not allowed:
+                logger.warning(
+                    "User %s exceeded daily analysis limit (%d/%d).",
+                    user_id,
+                    count,
+                    settings.daily_analysis_limit,
+                )
+                next_midnight = (
+                    datetime.now(tz=UTC) + timedelta(days=1)
+                ).replace(hour=0, minute=0, second=0, microsecond=0)
+                return jsonify({
+                    "error": (
+                        f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
+                        "Your quota resets at midnight UTC."
+                    ),
+                    "reset_at": next_midnight.isoformat(),
+                }), 429
 
         # Dispatch analysis to the Celery worker.
         # The slot is already reserved.  If the analysis fails the worker

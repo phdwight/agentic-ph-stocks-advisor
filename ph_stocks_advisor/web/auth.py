@@ -82,11 +82,12 @@ def _get_token_cache() -> msal.SerializableTokenCache:
 
 
 # Default identity used when authentication is disabled (local dev).
-_DEV_USER: dict[str, str] = {
+_DEV_USER: dict[str, str | int] = {
     "name": "Local Developer",
     "email": "dev@localhost",
     "oid": "local-dev",
     "provider": "local",
+    "user_type": 0,
 }
 
 
@@ -210,6 +211,7 @@ def callback():
         "email": id_claims.get("preferred_username", ""),
         "oid": id_claims.get("oid", ""),
         "provider": "microsoft",
+        "user_type": 0,
     }
 
     # Persist user in the database (upsert).
@@ -221,6 +223,12 @@ def callback():
             email=session["user"]["email"],
             provider="microsoft",
         ))
+        # Read back user_type from DB (may have been set to elevated
+        # by an admin).  The save_user upsert does NOT overwrite
+        # user_type, so the DB value is authoritative.
+        db_user = repo.get_user(session["user"]["oid"])
+        if db_user:
+            session["user"]["user_type"] = db_user.user_type
     except Exception:
         logger.exception("Failed to persist user record")
 
@@ -333,6 +341,7 @@ def google_callback():
         "email": userinfo.get("email", ""),
         "oid": userinfo.get("sub", ""),
         "provider": "google",
+        "user_type": 0,
     }
 
     # Persist user in the database (upsert).
@@ -344,6 +353,12 @@ def google_callback():
             email=session["user"]["email"],
             provider="google",
         ))
+        # Read back user_type from DB (may have been set to elevated
+        # by an admin).  The save_user upsert does NOT overwrite
+        # user_type, so the DB value is authoritative.
+        db_user = repo.get_user(session["user"]["oid"])
+        if db_user:
+            session["user"]["user_type"] = db_user.user_type
     except Exception:
         logger.exception("Failed to persist user record")
 
