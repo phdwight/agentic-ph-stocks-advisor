@@ -66,6 +66,19 @@ amount, ex-date, record date, and payment date. Always prefer this data
 over web search snippets when both are available. State the declared amount,
 ex-date, and payment date explicitly.
 
+**IMPORTANT — ``dividend_announcements`` (structured dividend history):**
+If this list is non-empty, each entry is a structured record from the PSE EDGE
+company dividends page with these key fields:
+  • ``dividend_rate`` — the exact amount per share (e.g. "Php0.62")
+  • ``ex_date`` — the ex-dividend date (last day to buy to receive the dividend)
+  • ``payment_date`` — the date the dividend will be paid out
+  • ``dividend_type`` — Cash or Stock
+You MUST present these clearly in your analysis. For the most recent
+announcement, explicitly state: "The latest declared dividend is
+[rate]/share with ex-date [date] and payment date [date]."
+If multiple announcements exist, mention the dividend trend (increasing,
+stable, or decreasing rate over time).
+
 Data:
 {data}
 

@@ -18,6 +18,9 @@ from ph_stocks_advisor.data.clients.dragonfi import (
 from ph_stocks_advisor.data.clients.pse_edge_dividends import (
     fetch_recent_dividend_declarations,
 )
+from ph_stocks_advisor.data.clients.pse_edge_company_dividends import (
+    fetch_company_dividend_announcements,
+)
 from ph_stocks_advisor.data.models import DividendInfo
 from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news
 
@@ -146,6 +149,16 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
         except Exception as exc:
             logger.warning("PSE EDGE dividend fetch failed for %s: %s", symbol, exc)
 
+        # Fetch structured dividend announcements from PSE EDGE company page
+        dividend_announcements = []
+        try:
+            dividend_announcements = fetch_company_dividend_announcements(symbol)
+        except Exception as exc:
+            logger.warning(
+                "PSE EDGE company dividend page fetch failed for %s: %s",
+                symbol, exc,
+            )
+
         return DividendInfo(
             symbol=symbol,
             dividend_rate=dividend_rate,
@@ -163,6 +176,7 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
                 symbol, company_name=str(profile.get("companyName", "")),
             ),
             recent_declared_dividends=declared_dividends,
+            dividend_announcements=dividend_announcements,
         )
 
     # No dividend data available from DragonFi

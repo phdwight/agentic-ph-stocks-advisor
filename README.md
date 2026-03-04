@@ -19,7 +19,7 @@ START → Validate ──────►├── Movement Agent ─────
 | Agent | Responsibility |
 |-------|---------------|
 | **Price Agent** | Current price vs 52-week range, price catalysts |
-| **Dividend Agent** | Yield, payout ratio, sustainability, REIT rules (RA 9856), income/revenue/FCF trends |
+| **Dividend Agent** | Yield, payout ratio, sustainability, REIT rules (RA 9856), income/revenue/FCF trends, structured dividend announcements (ex-date, rate, payment date) |
 | **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance, web news |
 | **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
 | **Controversy Agent** | Price spike detection, risk factors, web news & controversies |
@@ -32,7 +32,7 @@ The data layer cascades through multiple sources for resilience:
 | Source | API Key | Usage |
 |--------|---------|-------|
 | **DragonFi** (`api.dragonfi.ph`) | Not required | Primary — price, dividends, valuation, financials, news, symbol validation |
-| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history, spike detection, and declared dividend disclosures (SEC Form 6-1) |
+| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history, spike detection, declared dividend disclosures (SEC Form 6-1), and company dividend announcements page (ex-date, rate, payment date) |
 | **TradingView Scanner** | Not required | Multi-period performance & volatility |
 | **Tavily** | Optional | Web search for dividend news, general news, and controversies |
 
@@ -349,6 +349,7 @@ ph_stocks_advisor/
 │   │   ├── dragonfi.py        #   DragonFi API (price, dividends, valuation, news)
 │   │   ├── pse_edge.py        #   PSE EDGE daily OHLCV history
 │   │   ├── pse_edge_dividends.py  # PSE EDGE declared dividend scraper (SEC Form 6-1)
+│   │   ├── pse_edge_company_dividends.py  # PSE EDGE company dividends page scraper (ex-date, rate, payment)
 │   │   ├── tradingview.py     #   TradingView scanner (performance & volatility)
 │   │   └── tavily_search.py   #   Tavily web search integration
 │   ├── services/              # Domain services (orchestrate clients → models)
@@ -375,6 +376,7 @@ tests/
 ├── test_tools.py
 ├── test_agents.py
 ├── test_auth.py               # Entra ID auth blueprint tests
+├── test_company_dividends.py  # DividendAnnouncement model & company page scraper tests
 ├── test_consolidator.py
 ├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py

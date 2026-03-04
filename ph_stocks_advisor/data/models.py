@@ -49,6 +49,49 @@ class StockPrice(BaseModel):
     )
 
 
+class DividendAnnouncement(BaseModel):
+    """A single dividend announcement from PSE EDGE company page.
+
+    Stores the key dates and rate that investors need to act on:
+    the ex-dividend date (last day to buy to receive the dividend),
+    the dividend rate per share, and the payment date.
+    """
+
+    security_type: str = Field(
+        default="COMMON",
+        description="Type of security, e.g. COMMON or PREFERRED.",
+    )
+    dividend_type: str = Field(
+        default="Cash",
+        description="Type of dividend, e.g. Cash or Stock.",
+    )
+    dividend_rate: str = Field(
+        description="Dividend amount per share, e.g. 'Php0.62'.",
+    )
+    ex_date: str = Field(
+        description="Ex-dividend date — last trading day to buy and still receive the dividend.",
+    )
+    record_date: str = Field(
+        default="",
+        description="Record date for the dividend.",
+    )
+    payment_date: str = Field(
+        description="Date when the dividend is paid out.",
+    )
+    circular_number: str = Field(
+        default="",
+        description="PSE circular reference number, e.g. 'C01040-2026'.",
+    )
+
+    def to_summary(self) -> str:
+        """Human-readable one-line summary."""
+        return (
+            f"{self.dividend_rate}/share, "
+            f"ex-date {self.ex_date}, "
+            f"payment {self.payment_date}"
+        )
+
+
 class DividendInfo(BaseModel):
     """Dividend-related metrics.
 
@@ -97,6 +140,14 @@ class DividendInfo(BaseModel):
             "Recent cash-dividend declarations scraped from PSE EDGE "
             "(SEC Form 6-1). Contains amount per share, ex-date, "
             "record date, and payment date."
+        ),
+    )
+    dividend_announcements: list[DividendAnnouncement] = Field(
+        default_factory=list,
+        description=(
+            "Structured list of recent dividend announcements from the "
+            "PSE EDGE company dividends page. Each entry contains the "
+            "ex-date, dividend rate per share, and payment date."
         ),
     )
 
