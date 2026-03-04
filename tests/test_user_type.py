@@ -405,7 +405,7 @@ class TestElevatedDailyCooldown:
     def test_elevated_blocked_when_analysed_today(
         self, elevated_client, fake_redis
     ):
-        """Elevated user gets 429 when the stock was analysed today."""
+        """Elevated user gets 429 with report link when the stock was analysed today."""
         client, mock_repo = elevated_client
 
         cached_record = MagicMock()
@@ -418,6 +418,8 @@ class TestElevatedDailyCooldown:
         data = resp.get_json()
         assert "already analysed today" in data["error"]
         assert "reset_at" in data
+        assert data["report_id"] == 42
+        assert data["symbol"] == "TEL"
 
     def test_elevated_cooldown_reset_at_is_next_midnight(
         self, elevated_client, fake_redis

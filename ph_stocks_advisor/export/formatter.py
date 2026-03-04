@@ -80,6 +80,41 @@ def _clean_title(title: str) -> str:
     return title.strip().rstrip(":")
 
 
+# Known section heading keywords the consolidator uses.  When the LLM
+# omits bold markers we still want to recognise these as section breaks.
+_KNOWN_HEADINGS = re.compile(
+    r"^(?:"
+    r"Executive\s+Summary"
+    r"|Price\s+Analysis"
+    r"|Dividend\s+Analysis"
+    r"|Price\s+Movement\s+Analysis"
+    r"|Valuation\s+Analysis"
+    r"|Controversy(?:\s*/\s*Risk|\s+and\s+Risk)?\s+Analysis"
+    r"|Risk\s+Analysis"
+    r"|Verdict"
+    r")\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_title_from_body(title: str, lines: list[str]) -> list[str]:
+    """Remove a leading line that just repeats the section title.
+
+    The LLM sometimes writes the heading *and* includes it again as the
+    first line of the body (e.g. ``Executive Summary:`` after the bold
+    heading was already parsed).  We strip it to avoid duplication.
+    """
+    for idx, ln in enumerate(lines):
+        if ln.strip():  # first non-blank line
+            # Check if it's just the title repeated (with optional colon)
+            normalised = re.sub(r"[*#:]+", "", ln).strip().lower()
+            title_normalised = title.strip().lower()
+            if normalised == title_normalised:
+                return lines[:idx] + lines[idx + 1 :]
+            break  # first non-blank line is real content — stop
+    return lines
+
+
 def parse_sections(summary: str) -> list[tuple[str, str]]:
     """Split a consolidated summary into ``(title, body)`` pairs.
 
@@ -89,6 +124,7 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
     * ``**Title**`` on its own line   (bold, no colon)
     * ``**Title:** inline content``
     * ``### Title`` / ``## Title`` (Markdown ATX headings)
+    * Plain-text known headings (e.g. ``Executive Summary:``)
 
     Lines consisting solely of dashes (``---``, ``----``, …) are dropped.
     Trailing dash sequences on content lines and titles are stripped.
@@ -114,7 +150,7 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
         )
         if heading_match:
             if current_lines:
-                sections.append((current_title, "\n".join(current_lines)))
+                sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
                 current_lines = []
             current_title = _clean_title(heading_match.group(1))
             continue
@@ -123,7 +159,7 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
         heading_inline = re.match(r"^\*\*(.+?):\*\*\s+(.+)$", stripped)
         if heading_inline:
             if current_lines:
-                sections.append((current_title, "\n".join(current_lines)))
+                sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
                 current_lines = []
             current_title = _clean_title(heading_inline.group(1))
             current_lines.append(_strip_trailing_dashes(heading_inline.group(2)))
@@ -133,15 +169,23 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
         md_heading = re.match(r"^#{1,6}\s+(.+?)\s*$", stripped)
         if md_heading:
             if current_lines:
-                sections.append((current_title, "\n".join(current_lines)))
+                sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
                 current_lines = []
             current_title = _clean_title(md_heading.group(1))
+            continue
+
+        # --- Plain-text known heading (no bold / no ATX markers) ---
+        if _KNOWN_HEADINGS.match(stripped):
+            if current_lines:
+                sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
+                current_lines = []
+            current_title = _clean_title(stripped)
             continue
 
         current_lines.append(_strip_trailing_dashes(line))
 
     if current_lines:
-        sections.append((current_title, "\n".join(current_lines)))
+        sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
 
     return sections
 

@@ -200,6 +200,66 @@ class TestParseSections:
         assert "Dividend Analysis" in titles
         assert "Price Movement Analysis" in titles
 
+    # --- Plain-text (non-bold) known headings ---
+
+    def test_plain_text_known_heading(self):
+        """LLM writes 'Price Analysis:' without bold markers."""
+        text = (
+            "Executive Summary:\n"
+            "AREIT is trading near the lower end.\n\n"
+            "Price Analysis:\n"
+            "- Current price is PHP 40.05\n\n"
+            "Dividend Analysis:\n"
+            "- Yield is 5.8%\n"
+        )
+        sections = parse_sections(text)
+        titles = [t for t, _ in sections]
+        assert "Executive Summary" in titles
+        assert "Price Analysis" in titles
+        assert "Dividend Analysis" in titles
+
+    def test_plain_text_heading_mixed_with_bold(self):
+        """Mix of plain-text and bold headings."""
+        text = (
+            "Executive Summary:\n"
+            "Summary text here.\n\n"
+            "**Price Analysis:**\n"
+            "- Price bullet\n"
+            "Valuation Analysis:\n"
+            "- Undervalued.\n"
+        )
+        sections = parse_sections(text)
+        titles = [t for t, _ in sections]
+        assert "Executive Summary" in titles
+        assert "Price Analysis" in titles
+        assert "Valuation Analysis" in titles
+
+    def test_plain_text_controversy_risk_heading(self):
+        """Handles 'Controversy / Risk Analysis:' variant."""
+        text = "Controversy / Risk Analysis:\n- No red flags."
+        sections = parse_sections(text)
+        assert sections[0][0] == "Controversy / Risk Analysis"
+
+    # --- Duplicate title stripping from body ---
+
+    def test_duplicate_title_stripped_from_body(self):
+        """When body starts with the same title, it's removed."""
+        text = (
+            "**Executive Summary:**\n"
+            "Executive Summary:\n"
+            "AREIT is trading near the lower end.\n"
+        )
+        sections = parse_sections(text)
+        body = sections[0][1]
+        assert not body.strip().startswith("Executive Summary")
+        assert "AREIT is trading" in body
+
+    def test_no_false_positive_title_strip(self):
+        """Body that doesn't repeat the title is left intact."""
+        text = "**Executive Summary:**\nAREIT looks solid."
+        sections = parse_sections(text)
+        assert "AREIT looks solid" in sections[0][1]
+
 
 # =========================================================================
 # OutputFormatter ABC contract

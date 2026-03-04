@@ -208,6 +208,8 @@ def create_app() -> Flask:
                             "You can re-analyse after midnight UTC."
                         ),
                         "reset_at": next_midnight.isoformat(),
+                        "report_id": record.id,
+                        "symbol": symbol,
                     }), 429
             else:
                 # Normal users: serve the cached report if still fresh.

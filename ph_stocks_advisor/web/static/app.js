@@ -368,7 +368,7 @@ document.addEventListener("DOMContentLoaded", () => {
               `after ${localTime}.`
             );
         }
-        flashError(msg);
+        flashError(msg, data.symbol);
         return;
       }
 
@@ -483,10 +483,16 @@ document.addEventListener("DOMContentLoaded", () => {
   /*  Error toast                                                       */
   /* ================================================================== */
 
-  function flashError(msg) {
+  function flashError(msg, symbol) {
     errorArea.style.display = "block";
-    errorText.textContent = msg;
-    setTimeout(hideError, 4000);
+    if (symbol) {
+      errorText.innerHTML =
+        msg +
+        ` <a href="/report/${encodeURIComponent(symbol)}" class="error-report-link">View last report &rarr;</a>`;
+    } else {
+      errorText.textContent = msg;
+    }
+    setTimeout(hideError, 8000);
   }
 
   function hideError() {

@@ -450,6 +450,18 @@ a:hover {
   font-weight: 500;
 }
 
+.error-report-link {
+  display: inline-block;
+  margin-top: 0.4rem;
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.error-report-link:hover {
+  opacity: 0.8;
+}
+
 /* ---------- Tracker Panel ---------- */
 
 .tracker-panel {
