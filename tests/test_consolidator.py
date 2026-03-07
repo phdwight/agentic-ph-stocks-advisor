@@ -3,6 +3,8 @@
 Verifies both the primary structured-output path (LLM returns a typed
 ``ConsolidationResponse``) and the regex-fallback path (for LLMs that
 don't support structured output).
+
+Canned LLM responses live in ``tests/dummy_responses.py``.
 """
 
 from __future__ import annotations
@@ -10,6 +12,10 @@ from __future__ import annotations
 import pytest
 
 from tests.conftest import make_mock_llm, make_structured_mock_llm
+from tests.dummy_responses import (
+    CONSOLIDATOR_BUY_RESPONSE,
+    CONSOLIDATOR_NOT_BUY_RESPONSE,
+)
 from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
 from ph_stocks_advisor.data.models import (
     AdvisorState,
@@ -30,7 +36,7 @@ class TestConsolidatorStructuredOutput:
         response = ConsolidationResponse(
             verdict=Verdict.BUY,
             justification="Strong fundamentals and undervalued.",
-            summary="Executive summary: TEL is a solid stock.",
+            summary=CONSOLIDATOR_BUY_RESPONSE,
         )
         llm = make_structured_mock_llm(response)
         agent = ConsolidatorAgent(llm)
@@ -38,7 +44,7 @@ class TestConsolidatorStructuredOutput:
 
         assert report.symbol == "TEL"
         assert report.verdict == Verdict.BUY
-        assert "solid stock" in report.summary
+        assert "solid investment" in report.summary
         # Verify with_structured_output was called with the right model
         llm.with_structured_output.assert_called_once_with(ConsolidationResponse)
         # Verify sections are populated from state
@@ -52,7 +58,7 @@ class TestConsolidatorStructuredOutput:
         response = ConsolidationResponse(
             verdict=Verdict.NOT_BUY,
             justification="Overvalued and high risk.",
-            summary="Executive summary: TEL is too expensive.",
+            summary=CONSOLIDATOR_NOT_BUY_RESPONSE,
         )
         llm = make_structured_mock_llm(response)
         agent = ConsolidatorAgent(llm)
@@ -70,27 +76,20 @@ class TestConsolidatorStructuredOutput:
 class TestConsolidatorRegexFallback:
     """Verify fallback when with_structured_output raises."""
 
-    def test_run_returns_final_report(self, sample_advisor_state: AdvisorState):
-        llm = make_mock_llm(
-            "Executive summary: TEL is a solid stock.\n\n"
-            "**Verdict: BUY**\n"
-            "Justification: Good dividends and undervalued."
-        )
+    @pytest.mark.parametrize("response,expected_verdict,summary_substr", [
+        (CONSOLIDATOR_BUY_RESPONSE, Verdict.BUY, "solid"),
+        (CONSOLIDATOR_NOT_BUY_RESPONSE, Verdict.NOT_BUY, None),
+    ], ids=["buy", "not-buy"])
+    def test_run_returns_correct_verdict(
+        self, sample_advisor_state: AdvisorState, response, expected_verdict, summary_substr,
+    ):
+        llm = make_mock_llm(response)
         agent = ConsolidatorAgent(llm)
         report = agent.run(sample_advisor_state)
         assert report.symbol == "TEL"
-        assert report.verdict == Verdict.BUY
-        assert "solid stock" in report.summary
-
-    def test_not_buy_verdict(self, sample_advisor_state: AdvisorState):
-        llm = make_mock_llm(
-            "Executive summary: TEL is overpriced.\n\n"
-            "**Verdict: NOT BUY**\n"
-            "Justification: Too expensive."
-        )
-        agent = ConsolidatorAgent(llm)
-        report = agent.run(sample_advisor_state)
-        assert report.verdict == Verdict.NOT_BUY
+        assert report.verdict == expected_verdict
+        if summary_substr:
+            assert summary_substr in report.summary
 
 
 # ---------------------------------------------------------------------------

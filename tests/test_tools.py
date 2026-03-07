@@ -91,10 +91,12 @@ class TestFetchStockPrice:
 # ---------------------------------------------------------------------------
 
 class TestFetchDividendInfo:
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_company_dividend_announcements", return_value=[])
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_recent_dividend_declarations", return_value=[])
     @patch("ph_stocks_advisor.data.services.dividend.fetch_annual_cashflow_trends")
     @patch("ph_stocks_advisor.data.services.dividend.fetch_annual_income_trends")
     @patch("ph_stocks_advisor.data.services.dividend.fetch_stock_profile")
-    def test_returns_from_dragonfi(self, mock_profile, mock_income, mock_cf):
+    def test_returns_from_dragonfi(self, mock_profile, mock_income, mock_cf, _decl, _ann):
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         mock_income.return_value = {
             "revenue": {"2022": 5.11e9, "2023": 7.27e9, "2024": 10.26e9},
@@ -115,10 +117,12 @@ class TestFetchDividendInfo:
         assert result.free_cash_flow_trend["2024"] == 5.95e9
         assert "Net income grew" in result.dividend_sustainability_note
 
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_company_dividend_announcements", return_value=[])
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_recent_dividend_declarations", return_value=[])
     @patch("ph_stocks_advisor.data.services.dividend.fetch_annual_cashflow_trends")
     @patch("ph_stocks_advisor.data.services.dividend.fetch_annual_income_trends")
     @patch("ph_stocks_advisor.data.services.dividend.fetch_stock_profile")
-    def test_tavily_no_longer_called_in_service(self, mock_profile, mock_income, mock_cf):
+    def test_tavily_no_longer_called_in_service(self, mock_profile, mock_income, mock_cf, _decl, _ann):
         """Tavily is now invoked by the LLM via tool calling, not the service."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         mock_income.return_value = {"net_income": {"2024": 7e9}, "revenue": {}}
@@ -127,10 +131,12 @@ class TestFetchDividendInfo:
         # recent_dividend_news defaults to empty since Tavily is not called here.
         assert result.recent_dividend_news == ""
 
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_company_dividend_announcements", return_value=[])
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_recent_dividend_declarations", return_value=[])
     @patch("ph_stocks_advisor.data.services.dividend.fetch_annual_cashflow_trends")
     @patch("ph_stocks_advisor.data.services.dividend.fetch_annual_income_trends")
     @patch("ph_stocks_advisor.data.services.dividend.fetch_stock_profile")
-    def test_reit_flag_detected(self, mock_profile, mock_income, mock_cf):
+    def test_reit_flag_detected(self, mock_profile, mock_income, mock_cf, _decl, _ann):
         reit_profile = _DRAGONFI_PROFILE.copy()
         reit_profile["isREIT"] = True
         mock_profile.return_value = reit_profile
@@ -463,30 +469,20 @@ class TestDetectPriceCatalysts:
 # ---------------------------------------------------------------------------
 
 class TestExtractAnnualValues:
-    def test_extracts_year_values(self):
+    @pytest.mark.parametrize("data,expected", [
+        (
+            {"Symbol": "AREIT", "Item": "Net Income",
+             "2022_YoY": "18.93 %", "2022": 2890000000.0,
+             "2023_YoY": "74.05 %", "2023": 5030000000.0,
+             "2024_YoY": "45.47 %", "2024": 7317064704.0},
+            {"2022": 2890000000.0, "2023": 5030000000.0, "2024": 7317064704.0},
+        ),
+        (None, {}),
+        ({"2022": 100.0, "2023": None, "2024": 200.0}, {"2022": 100.0, "2024": 200.0}),
+    ], ids=["full-data", "none-input", "skips-none-values"])
+    def test_extract_annual_values(self, data, expected):
         from ph_stocks_advisor.data.clients.dragonfi import _extract_annual_values
-        data = {
-            "Symbol": "AREIT",
-            "Item": "Net Income",
-            "2022_YoY": "18.93 %",
-            "2022": 2890000000.0,
-            "2023_YoY": "74.05 %",
-            "2023": 5030000000.0,
-            "2024_YoY": "45.47 %",
-            "2024": 7317064704.0,
-        }
-        result = _extract_annual_values(data)
-        assert result == {"2022": 2890000000.0, "2023": 5030000000.0, "2024": 7317064704.0}
-
-    def test_returns_empty_for_none(self):
-        from ph_stocks_advisor.data.clients.dragonfi import _extract_annual_values
-        assert _extract_annual_values(None) == {}
-
-    def test_skips_none_values(self):
-        from ph_stocks_advisor.data.clients.dragonfi import _extract_annual_values
-        data = {"2022": 100.0, "2023": None, "2024": 200.0}
-        result = _extract_annual_values(data)
-        assert result == {"2022": 100.0, "2024": 200.0}
+        assert _extract_annual_values(data) == expected
 
 
 class TestFetchAnnualIncomeTrends:

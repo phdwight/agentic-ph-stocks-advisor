@@ -181,15 +181,23 @@ def _make_consolidate_node(
 # ---------------------------------------------------------------------------
 
 
-def _build_graph_impl(llm: BaseChatModel | None = None, task_id: str | None = None):
+def _build_graph_impl(
+    llm: BaseChatModel | None = None,
+    mini_llm: BaseChatModel | None = None,
+    task_id: str | None = None,
+):
     """
     Internal graph builder used by both the CLI and LangGraph Studio.
 
     Parameters
     ----------
     llm : BaseChatModel | None
-        The language model to inject into every agent node.  When ``None``
-        the default LLM from ``get_llm()`` is used.
+        The *primary* (heavy) language model used for the consolidator
+        agent.  When ``None`` the default from ``get_llm()`` is used.
+    mini_llm : BaseChatModel | None
+        A lighter language model used for the specialist agents to
+        reduce cost.  When ``None`` the default from ``get_mini_llm()``
+        is used.
     task_id : str | None
         Optional Celery task ID.  When provided, nodes publish real-time
         progress events to Redis Pub/Sub for the SSE stream.
@@ -206,6 +214,11 @@ def _build_graph_impl(llm: BaseChatModel | None = None, task_id: str | None = No
 
         llm = get_llm()
 
+    if mini_llm is None:
+        from ph_stocks_advisor.infra.config import get_mini_llm
+
+        mini_llm = get_mini_llm()
+
     workflow = StateGraph(GraphState)
 
     # Validation gate — runs first to ensure the symbol exists
@@ -214,7 +227,7 @@ def _build_graph_impl(llm: BaseChatModel | None = None, task_id: str | None = No
     # Dynamically register specialist nodes from the registry
     specialist_names: list[str] = []
     for node_name, state_key, agent_class in AGENT_REGISTRY:
-        node_fn = _make_specialist_node(agent_class, state_key, llm, task_id=task_id)
+        node_fn = _make_specialist_node(agent_class, state_key, mini_llm, task_id=task_id)
         workflow.add_node(node_name, node_fn)
         specialist_names.append(node_name)
 
@@ -260,6 +273,7 @@ def build_graph(config: RunnableConfig) -> Any:
 def run_analysis(
     symbol: str,
     llm: BaseChatModel | None = None,
+    mini_llm: BaseChatModel | None = None,
     task_id: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -270,7 +284,11 @@ def run_analysis(
     symbol : str
         PSE ticker symbol (e.g. "TEL", "BDO", "SM", "ALI").
     llm : BaseChatModel | None
-        Optional LLM override.  Uses the default ``get_llm()`` when ``None``.
+        Optional primary (heavy) LLM override for the consolidator.
+        Uses the default ``get_llm()`` when ``None``.
+    mini_llm : BaseChatModel | None
+        Optional lighter LLM override for specialist agents.
+        Uses the default ``get_mini_llm()`` when ``None``.
     task_id : str | None
         Optional Celery task ID.  When provided, progress events are
         published to Redis Pub/Sub for the SSE stream.
@@ -280,6 +298,6 @@ def run_analysis(
     dict
         The final state dict containing all analyses and the final report.
     """
-    graph = _build_graph_impl(llm=llm, task_id=task_id)
+    graph = _build_graph_impl(llm=llm, mini_llm=mini_llm, task_id=task_id)
     initial_state: GraphState = {"symbol": symbol.upper().replace(".PS", "")}
     return graph.invoke(initial_state)

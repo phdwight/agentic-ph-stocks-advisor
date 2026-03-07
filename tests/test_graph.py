@@ -31,14 +31,14 @@ class TestBuildGraph:
     def test_graph_compiles(self):
         """The graph should compile without errors when given a mock LLM."""
         mock_llm = MagicMock()
-        graph = _build_graph_impl(llm=mock_llm)
+        graph = _build_graph_impl(llm=mock_llm, mini_llm=mock_llm)
         assert graph is not None
 
     def test_registry_drives_node_creation(self):
         """Every agent in AGENT_REGISTRY should result in a graph node,
         and all expected infrastructure nodes should be present."""
         mock_llm = MagicMock()
-        graph = _build_graph_impl(llm=mock_llm)
+        graph = _build_graph_impl(llm=mock_llm, mini_llm=mock_llm)
         node_names = set(graph.get_graph().nodes.keys())
         # Check infrastructure nodes
         for name in ("validate", "consolidator"):
@@ -102,7 +102,7 @@ class TestRunAnalysisIntegration:
             patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
             patch.object(workflow_mod, "validate_symbol", return_value="TEL"),
         ):
-            result = run_analysis("TEL", llm=mock_llm)
+            result = run_analysis("TEL", llm=mock_llm, mini_llm=mock_llm)
 
         report = result["final_report"]
         if isinstance(report, dict):
@@ -126,7 +126,7 @@ class TestValidationFailure:
             "validate_symbol",
             side_effect=SymbolNotFoundError("TEL", "Symbol 'XYZ' not found."),
         ):
-            result = run_analysis("XYZ", llm=mock_llm)
+            result = run_analysis("XYZ", llm=mock_llm, mini_llm=mock_llm)
 
         assert result.get("error") is not None
         assert "XYZ" in result["error"]

@@ -194,23 +194,17 @@ def sqlite_repo(tmp_path) -> SQLiteReportRepository:
 class TestUserType:
     """Tests for UserType enum and UserRecord.is_elevated property."""
 
-    def test_user_record_default_is_normal(self):
+    @pytest.mark.parametrize("user_type,expected_elevated", [
+        (UserType.NORMAL, False),
+        (UserType.ELEVATED, True),
+    ], ids=["normal", "elevated"])
+    def test_user_record_type_and_elevation(self, user_type, expected_elevated):
         user = UserRecord(
-            oid="oid-1", name="Test", email="test@example.com", provider="google"
+            oid="oid-1", name="Test", email="test@example.com",
+            provider="google", user_type=user_type,
         )
-        assert user.user_type == UserType.NORMAL
-        assert user.is_elevated is False
-
-    def test_user_record_elevated(self):
-        user = UserRecord(
-            oid="oid-2",
-            name="Admin",
-            email="admin@example.com",
-            provider="microsoft",
-            user_type=UserType.ELEVATED,
-        )
-        assert user.user_type == UserType.ELEVATED
-        assert user.is_elevated is True
+        assert user.user_type == user_type
+        assert user.is_elevated is expected_elevated
 
 
 # ---------------------------------------------------------------------------

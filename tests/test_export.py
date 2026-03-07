@@ -102,33 +102,23 @@ class TestParseSections:
 
     # --- Markdown ATX heading support ---
 
-    def test_markdown_h3_heading(self):
-        text = "### Price Analysis\n- Price is PHP 14.26\n### Dividend Analysis\n- Yield is 7%"
+    @pytest.mark.parametrize("text,expected_titles", [
+        (
+            "### Price Analysis\n- Price is PHP 14.26\n### Dividend Analysis\n- Yield is 7%",
+            ["Price Analysis", "Dividend Analysis"],
+        ),
+        ("## Overview\nSome overview text.", ["Overview"]),
+        ("### Price Analysis:\n- Bullet", ["Price Analysis"]),
+        (
+            "**Price Analysis:**\n- Price bullet\n### Dividend Analysis\n- Dividend bullet",
+            ["Price Analysis", "Dividend Analysis"],
+        ),
+    ], ids=["h3", "h2", "h3-trailing-colon", "mixed-bold-and-h3"])
+    def test_markdown_heading_recognition(self, text, expected_titles):
         sections = parse_sections(text)
         titles = [t for t, _ in sections]
-        assert "Price Analysis" in titles
-        assert "Dividend Analysis" in titles
-
-    def test_markdown_h2_heading(self):
-        text = "## Overview\nSome overview text."
-        sections = parse_sections(text)
-        assert sections[0][0] == "Overview"
-
-    def test_markdown_heading_with_trailing_colon(self):
-        text = "### Price Analysis:\n- Bullet"
-        sections = parse_sections(text)
-        assert sections[0][0] == "Price Analysis"
-
-    def test_mixed_heading_styles(self):
-        """LLM mixes **Bold:** and ### Markdown headings."""
-        text = (
-            "**Price Analysis:**\n- Price bullet\n"
-            "### Dividend Analysis\n- Dividend bullet"
-        )
-        sections = parse_sections(text)
-        titles = [t for t, _ in sections]
-        assert "Price Analysis" in titles
-        assert "Dividend Analysis" in titles
+        for expected in expected_titles:
+            assert expected in titles
 
     # --- Dash / separator stripping ---
 
@@ -147,92 +137,49 @@ class TestParseSections:
 
     # --- Trailing dashes in headings (regression: MREIT PDF output) ---
 
-    def test_bold_heading_with_trailing_dashes(self):
-        """**Price Analysis:----** must become 'Price Analysis'."""
-        text = "**Price Analysis:----**\n- Bullet one"
+    @pytest.mark.parametrize("text", [
+        "**Price Analysis:----**\n- Bullet one",
+        "### Price Analysis----\n- Bullet one",
+        "**Price Analysis----:**\n- Bullet one",
+    ], ids=["bold-trailing", "h3-trailing", "bold-dashes-before-colon"])
+    def test_trailing_dashes_stripped_from_heading(self, text):
         sections = parse_sections(text)
         assert sections[0][0] == "Price Analysis"
         assert "--" not in sections[0][0]
 
-    def test_markdown_heading_with_trailing_dashes(self):
-        """### Price Analysis---- must become 'Price Analysis'."""
-        text = "### Price Analysis----\n- Bullet one"
-        sections = parse_sections(text)
-        assert sections[0][0] == "Price Analysis"
-        assert "--" not in sections[0][0]
-
-    def test_bold_heading_dashes_before_colon(self):
-        """**Price Analysis----:** must become 'Price Analysis'."""
-        text = "**Price Analysis----:**\n- Bullet one"
-        sections = parse_sections(text)
-        assert sections[0][0] == "Price Analysis"
-        assert "--" not in sections[0][0]
-
-    def test_bold_heading_no_colon(self):
-        """**Price Analysis** (no colon) must be recognised as a heading."""
-        text = (
-            "Summary paragraph.\n\n"
-            "**Price Analysis**\n"
-            "- BDO is at PHP 138.50.\n\n"
-            "**Dividend Analysis**\n"
-            "- Dividend yield is about 3.1%.\n"
-        )
+    @pytest.mark.parametrize("text,expected_titles", [
+        (
+            "Summary paragraph.\n\n**Price Analysis**\n- BDO is at PHP 138.50.\n\n"
+            "**Dividend Analysis**\n- Dividend yield is about 3.1%.\n",
+            ["Price Analysis", "Dividend Analysis"],
+        ),
+        (
+            "### Price Analysis----\n - MREIT is at PHP 14.26\n"
+            "### Dividend Analysis----\n - Trailing dividend yield is about 7.06%\n"
+            "### Price Movement Analysis----\n - Over roughly a year, the stock is up about +5.6%\n",
+            ["Price Analysis", "Dividend Analysis", "Price Movement Analysis"],
+        ),
+        (
+            "Executive Summary:\nAREIT is trading near the lower end.\n\n"
+            "Price Analysis:\n- Current price is PHP 40.05\n\n"
+            "Dividend Analysis:\n- Yield is 5.8%\n",
+            ["Executive Summary", "Price Analysis", "Dividend Analysis"],
+        ),
+        (
+            "Executive Summary:\nSummary text here.\n\n"
+            "**Price Analysis:**\n- Price bullet\n"
+            "Valuation Analysis:\n- Undervalued.\n",
+            ["Executive Summary", "Price Analysis", "Valuation Analysis"],
+        ),
+    ], ids=["bold-no-colon", "mreit-dashes", "plain-text", "plain-text-mixed-bold"])
+    def test_heading_style_variants(self, text, expected_titles):
         sections = parse_sections(text)
         titles = [t for t, _ in sections]
-        assert "Price Analysis" in titles
-        assert "Dividend Analysis" in titles
-
-    def test_mreit_style_multiple_sections_with_dashes(self):
-        """Regression: full MREIT-style output with dashes after every heading."""
-        text = (
-            "### Price Analysis----\n"
-            " - MREIT is at PHP 14.26\n"
-            "### Dividend Analysis----\n"
-            " - Trailing dividend yield is about 7.06%\n"
-            "### Price Movement Analysis----\n"
-            " - Over roughly a year, the stock is up about +5.6%\n"
-        )
-        sections = parse_sections(text)
+        for expected in expected_titles:
+            assert expected in titles
+        # No dashes should leak into any title
         for title, _ in sections:
             assert "--" not in title, f"Dashes leaked into title: {title!r}"
-        titles = [t for t, _ in sections]
-        assert "Price Analysis" in titles
-        assert "Dividend Analysis" in titles
-        assert "Price Movement Analysis" in titles
-
-    # --- Plain-text (non-bold) known headings ---
-
-    def test_plain_text_known_heading(self):
-        """LLM writes 'Price Analysis:' without bold markers."""
-        text = (
-            "Executive Summary:\n"
-            "AREIT is trading near the lower end.\n\n"
-            "Price Analysis:\n"
-            "- Current price is PHP 40.05\n\n"
-            "Dividend Analysis:\n"
-            "- Yield is 5.8%\n"
-        )
-        sections = parse_sections(text)
-        titles = [t for t, _ in sections]
-        assert "Executive Summary" in titles
-        assert "Price Analysis" in titles
-        assert "Dividend Analysis" in titles
-
-    def test_plain_text_heading_mixed_with_bold(self):
-        """Mix of plain-text and bold headings."""
-        text = (
-            "Executive Summary:\n"
-            "Summary text here.\n\n"
-            "**Price Analysis:**\n"
-            "- Price bullet\n"
-            "Valuation Analysis:\n"
-            "- Undervalued.\n"
-        )
-        sections = parse_sections(text)
-        titles = [t for t, _ in sections]
-        assert "Executive Summary" in titles
-        assert "Price Analysis" in titles
-        assert "Valuation Analysis" in titles
 
     def test_plain_text_controversy_risk_heading(self):
         """Handles 'Controversy / Risk Analysis:' variant."""
@@ -293,11 +240,12 @@ class TestOutputFormatterContract:
 
 
 class TestGetFormatter:
-    def test_returns_pdf_formatter(self):
-        assert isinstance(get_formatter("pdf"), PdfFormatter)
-
-    def test_returns_html_formatter(self):
-        assert isinstance(get_formatter("html"), HtmlFormatter)
+    @pytest.mark.parametrize("fmt_name,expected_cls", [
+        ("pdf", PdfFormatter),
+        ("html", HtmlFormatter),
+    ], ids=["pdf", "html"])
+    def test_returns_correct_formatter(self, fmt_name, expected_cls):
+        assert isinstance(get_formatter(fmt_name), expected_cls)
 
     def test_unknown_format_raises_key_error(self):
         with pytest.raises(KeyError, match="docx"):
@@ -354,16 +302,18 @@ class TestBodyToHtml:
         assert "--" not in out
         assert "7%." in out
 
-    def test_double_dash_bullets_collapsed(self):
+    @pytest.mark.parametrize("input_text,expected_li_contents", [
+        (
+            "- - At PHP 138.50, BDO is closer\n- - The move was small",
+            ["At PHP 138.50", "The move was small"],
+        ),
+        ("- - - deeply nested", ["deeply nested"]),
+    ], ids=["double-dash", "triple-dash"])
+    def test_repeated_dash_bullets_collapsed(self, input_text, expected_li_contents):
         """LLM sometimes produces '- - text'; should render as single bullet."""
-        out = _body_to_html("- - At PHP 138.50, BDO is closer\n- - The move was small")
-        # Should not contain a leftover '- ' inside the <li>
-        assert "<li>At PHP 138.50" in out
-        assert "<li>The move was small" in out
-
-    def test_triple_dash_bullets_collapsed(self):
-        out = _body_to_html("- - - deeply nested")
-        assert "<li>deeply nested" in out
+        out = _body_to_html(input_text)
+        for content in expected_li_contents:
+            assert f"<li>{content}" in out
 
 
 class TestHtmlRender:
@@ -379,14 +329,14 @@ class TestHtmlRender:
         html = HtmlFormatter().render(_make_record(symbol="SM")).decode()
         assert "<title>SM Stock Analysis</title>" in html
 
-    def test_buy_verdict_badge(self):
-        html = HtmlFormatter().render(_make_record(verdict="BUY")).decode()
-        assert 'class="badge buy"' in html
-        assert ">BUY<" in html
-
-    def test_not_buy_verdict_badge(self):
-        html = HtmlFormatter().render(_make_record(verdict="NOT BUY")).decode()
-        assert 'class="badge not-buy"' in html
+    @pytest.mark.parametrize("verdict,badge_class", [
+        ("BUY", "badge buy"),
+        ("NOT BUY", "badge not-buy"),
+    ], ids=["buy", "not-buy"])
+    def test_verdict_badge(self, verdict, badge_class):
+        html = HtmlFormatter().render(_make_record(verdict=verdict)).decode()
+        assert f'class="{badge_class}"' in html
+        assert f">{verdict}<" in html
 
     def test_verdict_label_outside_pill(self):
         """'Verdict:' label should be outside the colored pill badge."""

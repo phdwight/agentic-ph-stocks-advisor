@@ -2,7 +2,8 @@
 Tests for specialist agents.
 
 All tests mock the LLM and the data-fetching tools so they run
-without network access or API keys.
+without network access or API keys.  Canned LLM responses live in
+``tests/dummy_responses.py``.
 """
 
 from __future__ import annotations
@@ -12,6 +13,13 @@ from unittest.mock import patch
 import pytest
 
 from tests.conftest import make_mock_llm
+from tests.dummy_responses import (
+    CONTROVERSY_ANALYSIS_RESPONSE,
+    DIVIDEND_ANALYSIS_RESPONSE,
+    MOVEMENT_ANALYSIS_RESPONSE,
+    PRICE_ANALYSIS_RESPONSE,
+    VALUATION_ANALYSIS_RESPONSE,
+)
 from ph_stocks_advisor.agents.specialists import (
     ControversyAgent,
     DividendAgent,
@@ -28,35 +36,35 @@ from ph_stocks_advisor.agents.specialists import (
             PriceAgent,
             "ph_stocks_advisor.agents.specialists.fetch_stock_price",
             "sample_stock_price",
-            "Price is near 52-week midpoint.",
+            PRICE_ANALYSIS_RESPONSE,
             lambda r: r.data.symbol == "TEL" and "52-week" in r.analysis,
         ),
         (
             DividendAgent,
             "ph_stocks_advisor.agents.specialists.fetch_dividend_info",
             "sample_dividend_info",
-            "Dividend yield is attractive at 6%.",
+            DIVIDEND_ANALYSIS_RESPONSE,
             lambda r: r.data.dividend_yield == 0.06 and "attractive" in r.analysis,
         ),
         (
             MovementAgent,
             "ph_stocks_advisor.agents.specialists.fetch_price_movement",
             "sample_price_movement",
-            "Stock has been in an uptrend.",
+            MOVEMENT_ANALYSIS_RESPONSE,
             lambda r: r.data.trend.value == "uptrend" and "uptrend" in r.analysis,
         ),
         (
             ValuationAgent,
             "ph_stocks_advisor.agents.specialists.fetch_fair_value",
             "sample_fair_value",
-            "Stock appears undervalued by 10%.",
+            VALUATION_ANALYSIS_RESPONSE,
             lambda r: r.data.discount_pct > 0 and "undervalued" in r.analysis,
         ),
         (
             ControversyAgent,
             "ph_stocks_advisor.agents.specialists.fetch_controversy_info",
             "sample_controversy_info",
-            "One notable spike but overall manageable risk.",
+            CONTROVERSY_ANALYSIS_RESPONSE,
             lambda r: len(r.data.sudden_spikes) == 1 and "spike" in r.analysis,
         ),
     ],

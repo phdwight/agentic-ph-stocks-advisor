@@ -83,13 +83,13 @@ function create52WeekBar(low, high, current) {
     margin-bottom: 0.5rem;
     font-size: 0.72rem;
     font-weight: 600;
-    color: #9ca0b0;
+    color: #a09e9a;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   `;
   label.innerHTML = `
-    <span>52-week range</span>
-    ${current ? `<span style="color:#e4e5eb;">Current: ₱${current.toLocaleString()}</span>` : ""}
+    <span>52-Week Range</span>
+    ${current ? `<span style="color:#e8e6e3;">Current: ₱${current.toLocaleString()}</span>` : ""}
   `;
 
   const track = document.createElement("div");
@@ -108,7 +108,7 @@ function create52WeekBar(low, high, current) {
   fill.style.cssText = `
     height: 100%;
     width: ${fillPct}%;
-    background: linear-gradient(90deg, #f87171, #fbbf24, #34d399);
+    background: linear-gradient(90deg, #c47068, #c4a35a, #5a9e82);
     border-radius: 3px;
     transition: width 1s ease-out;
   `;
@@ -123,10 +123,10 @@ function create52WeekBar(low, high, current) {
       transform: translateX(-50%);
       width: 16px;
       height: 16px;
-      background: #e4e5eb;
-      border: 2px solid #0f1117;
+      background: #e8e6e3;
+      border: 2px solid #0e0e10;
       border-radius: 50%;
-      box-shadow: 0 0 8px rgba(108,99,255,0.4);
+      box-shadow: 0 0 8px rgba(139,126,200,0.4);
       z-index: 2;
     `;
     track.appendChild(marker);
@@ -140,7 +140,7 @@ function create52WeekBar(low, high, current) {
     justify-content: space-between;
     margin-top: 0.4rem;
     font-size: 0.72rem;
-    color: #6b6f82;
+    color: #6b6966;
     font-variant-numeric: tabular-nums;
   `;
   ends.innerHTML = `
@@ -177,15 +177,15 @@ function enhancePercentages(section) {
         const isPositive = value > 0;
         const isNegative = value < 0;
         const color = isPositive
-          ? "#34d399"
+          ? "#5a9e82"
           : isNegative
-          ? "#f87171"
-          : "#9ca0b0";
+          ? "#c47068"
+          : "#a09e9a";
         const bgColor = isPositive
-          ? "rgba(52,211,153,0.1)"
+          ? "rgba(90,158,130,0.12)"
           : isNegative
-          ? "rgba(248,113,113,0.1)"
-          : "rgba(156,160,176,0.1)";
+          ? "rgba(196,112,104,0.12)"
+          : "rgba(160,158,154,0.1)";
         const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
 
         return `<span class="pct-badge" style="
@@ -223,8 +223,8 @@ function enhanceRatioValues(section) {
         return `<strong>${label}</strong>: <span class="ratio-value" style="
           display:inline-block;
           padding:0.1rem 0.4rem;
-          background:rgba(99,179,237,0.1);
-          color:#63b3ed;
+          background:rgba(107,150,184,0.12);
+          color:#6b96b8;
           border-radius:4px;
           font-weight:600;
           font-size:0.82rem;
@@ -256,7 +256,7 @@ function enhancePriceValues(section) {
       (match, prefix, price) => {
         return `${prefix}<span class="price-highlight" style="
           font-weight:700;
-          color:#e4e5eb;
+          color:#e8e6e3;
           font-size:1.05em;
           font-variant-numeric:tabular-nums;
         ">${price}</span>`;

@@ -184,13 +184,12 @@ class TestParseDividendRows:
         assert third.dividend_rate == "Php0.59"
         assert third.ex_date == "Aug 28, 2025"
 
-    def test_empty_tbody_returns_empty(self):
-        rows = _parse_dividend_rows(EMPTY_TABLE_HTML)
-        assert rows == []
-
-    def test_no_tbody_returns_empty(self):
-        rows = _parse_dividend_rows("<table><thead></thead></table>")
-        assert rows == []
+    @pytest.mark.parametrize("html", [
+        EMPTY_TABLE_HTML,
+        "<table><thead></thead></table>",
+    ], ids=["empty-tbody", "no-tbody"])
+    def test_returns_empty_for_edge_cases(self, html):
+        assert _parse_dividend_rows(html) == []
 
 
 # ---------------------------------------------------------------------------

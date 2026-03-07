@@ -33,6 +33,7 @@ class Settings:
     # -- LLM -------------------------------------------------------------------
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    openai_mini_model: str = os.getenv("OPENAI_MINI_MODEL", "gpt-4o-mini")
     temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
 
     # -- Tavily web search -----------------------------------------------------
@@ -223,14 +224,30 @@ def get_today() -> dt.date:
 
 
 def get_llm(settings: Settings | None = None) -> BaseChatModel:
-    """Return a configured LLM instance.
+    """Return the *primary* (heavy) LLM instance.
 
-    Returns the abstract ``BaseChatModel`` so callers never depend on
-    a concrete provider (Liskov Substitution Principle).
+    Use this for tasks that require deep reasoning such as the
+    consolidator agent.  Returns the abstract ``BaseChatModel`` so
+    callers never depend on a concrete provider (Liskov Substitution
+    Principle).
     """
     s = settings or get_settings()
     return ChatOpenAI(
         model=s.openai_model,
+        temperature=s.temperature,
+        api_key=s.openai_api_key,  # type: ignore[arg-type]
+    )
+
+
+def get_mini_llm(settings: Settings | None = None) -> BaseChatModel:
+    """Return a *lighter* LLM for simpler specialist tasks.
+
+    Configured via ``OPENAI_MINI_MODEL``.  Falls back to the primary
+    model when the env var is not set.
+    """
+    s = settings or get_settings()
+    return ChatOpenAI(
+        model=s.openai_mini_model,
         temperature=s.temperature,
         api_key=s.openai_api_key,  # type: ignore[arg-type]
     )

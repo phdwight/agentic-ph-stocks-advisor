@@ -406,7 +406,8 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | **Yes** | — | OpenAI API key |
-| `OPENAI_MODEL` | No | `gpt-4o-mini` | LLM model name |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` | Primary (heavy) LLM model used by the consolidator agent |
+| `OPENAI_MINI_MODEL` | No | `gpt-4o-mini` | Lighter LLM model used by the five specialist agents |
 | `OPENAI_TEMPERATURE` | No | `0.2` | LLM temperature |
 | `TAVILY_API_KEY` | No | — | Tavily web search key (graceful degradation when absent) |
 | `TAVILY_MAX_RESULTS` | No | `5` | Max results per Tavily search call |

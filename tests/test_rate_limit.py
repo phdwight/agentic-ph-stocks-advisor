@@ -209,29 +209,18 @@ class TestRelease:
 class TestCheckLimit:
     """Direct tests for the read-only check_limit function."""
 
-    def test_allowed_when_no_usage(self, fake_redis):
-        allowed, count = _rl_mod.check_limit(fake_redis, "user@test.com", 5)
-        assert allowed is True
-        assert count == 0
-
-    def test_allowed_when_under_limit(self, fake_redis):
-        _seed_counter(fake_redis, "user@test.com", 3)
-        allowed, count = _rl_mod.check_limit(fake_redis, "user@test.com", 5)
-        assert allowed is True
-        assert count == 3
-
-    def test_blocked_when_at_or_over_limit(self, fake_redis):
-        """check_limit blocks when counter equals or exceeds the limit."""
-        _seed_counter(fake_redis, "user@test.com", 5)
-        allowed, count = _rl_mod.check_limit(fake_redis, "user@test.com", 5)
-        assert allowed is False
-        assert count == 5
-
-        # Also blocked when over limit
-        _seed_counter(fake_redis, "over@test.com", 7)
-        allowed2, count2 = _rl_mod.check_limit(fake_redis, "over@test.com", 5)
-        assert allowed2 is False
-        assert count2 == 7
+    @pytest.mark.parametrize("user,seed_count,expected_allowed,expected_count", [
+        ("user@test.com", 0, True, 0),
+        ("user@test.com", 3, True, 3),
+        ("user@test.com", 5, False, 5),
+        ("over@test.com", 7, False, 7),
+    ], ids=["no-usage", "under-limit", "at-limit", "over-limit"])
+    def test_check_limit_result(self, fake_redis, user, seed_count, expected_allowed, expected_count):
+        if seed_count:
+            _seed_counter(fake_redis, user, seed_count)
+        allowed, count = _rl_mod.check_limit(fake_redis, user, 5)
+        assert allowed is expected_allowed
+        assert count == expected_count
 
     def test_does_not_increment(self, fake_redis):
         """check_limit must never change the counter."""
@@ -269,21 +258,16 @@ class TestIncrement:
 class TestGetRemaining:
     """Tests for the get_remaining helper."""
 
-    def test_full_quota_when_no_usage(self, fake_redis):
-        remaining = _rl_mod.get_remaining(fake_redis, "user@test.com", 5)
-        assert remaining == 5
-
-    def test_decreases_with_usage(self, fake_redis):
-        _rl_mod.increment(fake_redis, "user@test.com")
-        _rl_mod.increment(fake_redis, "user@test.com")
-        remaining = _rl_mod.get_remaining(fake_redis, "user@test.com", 5)
-        assert remaining == 3
-
-    def test_zero_when_exhausted(self, fake_redis):
-        for _ in range(5):
+    @pytest.mark.parametrize("increments,expected_remaining", [
+        (0, 5),
+        (2, 3),
+        (5, 0),
+    ], ids=["no-usage", "partial-usage", "exhausted"])
+    def test_remaining_quota(self, fake_redis, increments, expected_remaining):
+        for _ in range(increments):
             _rl_mod.increment(fake_redis, "user@test.com")
         remaining = _rl_mod.get_remaining(fake_redis, "user@test.com", 5)
-        assert remaining == 0
+        assert remaining == expected_remaining
 
 
 # ---------------------------------------------------------------------------
