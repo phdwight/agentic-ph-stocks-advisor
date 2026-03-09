@@ -1225,6 +1225,11 @@ a:hover {
   width: 100%;
 }
 
+.section-body table.wide-table td:nth-child(2),
+.section-body table.wide-table th:nth-child(2) {
+  white-space: nowrap;
+}
+
 .section-body table th,
 .section-body table td {
   padding: 0.6rem 1rem;
