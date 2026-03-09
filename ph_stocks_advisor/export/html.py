@@ -86,8 +86,20 @@ def _is_separator_line(line: str) -> bool:
 
 
 def _render_table(rows: list[str]) -> str:
-    """Convert collected Markdown table lines into an HTML ``<table>``."""
-    html_parts: list[str] = ['<table class="metrics-table">']
+    """Convert collected Markdown table lines into an HTML ``<table>``.
+
+    Two-column tables get the compact ``metrics-table`` class; wider
+    tables use the default full-width style.
+    """
+    # Count columns from the first non-separator row.
+    col_count = 0
+    for row in rows:
+        if not _is_separator_line(row):
+            col_count = len([c for c in row.strip("|").split("|")])
+            break
+
+    table_cls = "metrics-table" if col_count <= 2 else "wide-table"
+    html_parts: list[str] = [f'<table class="{table_cls}">']
     header_done = False
     for row in rows:
         if _is_separator_line(row):
@@ -140,6 +152,22 @@ def _body_to_html(body: str) -> str:
                 parts.append("</ul>")
                 in_list = False
             parts.append("<p></p>")
+            continue
+
+        # ---- Markdown headings (### … , ## … , # …) ----
+        heading_match = re.match(r"^(#{1,6})\s+(.*)", line)
+        if heading_match:
+            if in_list:
+                parts.append("</ul>")
+                in_list = False
+            level = len(heading_match.group(1))
+            # Bump heading level so # becomes <h3>, ## → <h4>, ### → <h5>
+            # This avoids clashing with the page-level <h1>/<h2>.
+            tag_level = min(level + 2, 6)
+            heading_text = heading_match.group(2).strip()
+            parts.append(
+                f"<h{tag_level}>{_md_bold_to_html(_esc(heading_text))}</h{tag_level}>"
+            )
             continue
 
         if line.startswith("- ") or line.startswith("* "):

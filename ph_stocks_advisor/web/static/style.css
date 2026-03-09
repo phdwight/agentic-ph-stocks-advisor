@@ -1221,6 +1221,10 @@ a:hover {
   max-width: 400px;
 }
 
+.section-body table.wide-table {
+  width: 100%;
+}
+
 .section-body table th,
 .section-body table td {
   padding: 0.6rem 1rem;
@@ -1611,4 +1615,231 @@ a:hover {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/* ---------- Portfolio Button ---------- */
+
+.btn-portfolio {
+  background: var(--accent-glow);
+  color: var(--accent-light);
+  border: 1px solid var(--accent);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.btn-portfolio:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent-light);
+}
+
+/* ---------- Holdings Modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+}
+
+.modal-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg, 16px);
+  width: min(440px, 92vw);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 1.25rem 1.5rem;
+}
+
+.modal-field {
+  margin-bottom: 1rem;
+}
+
+.modal-field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.modal-field input {
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 8px);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.modal-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.modal-field input::placeholder {
+  color: var(--text-muted);
+}
+
+.modal-error {
+  background: var(--crimson-bg);
+  color: var(--crimson-text);
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm, 8px);
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.btn-danger {
+  background: var(--crimson-bg);
+  color: var(--crimson-text);
+  border: 1px solid var(--crimson);
+  font-size: 0.8rem;
+}
+
+.btn-danger:hover {
+  background: var(--crimson);
+  color: #fff;
+}
+
+.modal-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  gap: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- Portfolio Report Section ---------- */
+
+.portfolio-section {
+  margin-top: 1.5rem;
+}
+
+.portfolio-report-section {
+  border: 1px solid var(--accent-glow);
+  border-left: 3px solid var(--accent);
+}
+
+.section-icon-portfolio {
+  color: var(--accent);
+}
+
+.elevated-only-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--accent-glow);
+  color: var(--accent-light);
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.portfolio-meta {
+  margin-top: 1rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.portfolio-inline-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+  color: var(--text-muted);
+}
+
+.portfolio-inline-progress .spinner {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.portfolio-inline-error {
+  color: #e74c5e;
+  font-size: 0.88rem;
+}
+
+.cooldown-hint {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 500;
+}
+
+.modal-actions .btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

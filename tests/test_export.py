@@ -367,6 +367,30 @@ class TestBodyToHtml:
         out = _body_to_html(md)
         assert "<strong>Entry Range</strong>" in out
 
+    def test_markdown_headings_rendered(self):
+        """Markdown # / ## / ### headings become HTML heading tags."""
+        md = "### 1) Position Assessment\n\nSome paragraph text."
+        out = _body_to_html(md)
+        # ### (level 3) → <h5> because we bump by 2 to avoid page-level clash.
+        assert "<h5>" in out
+        assert "Position Assessment" in out
+        assert "<p>" in out
+
+    def test_heading_levels_mapped_correctly(self):
+        """Different heading depths map to appropriate HTML levels."""
+        out_h1 = _body_to_html("# Top heading")
+        out_h2 = _body_to_html("## Sub heading")
+        out_h3 = _body_to_html("### Sub sub heading")
+        assert "<h3>" in out_h1 and "Top heading" in out_h1
+        assert "<h4>" in out_h2 and "Sub heading" in out_h2
+        assert "<h5>" in out_h3 and "Sub sub heading" in out_h3
+
+    def test_heading_with_bold(self):
+        """Bold markers inside headings are rendered."""
+        out = _body_to_html("### Hold / Accumulate / Trim — **ACCUMULATE**")
+        assert "<strong>ACCUMULATE</strong>" in out
+        assert "<h5>" in out
+
 
 class TestHtmlRender:
     def test_returns_bytes(self):

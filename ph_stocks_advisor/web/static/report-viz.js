@@ -190,11 +190,19 @@ function enhancePercentages(section) {
         // negative (e.g. "16% below its 52-week high").
         // Conversely, "above", "up", "gain", "rise", "grew", "increase"
         // near a negative number would flip to positive sentiment.
+        //
+        // EXCEPTION: an explicit "+" prefix (e.g. "+28.9%") is an
+        // unambiguous positive signal from the LLM — honour it directly
+        // and skip context-word heuristics.
         const negativeContext = /\b(below|down|decline|drop|loss|fell|decrease|lost|lower)\b/;
         const positiveContext = /\b(above|up|gain|rise|grew|increase|higher|over)\b/;
+        const hasExplicitSign = /^[+-]/.test(num.trim());
 
         let sentiment;  // true = positive, false = negative, null = neutral
-        if (value > 0) {
+        if (hasExplicitSign) {
+          // Explicit +/- prefix is authoritative — no context override.
+          sentiment = value > 0 ? true : value < 0 ? false : null;
+        } else if (value > 0) {
           sentiment = negativeContext.test(surroundingText) ? false : true;
         } else if (value < 0) {
           sentiment = positiveContext.test(surroundingText) ? true : false;

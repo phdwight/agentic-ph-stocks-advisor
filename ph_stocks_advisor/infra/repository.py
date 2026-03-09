@@ -61,6 +61,65 @@ class UserRecord:
         )
 
 
+class HoldingRecord:
+    """A user's stock holding (shares held + average cost)."""
+
+    def __init__(
+        self,
+        user_id: str,
+        symbol: str,
+        shares: float,
+        avg_cost: float,
+        updated_at: datetime | None = None,
+    ) -> None:
+        self.user_id = user_id
+        self.symbol = symbol
+        self.shares = shares
+        self.avg_cost = avg_cost
+        self.updated_at = updated_at or datetime.now(tz=UTC)
+
+    @property
+    def total_cost(self) -> float:
+        """Total capital invested."""
+        return self.shares * self.avg_cost
+
+    def __repr__(self) -> str:
+        return (
+            f"HoldingRecord(user_id={self.user_id!r}, symbol={self.symbol!r}, "
+            f"shares={self.shares}, avg_cost={self.avg_cost})"
+        )
+
+
+class PortfolioReportRecord:
+    """A personalised portfolio-aware report visible only to its owner."""
+
+    def __init__(
+        self,
+        id: int | None,
+        user_id: str,
+        symbol: str,
+        shares: float,
+        avg_cost: float,
+        analysis: str,
+        base_report_id: int | None = None,
+        created_at: datetime | None = None,
+    ) -> None:
+        self.id = id
+        self.user_id = user_id
+        self.symbol = symbol
+        self.shares = shares
+        self.avg_cost = avg_cost
+        self.analysis = analysis
+        self.base_report_id = base_report_id
+        self.created_at = created_at or datetime.now(tz=UTC)
+
+    def __repr__(self) -> str:
+        return (
+            f"PortfolioReportRecord(id={self.id}, user_id={self.user_id!r}, "
+            f"symbol={self.symbol!r})"
+        )
+
+
 class ReportRecord:
     """A persisted report with metadata."""
 
@@ -183,6 +242,45 @@ class AbstractReportRepository(abc.ABC):
     @abc.abstractmethod
     def get_user_by_email(self, email: str) -> Optional[UserRecord]:
         """Retrieve a user by their email address, or ``None``."""
+
+    # ------------------------------------------------------------------
+    # Holdings
+    # ------------------------------------------------------------------
+
+    @abc.abstractmethod
+    def save_holding(self, holding: HoldingRecord) -> None:
+        """Insert or update a stock holding for a user.
+
+        Implementations must be idempotent — if a holding for the same
+        (user_id, symbol) already exists, update shares, avg_cost, and
+        updated_at.
+        """
+
+    @abc.abstractmethod
+    def get_holding(self, user_id: str, symbol: str) -> Optional[HoldingRecord]:
+        """Retrieve a user's holding for a specific symbol, or ``None``."""
+
+    @abc.abstractmethod
+    def delete_holding(self, user_id: str, symbol: str) -> None:
+        """Remove a holding record.  No-op if it does not exist."""
+
+    @abc.abstractmethod
+    def list_holdings(self, user_id: str) -> list[HoldingRecord]:
+        """Return all holdings for a user."""
+
+    # ------------------------------------------------------------------
+    # Portfolio reports (user-private)
+    # ------------------------------------------------------------------
+
+    @abc.abstractmethod
+    def save_portfolio_report(self, record: PortfolioReportRecord) -> int:
+        """Persist a portfolio-aware report.  Returns the generated ID."""
+
+    @abc.abstractmethod
+    def get_portfolio_report(
+        self, user_id: str, symbol: str,
+    ) -> Optional[PortfolioReportRecord]:
+        """Return the latest portfolio report for a user + symbol."""
 
     @abc.abstractmethod
     def close(self) -> None:

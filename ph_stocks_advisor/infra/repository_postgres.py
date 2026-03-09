@@ -20,7 +20,13 @@ import psycopg2  # type: ignore[import-untyped]
 import psycopg2.extras  # type: ignore[import-untyped]
 import psycopg2.pool  # type: ignore[import-untyped]
 
-from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
+from ph_stocks_advisor.infra.repository import (
+    AbstractReportRepository,
+    HoldingRecord,
+    PortfolioReportRecord,
+    ReportRecord,
+    UserRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +77,34 @@ _MIGRATIONS_SQL = [
     """
     ALTER TABLE users
         ADD COLUMN IF NOT EXISTS user_type INTEGER NOT NULL DEFAULT 0;
+    """,
+    # Added in v3 — holdings table for elevated-user stock positions
+    """
+    CREATE TABLE IF NOT EXISTS holdings (
+        user_id    VARCHAR(320) NOT NULL,
+        symbol     VARCHAR(20)  NOT NULL,
+        shares     DOUBLE PRECISION NOT NULL,
+        avg_cost   DOUBLE PRECISION NOT NULL,
+        updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, symbol)
+    );
+    """,
+    # Added in v3 — portfolio_reports for user-private portfolio-aware analyses
+    """
+    CREATE TABLE IF NOT EXISTS portfolio_reports (
+        id              SERIAL PRIMARY KEY,
+        user_id         VARCHAR(320) NOT NULL,
+        symbol          VARCHAR(20)  NOT NULL,
+        shares          DOUBLE PRECISION NOT NULL,
+        avg_cost        DOUBLE PRECISION NOT NULL,
+        analysis        TEXT         NOT NULL,
+        base_report_id  INTEGER,
+        created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_portfolio_reports_user_symbol
+    ON portfolio_reports (user_id, symbol, created_at DESC);
     """,
 ]
 
@@ -330,3 +364,133 @@ class PostgresReportRepository(AbstractReportRepository):
             controversy_section=row["controversy_section"],
             created_at=row["created_at"],
         )
+
+    # ------------------------------------------------------------------
+    # Holdings
+    # ------------------------------------------------------------------
+
+    def save_holding(self, holding: HoldingRecord) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO holdings (user_id, symbol, shares, avg_cost, updated_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, symbol) DO UPDATE SET
+                        shares     = EXCLUDED.shares,
+                        avg_cost   = EXCLUDED.avg_cost,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (
+                        holding.user_id,
+                        holding.symbol.upper(),
+                        holding.shares,
+                        holding.avg_cost,
+                        holding.updated_at or datetime.now(tz=UTC),
+                    ),
+                )
+            conn.commit()
+
+    def get_holding(self, user_id: str, symbol: str) -> Optional[HoldingRecord]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM holdings WHERE user_id = %s AND symbol = %s",
+                    (user_id, symbol.upper()),
+                )
+                row = cur.fetchone()
+            if row is None:
+                return None
+            return HoldingRecord(
+                user_id=row["user_id"],
+                symbol=row["symbol"],
+                shares=row["shares"],
+                avg_cost=row["avg_cost"],
+                updated_at=row["updated_at"],
+            )
+
+    def delete_holding(self, user_id: str, symbol: str) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM holdings WHERE user_id = %s AND symbol = %s",
+                    (user_id, symbol.upper()),
+                )
+            conn.commit()
+
+    def list_holdings(self, user_id: str) -> list[HoldingRecord]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM holdings WHERE user_id = %s ORDER BY symbol",
+                    (user_id,),
+                )
+                rows = cur.fetchall()
+            return [
+                HoldingRecord(
+                    user_id=r["user_id"],
+                    symbol=r["symbol"],
+                    shares=r["shares"],
+                    avg_cost=r["avg_cost"],
+                    updated_at=r["updated_at"],
+                )
+                for r in rows
+            ]
+
+    # ------------------------------------------------------------------
+    # Portfolio reports
+    # ------------------------------------------------------------------
+
+    def save_portfolio_report(self, record: PortfolioReportRecord) -> int:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO portfolio_reports
+                        (user_id, symbol, shares, avg_cost, analysis,
+                         base_report_id, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (
+                        record.user_id,
+                        record.symbol.upper(),
+                        record.shares,
+                        record.avg_cost,
+                        record.analysis,
+                        record.base_report_id,
+                        record.created_at or datetime.now(tz=UTC),
+                    ),
+                )
+                row = cur.fetchone()
+                record_id: int = row[0]  # type: ignore[index]
+            conn.commit()
+            record.id = record_id
+            return record_id
+
+    def get_portfolio_report(
+        self, user_id: str, symbol: str,
+    ) -> Optional[PortfolioReportRecord]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM portfolio_reports
+                    WHERE user_id = %s AND symbol = %s
+                    ORDER BY created_at DESC LIMIT 1
+                    """,
+                    (user_id, symbol.upper()),
+                )
+                row = cur.fetchone()
+            if row is None:
+                return None
+            return PortfolioReportRecord(
+                id=row["id"],
+                user_id=row["user_id"],
+                symbol=row["symbol"],
+                shares=row["shares"],
+                avg_cost=row["avg_cost"],
+                analysis=row["analysis"],
+                base_report_id=row["base_report_id"],
+                created_at=row["created_at"],
+            )

@@ -10,7 +10,13 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Optional
 
-from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
+from ph_stocks_advisor.infra.repository import (
+    AbstractReportRepository,
+    HoldingRecord,
+    PortfolioReportRecord,
+    ReportRecord,
+    UserRecord,
+)
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS reports (
@@ -53,6 +59,30 @@ CREATE TABLE IF NOT EXISTS users (
 );
 """
 
+_CREATE_HOLDINGS_SQL = """
+CREATE TABLE IF NOT EXISTS holdings (
+    user_id    TEXT    NOT NULL,
+    symbol     TEXT    NOT NULL,
+    shares     REAL    NOT NULL,
+    avg_cost   REAL    NOT NULL,
+    updated_at TEXT    NOT NULL,
+    PRIMARY KEY (user_id, symbol)
+);
+"""
+
+_CREATE_PORTFOLIO_REPORTS_SQL = """
+CREATE TABLE IF NOT EXISTS portfolio_reports (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT    NOT NULL,
+    symbol          TEXT    NOT NULL,
+    shares          REAL    NOT NULL,
+    avg_cost        REAL    NOT NULL,
+    analysis        TEXT    NOT NULL,
+    base_report_id  INTEGER,
+    created_at      TEXT    NOT NULL
+);
+"""
+
 
 class SQLiteReportRepository(AbstractReportRepository):
     """SQLite-backed repository — great for dev / single-user use."""
@@ -73,6 +103,8 @@ class SQLiteReportRepository(AbstractReportRepository):
         conn.execute(_CREATE_INDEX_SQL)
         conn.execute(_CREATE_USER_SYMBOLS_SQL)
         conn.execute(_CREATE_USERS_SQL)
+        conn.execute(_CREATE_HOLDINGS_SQL)
+        conn.execute(_CREATE_PORTFOLIO_REPORTS_SQL)
         conn.commit()
 
     def save(self, record: ReportRecord) -> int:
@@ -250,5 +282,125 @@ class SQLiteReportRepository(AbstractReportRepository):
             movement_section=row["movement_section"],
             valuation_section=row["valuation_section"],
             controversy_section=row["controversy_section"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    # ------------------------------------------------------------------
+    # Holdings
+    # ------------------------------------------------------------------
+
+    def save_holding(self, holding: HoldingRecord) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """
+            INSERT INTO holdings (user_id, symbol, shares, avg_cost, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, symbol) DO UPDATE SET
+                shares     = excluded.shares,
+                avg_cost   = excluded.avg_cost,
+                updated_at = excluded.updated_at
+            """,
+            (
+                holding.user_id,
+                holding.symbol.upper(),
+                holding.shares,
+                holding.avg_cost,
+                holding.updated_at.isoformat(),
+            ),
+        )
+        conn.commit()
+
+    def get_holding(self, user_id: str, symbol: str) -> Optional[HoldingRecord]:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM holdings WHERE user_id = ? AND symbol = ?",
+            (user_id, symbol.upper()),
+        ).fetchone()
+        if row is None:
+            return None
+        return HoldingRecord(
+            user_id=row["user_id"],
+            symbol=row["symbol"],
+            shares=row["shares"],
+            avg_cost=row["avg_cost"],
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    def delete_holding(self, user_id: str, symbol: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM holdings WHERE user_id = ? AND symbol = ?",
+            (user_id, symbol.upper()),
+        )
+        conn.commit()
+
+    def list_holdings(self, user_id: str) -> list[HoldingRecord]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM holdings WHERE user_id = ? ORDER BY symbol",
+            (user_id,),
+        ).fetchall()
+        return [
+            HoldingRecord(
+                user_id=r["user_id"],
+                symbol=r["symbol"],
+                shares=r["shares"],
+                avg_cost=r["avg_cost"],
+                updated_at=datetime.fromisoformat(r["updated_at"]),
+            )
+            for r in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Portfolio reports
+    # ------------------------------------------------------------------
+
+    def save_portfolio_report(self, record: PortfolioReportRecord) -> int:
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """
+            INSERT INTO portfolio_reports
+                (user_id, symbol, shares, avg_cost, analysis,
+                 base_report_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record.user_id,
+                record.symbol.upper(),
+                record.shares,
+                record.avg_cost,
+                record.analysis,
+                record.base_report_id,
+                record.created_at.isoformat()
+                if record.created_at
+                else datetime.now(tz=UTC).isoformat(),
+            ),
+        )
+        conn.commit()
+        record.id = cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_portfolio_report(
+        self, user_id: str, symbol: str,
+    ) -> Optional[PortfolioReportRecord]:
+        conn = self._get_conn()
+        row = conn.execute(
+            """
+            SELECT * FROM portfolio_reports
+            WHERE user_id = ? AND symbol = ?
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (user_id, symbol.upper()),
+        ).fetchone()
+        if row is None:
+            return None
+        return PortfolioReportRecord(
+            id=row["id"],
+            user_id=row["user_id"],
+            symbol=row["symbol"],
+            shares=row["shares"],
+            avg_cost=row["avg_cost"],
+            analysis=row["analysis"],
+            base_report_id=row["base_report_id"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )

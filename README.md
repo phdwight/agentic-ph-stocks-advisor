@@ -24,6 +24,7 @@ START → Validate ──────►├── Movement Agent ─────
 | **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
 | **Controversy Agent** | Price spike detection, risk factors; LLM-driven web search for news & controversies via tool calling |
 | **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict (via structured output; regex fallback) |
+| **Portfolio Agent** | Personalised hold / accumulate / trim advisory for elevated users based on their stock holdings (on-demand, not part of the main graph) |
 
 ### Data Sources
 
@@ -193,6 +194,28 @@ Every user is assigned a **user type** that controls access privileges:
 
 All new users start as **Normal**. An administrator can promote a user to **Elevated** via the SQLAdmin panel (Admin → Users → edit `user_type`). The user type is stored in the `users` table and read from the database on each login — it cannot be changed by the user themselves. Login upserts intentionally do **not** overwrite the `user_type` column.
 
+### Portfolio Holdings (Elevated Users Only)
+
+Elevated users can record their stock positions and receive **personalised portfolio advice**.
+
+1. **My Position** button appears on any report page for elevated users
+2. A modal asks for **number of shares** and **average cost per share**
+3. Holdings are saved per user per symbol and persist across sessions
+4. Clicking **Save & Analyse** triggers a dedicated **Portfolio Agent** that considers:
+   - The user's cost basis and unrealised P/L
+   - The latest stock analysis report
+   - Current market price
+5. The agent produces a **Hold / Accumulate / Trim** recommendation with key price levels and risk considerations
+6. The portfolio advisory is **private** — only visible to the elevated user who created it
+
+| API Endpoint | Method | Description |
+|-------------|--------|-------------|
+| `/api/holdings/<symbol>` | `GET` | Retrieve user's holding for a symbol |
+| `/api/holdings/<symbol>` | `POST` | Save/update shares & average cost |
+| `/api/holdings/<symbol>` | `DELETE` | Remove a holding |
+| `/api/portfolio-analyse/<symbol>` | `POST` | Trigger portfolio analysis (async Celery task) |
+| `/api/portfolio-report/<symbol>` | `GET` | Retrieve latest portfolio advisory |
+
 ### Authentication (Microsoft Entra ID + Google OAuth2)
 
 The web UI supports **Microsoft Entra ID** and **Google** login with **passkey (FIDO2)** support. When at least one provider is configured, users must sign in before accessing any page. Both providers can be enabled simultaneously.
@@ -341,6 +364,7 @@ ph_stocks_advisor/
 │   └── static/                #   Static assets
 │       ├── style.css          #     Main stylesheet (dark glassmorphism theme)
 │       ├── app.js             #     Client-side SSE streaming (polling fallback)
+│       ├── portfolio.js       #     Holdings modal & portfolio analysis (elevated users)
 │       └── report-viz.js      #     Report data visualization enhancements
 ├── export/                    # Pluggable output formatters (Open/Closed)
 │   ├── __init__.py            #   FORMATTER_REGISTRY & get_formatter()
@@ -351,6 +375,7 @@ ph_stocks_advisor/
 │   ├── __init__.py
 │   ├── specialists.py         # 5 specialist agent classes (3 with LLM tool calling for web search)
 │   ├── consolidator.py        # Consolidator agent
+│   ├── portfolio.py           # Portfolio agent (personalised hold/accumulate/trim)
 │   ├── prompts.py             # Prompt templates per agent
 │   └── web_search_tools.py    # LangChain @tool wrappers for Tavily web search
 ├── data/
@@ -394,6 +419,7 @@ tests/
 ├── test_dedup.py               # Concurrent analysis deduplication tests
 ├── test_healthz.py             # Heartbeat endpoint tests
 ├── test_rate_limit.py          # Per-user daily rate limiting tests
+├── test_portfolio.py           # Portfolio holdings & advisory feature tests
 ├── test_repository.py
 ├── test_sse.py                # SSE progress streaming tests
 └── test_user_type.py          # User type system (elevated bypass) tests

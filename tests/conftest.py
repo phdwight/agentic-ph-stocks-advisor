@@ -4,11 +4,34 @@ Shared test fixtures and helpers.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage
+
+
+# ---------------------------------------------------------------------------
+# Disable LangSmith tracing for the entire test session so mocked
+# LangGraph runs don't show up as real traces in the dashboard.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True, scope="session")
+def _disable_langsmith_tracing():
+    """Turn off LangSmith / LangChain tracing during tests."""
+    env_overrides = {
+        "LANGCHAIN_TRACING_V2": "false",
+        "LANGSMITH_TRACING": "false",
+    }
+    old_values = {k: os.environ.get(k) for k in env_overrides}
+    os.environ.update(env_overrides)
+    yield
+    for k, v in old_values.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
 
 from ph_stocks_advisor.data.models import (
     AdvisorState,

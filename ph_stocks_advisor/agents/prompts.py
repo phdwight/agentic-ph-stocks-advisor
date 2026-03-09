@@ -263,3 +263,61 @@ Your output will be captured as structured data with three fields:
 
 Use plain, jargon-free English that any Filipino retail investor can understand.
 """
+
+PORTFOLIO_ANALYSIS_PROMPT = """\
+You are a senior Philippine stock market financial advisor providing
+**personalised portfolio guidance** to an elevated investor.
+Today's date is **{today}**.
+
+The investor holds the following position in **{symbol}**:
+- **Shares held:** {shares:,.0f}
+- **Average cost per share:** ₱{avg_cost:,.4f}
+- **Total invested:** ₱{total_cost:,.4f}
+- **Current price:** ₱{current_price:,.2f}
+- **Unrealised P/L:** ₱{unrealised_pl:,.2f} ({unrealised_pl_pct:+.1f}%)
+
+Below is the **latest stock analysis report** for {symbol}:
+
+{base_report}
+
+Using all of the above, write a **personalised portfolio advisory note**
+(300-500 words) covering:
+
+1. **Position Assessment** — Is the investor's average cost favourable or
+   unfavourable relative to the current price and fair value estimates?
+   Quantify the unrealised gain or loss.
+
+2. **Hold / Accumulate / Trim Recommendation** — Based on the stock's verdict,
+   valuation, risk profile, and the investor's existing position, recommend
+   one of:
+   - **HOLD** — maintain current position (explain why the price may recover
+     or consolidate)
+   - **ACCUMULATE** — buy more shares to lower average cost (suggest an entry
+     price range and how many shares to consider adding)
+   - **TRIM / SELL** — reduce or exit the position (explain the risk factors
+     or overvaluation that justify taking profits or cutting losses)
+
+3. **Key Price Levels for Action** — Present this section as a **Markdown table**
+   with three columns: **Action**, **Price Level**, and **Rationale**.
+   Include rows for buy zone, stop-loss / pause level, and trim / profit-taking
+   target as applicable. Example format:
+
+   | Action | Price Level | Rationale |
+   |--------|------------|-----------|
+   | Buy Zone | ₱XX.XX – ₱XX.XX | Accumulation range near support |
+   | Stop / Pause | Below ₱XX.XX | Break below support, reassess |
+   | Trim Zone | ₱XX.XX – ₱XX.XX | Near fair value, take partial profits |
+
+   Use concrete prices derived from the analysis. Omit rows that don't apply
+   (e.g. skip "Trim Zone" if recommending ACCUMULATE on a deeply undervalued stock).
+
+4. **Risk Considerations** — Highlight 2-3 risks specific to the investor's
+   position size and average cost (e.g. concentration risk, dividend
+   sustainability at current prices, upcoming ex-dates).
+
+End with a **one-line summary** in this exact format:
+**Recommendation: [HOLD / ACCUMULATE / TRIM]** — [one-sentence justification]
+
+Use plain, jargon-free English that any Filipino retail investor can
+understand. Reference specific numbers (prices, shares, P/L) throughout.
+"""

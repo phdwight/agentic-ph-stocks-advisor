@@ -117,3 +117,83 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
     finally:
         # Always clear the inflight dedup lock so a new analysis can run
         _clear_inflight_lock(symbol, task_id=task_id)
+
+
+@celery_app.task(bind=True, name="portfolio_analyse_stock")
+def portfolio_analyse_stock(
+    self,
+    symbol: str,
+    *,
+    user_id: str,
+    shares: float,
+    avg_cost: float,
+    base_report_id: int,
+) -> dict:
+    """Run a portfolio-aware analysis for an elevated user's holding.
+
+    Reads the existing stock report, invokes the PortfolioAgent with
+    the user's position data, and saves the resulting personalised
+    advisory note.
+    """
+    from ph_stocks_advisor.agents.portfolio import PortfolioAgent
+    from ph_stocks_advisor.infra.config import get_llm, get_repository
+    from ph_stocks_advisor.infra.repository import PortfolioReportRecord
+
+    task_id = self.request.id
+    logger.info(
+        "Portfolio analysis for %s (user=%s, task=%s)", symbol, user_id, task_id
+    )
+
+    try:
+        repo = get_repository()
+        record = repo.get_by_id(base_report_id)
+        if record is None:
+            return {"symbol": symbol, "error": "Base report not found."}
+
+        # Fetch current price for P/L calculation.
+        current_price = 0.0
+        try:
+            from ph_stocks_advisor.data.services.price import fetch_stock_price
+            price_data = fetch_stock_price(symbol)
+            if price_data and price_data.current_price > 0:
+                current_price = price_data.current_price
+        except Exception:
+            logger.debug("Could not fetch live price for %s", symbol)
+
+        if current_price <= 0:
+            # Fallback: try to parse from the report
+            current_price = avg_cost  # conservative fallback
+
+        llm = get_llm()
+        agent = PortfolioAgent(llm)
+        analysis = agent.run(
+            symbol=symbol,
+            shares=shares,
+            avg_cost=avg_cost,
+            current_price=current_price,
+            base_report=record.summary or "",
+        )
+
+        # Persist the portfolio report.
+        pr = PortfolioReportRecord(
+            id=None,
+            user_id=user_id,
+            symbol=symbol,
+            shares=shares,
+            avg_cost=avg_cost,
+            analysis=analysis,
+            base_report_id=base_report_id,
+        )
+        report_id = repo.save_portfolio_report(pr)
+        logger.info(
+            "Portfolio analysis for %s complete — report_id=%d",
+            symbol, report_id,
+        )
+        return {
+            "symbol": symbol,
+            "report_id": report_id,
+            "status": "done",
+        }
+    except Exception as exc:
+        logger.error("Portfolio analysis failed for %s: %s", symbol, exc)
+        return {"symbol": symbol, "error": str(exc)}

@@ -33,6 +33,12 @@
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       History
     </a>
+    {% if is_elevated %}
+    <button type="button" id="portfolio-btn" class="btn btn-portfolio btn-sm">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 9h20"/><path d="M10 3v6"/></svg>
+      My Position
+    </button>
+    {% endif %}
   </div>
 </div>
 
@@ -64,8 +70,82 @@
     {% endif %}
   {% endfor %}
 </div>
+
+{% if is_elevated %}
+<!-- Portfolio Advisory Section (visible only to the elevated user) -->
+<div id="portfolio-section" class="portfolio-section" {% if not portfolio_report %}style="display:none;"{% endif %}>
+  <section class="report-section portfolio-report-section">
+    <h2>
+      <span class="section-icon section-icon-portfolio">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b7ec8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 9h20"/><path d="M10 3v6"/></svg>
+      </span>
+      Personalised Portfolio Advisory
+      <span class="elevated-only-badge">Elevated Only</span>
+    </h2>
+    <div class="section-body" id="portfolio-analysis-body">
+      {% if portfolio_report %}
+        {{ portfolio_report.analysis | md_to_html }}
+        <p class="portfolio-meta">
+          Position: {{ "%.0f"|format(portfolio_report.shares) }} shares @ ₱{{ "%.4f"|format(portfolio_report.avg_cost) }}
+          · Generated: {{ portfolio_report.created_at.strftime('%b %d, %Y %H:%M') if portfolio_report.created_at else 'N/A' }}
+          {% if portfolio_on_cooldown %}
+          · <span class="cooldown-hint">Re-analysis available after 8:00 AM PHT tomorrow</span>
+          {% endif %}
+        </p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<!-- Holdings Modal -->
+<div id="holdings-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 9h20"/><path d="M10 3v6"/></svg>
+        My {{ record.symbol }} Position
+      </h3>
+      <button type="button" id="modal-close" class="modal-close">&times;</button>
+    </div>
+    <form id="holdings-form" class="modal-body">
+      <div class="modal-field">
+        <label for="holding-shares">Total Shares Held</label>
+        <input type="number" id="holding-shares" name="shares" min="1" step="1"
+               placeholder="e.g. 1000"
+               value="{{ '%.0f'|format(user_holding.shares) if user_holding else '' }}" required>
+      </div>
+      <div class="modal-field">
+        <label for="holding-avg-cost">Average Cost per Share (₱)</label>
+        <input type="number" id="holding-avg-cost" name="avg_cost" min="0.0001" step="any"
+               placeholder="e.g. 25.50"
+               value="{{ '%.4f'|format(user_holding.avg_cost) if user_holding else '' }}" required>
+      </div>
+      <div id="modal-error" class="modal-error" style="display:none;"></div>
+      <div class="modal-actions">
+        {% if user_holding %}
+        <button type="button" id="holding-delete-btn" class="btn btn-danger btn-sm">Remove</button>
+        {% endif %}
+        <button type="submit" id="holding-save-btn" class="btn btn-secondary btn-sm" data-action="save">Save</button>
+        <button type="submit" id="holding-analyse-btn" class="btn btn-primary btn-sm" data-action="analyse"
+          {% if portfolio_on_cooldown %}disabled title="Re-analysis available after 8:00 AM PHT tomorrow"{% endif %}
+        >{% if portfolio_on_cooldown %}Cooldown{% else %}Save &amp; Analyse{% endif %}</button>
+      </div>
+    </form>
+    <div id="modal-progress" class="modal-progress" style="display:none;">
+      <div class="spinner"></div>
+      <p>Running personalised analysis…</p>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='report-viz.js') }}"></script>
+{% if is_elevated %}
+<script>
+  window.__portfolioCooldown = {{ portfolio_on_cooldown | tojson }};
+</script>
+<script src="{{ url_for('static', filename='portfolio.js') }}"></script>
+{% endif %}
 {% endblock %}

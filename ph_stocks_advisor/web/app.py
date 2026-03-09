@@ -414,6 +414,28 @@ def create_app() -> Flask:
         except Exception:
             logger.debug("Could not fetch live price for %s", symbol)
 
+        # For elevated users: load their holding + portfolio report.
+        from ph_stocks_advisor.infra.repository import UserType
+
+        user = get_current_user()
+        is_elevated = (user or {}).get("user_type", 0) == UserType.ELEVATED
+        user_holding = None
+        portfolio_report = None
+        portfolio_on_cooldown = False
+        if is_elevated and user and user.get("email"):
+            try:
+                user_holding = repo.get_holding(user["email"], symbol)
+                portfolio_report = repo.get_portfolio_report(user["email"], symbol)
+                # Check if portfolio analysis is on cooldown (already run today).
+                if portfolio_report and portfolio_report.created_at:
+                    now_utc = datetime.now(tz=UTC)
+                    today_midnight_utc = now_utc.replace(
+                        hour=0, minute=0, second=0, microsecond=0,
+                    )
+                    portfolio_on_cooldown = portfolio_report.created_at >= today_midnight_utc
+            except Exception:
+                logger.debug("Could not load holding/portfolio for %s", symbol)
+
         return render_template(
             "report.html",
             record=record,
@@ -424,6 +446,10 @@ def create_app() -> Flask:
             current_price=current_price,
             data_sources=DATA_SOURCES,
             disclaimer=DISCLAIMER,
+            is_elevated=is_elevated,
+            user_holding=user_holding,
+            portfolio_report=portfolio_report,
+            portfolio_on_cooldown=portfolio_on_cooldown,
         )
 
     @app.route("/history/<symbol>")
@@ -470,6 +496,163 @@ def create_app() -> Flask:
             data_sources=DATA_SOURCES,
             disclaimer=DISCLAIMER,
         )
+
+    # ------------------------------------------------------------------
+    # Holdings (elevated users only)
+    # ------------------------------------------------------------------
+
+    @app.route("/api/holdings/<symbol>", methods=["GET"])
+    @login_required
+    def get_holding(symbol: str):
+        """Return the current user's holding for a symbol."""
+        from ph_stocks_advisor.infra.repository import UserType
+
+        user = get_current_user()
+        if not user or user.get("user_type", 0) != UserType.ELEVATED:
+            return jsonify({"error": "Elevated access required"}), 403
+
+        symbol = symbol.upper().replace(".PS", "")
+        repo = get_repository()
+        holding = repo.get_holding(user["email"], symbol)
+        if holding is None:
+            return jsonify({"holding": None})
+        return jsonify({
+            "holding": {
+                "symbol": holding.symbol,
+                "shares": holding.shares,
+                "avg_cost": holding.avg_cost,
+            }
+        })
+
+    @app.route("/api/holdings/<symbol>", methods=["POST"])
+    @login_required
+    def save_holding(symbol: str):
+        """Save / update the current user's holding for a symbol."""
+        from ph_stocks_advisor.infra.repository import HoldingRecord, UserType
+
+        user = get_current_user()
+        if not user or user.get("user_type", 0) != UserType.ELEVATED:
+            return jsonify({"error": "Elevated access required"}), 403
+
+        symbol = symbol.upper().replace(".PS", "")
+        data = request.get_json(silent=True) or {}
+        try:
+            shares = float(data.get("shares", 0))
+            avg_cost = float(data.get("avg_cost", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid shares or avg_cost"}), 400
+
+        if shares <= 0 or avg_cost <= 0:
+            return jsonify({"error": "Shares and avg_cost must be positive"}), 400
+
+        repo = get_repository()
+        holding = HoldingRecord(
+            user_id=user["email"],
+            symbol=symbol,
+            shares=shares,
+            avg_cost=avg_cost,
+        )
+        repo.save_holding(holding)
+        return jsonify({"status": "saved", "symbol": symbol})
+
+    @app.route("/api/holdings/<symbol>", methods=["DELETE"])
+    @login_required
+    def delete_holding(symbol: str):
+        """Remove the current user's holding for a symbol."""
+        from ph_stocks_advisor.infra.repository import UserType
+
+        user = get_current_user()
+        if not user or user.get("user_type", 0) != UserType.ELEVATED:
+            return jsonify({"error": "Elevated access required"}), 403
+
+        symbol = symbol.upper().replace(".PS", "")
+        repo = get_repository()
+        repo.delete_holding(user["email"], symbol)
+        return jsonify({"status": "deleted", "symbol": symbol})
+
+    # ------------------------------------------------------------------
+    # Portfolio analysis (elevated users only)
+    # ------------------------------------------------------------------
+
+    @app.route("/api/portfolio-analyse/<symbol>", methods=["POST"])
+    @login_required
+    def portfolio_analyse(symbol: str):
+        """Trigger a portfolio-aware analysis for the current user's holding."""
+        from ph_stocks_advisor.web.tasks import portfolio_analyse_stock
+        from ph_stocks_advisor.infra.repository import UserType
+
+        user = get_current_user()
+        if not user or user.get("user_type", 0) != UserType.ELEVATED:
+            return jsonify({"error": "Elevated access required"}), 403
+
+        symbol = symbol.upper().replace(".PS", "")
+        repo = get_repository()
+
+        # Require that the user has a holding saved for this symbol.
+        holding = repo.get_holding(user["email"], symbol)
+        if holding is None:
+            return jsonify({"error": "No holding found for this symbol. Save your position first."}), 400
+
+        # Require a base report to exist.
+        record = repo.get_latest_by_symbol(symbol)
+        if record is None:
+            return jsonify({"error": "No analysis report found. Analyse the stock first."}), 400
+
+        # Daily cooldown: one portfolio analysis per stock per day.
+        # Resets at 8:00 AM GMT+8 (= 00:00 UTC).
+        existing_pr = repo.get_portfolio_report(user["email"], symbol)
+        if existing_pr and existing_pr.created_at:
+            now_utc = datetime.now(tz=UTC)
+            today_midnight_utc = now_utc.replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            )
+            if existing_pr.created_at >= today_midnight_utc:
+                next_reset = today_midnight_utc + timedelta(days=1)
+                return jsonify({
+                    "error": (
+                        f"Portfolio analysis for {symbol} was already run today. "
+                        "You can re-analyse after 8:00 AM PHT tomorrow."
+                    ),
+                    "reset_at": next_reset.isoformat(),
+                    "symbol": symbol,
+                }), 429
+
+        # Dispatch to Celery.
+        task = portfolio_analyse_stock.delay(
+            symbol,
+            user_id=user["email"],
+            shares=holding.shares,
+            avg_cost=holding.avg_cost,
+            base_report_id=record.id,
+        )
+        return jsonify({"status": "started", "task_id": task.id, "symbol": symbol})
+
+    @app.route("/api/portfolio-report/<symbol>")
+    @login_required
+    def get_portfolio_report(symbol: str):
+        """Return the latest portfolio report for the current user + symbol."""
+        from ph_stocks_advisor.infra.repository import UserType
+
+        user = get_current_user()
+        if not user or user.get("user_type", 0) != UserType.ELEVATED:
+            return jsonify({"error": "Elevated access required"}), 403
+
+        symbol = symbol.upper().replace(".PS", "")
+        repo = get_repository()
+        pr = repo.get_portfolio_report(user["email"], symbol)
+        if pr is None:
+            return jsonify({"report": None})
+        return jsonify({
+            "report": {
+                "id": pr.id,
+                "symbol": pr.symbol,
+                "shares": pr.shares,
+                "avg_cost": pr.avg_cost,
+                "analysis": pr.analysis,
+                "analysis_html": _body_to_html(pr.analysis) if pr.analysis else "",
+                "created_at": pr.created_at.isoformat() if pr.created_at else None,
+            }
+        })
 
     return app
 
