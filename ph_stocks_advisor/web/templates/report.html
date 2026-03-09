@@ -4,30 +4,34 @@
 
 {% block content %}
 <div class="report-header">
-  <h1>{{ record.symbol }} Stock Analysis</h1>
-  <div class="verdict-row">
-    <span class="verdict-label">Verdict</span>
-    <span class="badge {% if is_buy %}buy{% else %}not-buy{% endif %}">
-      {{ record.verdict }}
-    </span>
+  <div class="report-header-top">
+    <div class="report-header-title">
+      <h1>{{ record.symbol }} Stock Analysis</h1>
+      <p class="report-meta">
+        Generated: {{ timestamp }}
+        {% if is_cached %}
+          <span class="cached-badge">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Cached report
+          </span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="report-header-price">
+      {% if current_price %}
+        <span class="current-price-value">₱{{ "%.2f"|format(current_price) }}</span>
+      {% endif %}
+      <span class="badge {% if is_buy %}buy{% else %}not-buy{% endif %}">{{ record.verdict }}</span>
+    </div>
   </div>
-  <p class="report-meta">
-    Generated: {{ timestamp }}
-    {% if is_cached %}
-      <span class="cached-badge">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        Cached report
-      </span>
-    {% endif %}
-  </p>
   <div class="report-actions">
-    <a href="/" class="btn btn-secondary">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+    <a href="/" class="btn btn-secondary btn-sm">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
       New Analysis
     </a>
-    <a href="/history/{{ record.symbol }}" class="btn btn-secondary">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Report History
+    <a href="/history/{{ record.symbol }}" class="btn btn-secondary btn-sm">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
     </a>
   </div>
 </div>

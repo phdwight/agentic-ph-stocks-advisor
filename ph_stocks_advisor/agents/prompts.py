@@ -232,6 +232,24 @@ are growing over time.
 
 Your report MUST include:
 1. A one-paragraph executive summary (this is the ONLY section written as prose).
+   End the executive summary with a compact Markdown table of key price
+   metrics. The table MUST use this exact format (no extra rows or columns):
+
+   | Metric | Value |
+   |--------|-------|
+   | Current Price | ₱XX.XX |
+   | Fair Value | ₱XX.XX |
+   | Entry Range | ₱XX.XX – ₱XX.XX |
+   | Support Level | ₱XX.XX |
+
+   Derive the **Entry Range** from the current price, 52-week range,
+   valuation analysis (fair value / intrinsic value), and recent support
+   levels.
+   - If the stock is a BUY, suggest a reasonable accumulation zone
+     slightly below or near the current price.
+   - If the stock is NOT BUY, suggest what price level would make it
+     more attractive.
+   Do NOT create a separate section for entry price — it lives in this table.
 2. Brief **bullet-pointed** sections for each of the five analysis areas.
    Each section should have 3-6 bullet points starting with "- ".
    Do NOT write paragraphs for these — keep each bullet to one or two sentences.
@@ -241,7 +259,7 @@ Your report MUST include:
 Your output will be captured as structured data with three fields:
 - ``verdict``: exactly "BUY" or "NOT BUY"
 - ``justification``: one sentence explaining why
-- ``summary``: the full report text (sections 1-4 above)
+- ``summary``: the full report text (sections 1-3 above)
 
 Use plain, jargon-free English that any Filipino retail investor can understand.
 """

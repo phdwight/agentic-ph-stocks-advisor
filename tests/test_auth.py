@@ -165,6 +165,62 @@ class TestAnonymousAccess:
         assert resp.status_code == 200
 
 
+class TestReportPageCurrentPrice:
+    """Report page should display the live current price beside the stock name."""
+
+    @patch("ph_stocks_advisor.data.services.price.fetch_stock_price")
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_report_page_shows_current_price(self, mock_repo, mock_price, anon_client):
+        from ph_stocks_advisor.infra.repository import ReportRecord
+        from ph_stocks_advisor.data.models import StockPrice
+        from datetime import datetime, UTC
+
+        record = ReportRecord(
+            id=1, symbol="TEL", verdict="BUY",
+            summary="**Executive Summary:**\nTEL looks great.",
+            price_section="Good", dividend_section="Good",
+            movement_section="Up", valuation_section="Fair",
+            controversy_section="None",
+            created_at=datetime.now(tz=UTC),
+        )
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = record
+        mock_repo.return_value = repo_instance
+
+        mock_price.return_value = StockPrice(
+            symbol="TEL", current_price=1250.00, currency="PHP",
+        )
+
+        resp = anon_client.get("/report/TEL")
+        assert resp.status_code == 200
+        assert b"1250.00" in resp.data
+        assert b"current-price-value" in resp.data
+
+    @patch("ph_stocks_advisor.data.services.price.fetch_stock_price")
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_report_page_works_without_price(self, mock_repo, mock_price, anon_client):
+        from ph_stocks_advisor.infra.repository import ReportRecord
+        from datetime import datetime, UTC
+
+        record = ReportRecord(
+            id=1, symbol="TEL", verdict="BUY",
+            summary="**Executive Summary:**\nTEL looks great.",
+            price_section="Good", dividend_section="Good",
+            movement_section="Up", valuation_section="Fair",
+            controversy_section="None",
+            created_at=datetime.now(tz=UTC),
+        )
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = record
+        mock_repo.return_value = repo_instance
+
+        mock_price.side_effect = Exception("API unavailable")
+
+        resp = anon_client.get("/report/TEL")
+        assert resp.status_code == 200
+        assert b"current-price-value" not in resp.data
+
+
 # ---------------------------------------------------------------------------
 # Tests — login page
 # ---------------------------------------------------------------------------

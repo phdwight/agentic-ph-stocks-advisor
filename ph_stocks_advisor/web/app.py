@@ -56,7 +56,11 @@ def create_app() -> Flask:
         static_folder="static",
     )
     app.config["SECRET_KEY"] = settings.flask_secret_key
-    app.config["SESSION_COOKIE_SECURE"] = True
+    # Only mark the session cookie as Secure when running behind HTTPS
+    # (i.e. when an identity provider is configured).  Local dev runs on
+    # plain HTTP so a Secure cookie would be silently dropped by the
+    # browser, preventing session persistence (e.g. elevated-mode toggle).
+    app.config["SESSION_COOKIE_SECURE"] = settings.auth_enabled
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     # Cache static assets in browsers for 1 hour; reduces load at scale.
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
@@ -400,6 +404,16 @@ def create_app() -> Flask:
             age = datetime.now(tz=UTC) - record.created_at
             is_cached = age <= timedelta(days=REPORT_MAX_AGE_DAYS)
 
+        # Fetch live current price for the header display.
+        current_price: float | None = None
+        try:
+            from ph_stocks_advisor.data.services.price import fetch_stock_price
+            price_data = fetch_stock_price(symbol)
+            if price_data and price_data.current_price > 0:
+                current_price = price_data.current_price
+        except Exception:
+            logger.debug("Could not fetch live price for %s", symbol)
+
         return render_template(
             "report.html",
             record=record,
@@ -407,6 +421,7 @@ def create_app() -> Flask:
             is_buy=is_buy,
             is_cached=is_cached,
             timestamp=ts,
+            current_price=current_price,
             data_sources=DATA_SOURCES,
             disclaimer=DISCLAIMER,
         )

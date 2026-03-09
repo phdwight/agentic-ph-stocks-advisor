@@ -75,15 +75,66 @@ def _md_bold_to_html(text: str) -> str:
     return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
 
 
+def _is_table_line(line: str) -> bool:
+    """Return *True* if *line* looks like part of a Markdown table."""
+    return line.startswith("|") and line.endswith("|")
+
+
+def _is_separator_line(line: str) -> bool:
+    """Return *True* for table separator rows like ``|---|---|``."""
+    return bool(re.match(r"^\|[\s:|-]+\|$", line))
+
+
+def _render_table(rows: list[str]) -> str:
+    """Convert collected Markdown table lines into an HTML ``<table>``."""
+    html_parts: list[str] = ['<table class="metrics-table">']
+    header_done = False
+    for row in rows:
+        if _is_separator_line(row):
+            continue
+        cells = [c.strip() for c in row.strip("|").split("|")]
+        if not header_done:
+            html_parts.append("<thead><tr>")
+            html_parts.extend(f"<th>{_md_bold_to_html(_esc(c))}</th>" for c in cells)
+            html_parts.append("</tr></thead><tbody>")
+            header_done = True
+        else:
+            html_parts.append("<tr>")
+            html_parts.extend(f"<td>{_md_bold_to_html(_esc(c))}</td>" for c in cells)
+            html_parts.append("</tr>")
+    if header_done:
+        html_parts.append("</tbody>")
+    html_parts.append("</table>")
+    return "\n".join(html_parts)
+
+
 def _body_to_html(body: str) -> str:
     """Convert a plain-text / light-markdown section body to HTML tags."""
     parts: list[str] = []
     in_list = False
+    table_buf: list[str] = []
+
+    def _flush_table() -> None:
+        if table_buf:
+            parts.append(_render_table(table_buf))
+            table_buf.clear()
 
     for raw_line in body.strip().splitlines():
         line = raw_line.strip()
         # Strip trailing dashes the LLM sometimes appends
         line = re.sub(r"-{2,}\s*$", "", line)
+
+        # ---- Markdown table rows ----
+        if _is_table_line(line):
+            if in_list:
+                parts.append("</ul>")
+                in_list = False
+            table_buf.append(line)
+            continue
+
+        # If we were collecting table rows and hit a non-table line, flush.
+        _flush_table()
+
         if not line:
             if in_list:
                 parts.append("</ul>")
@@ -103,6 +154,7 @@ def _body_to_html(body: str) -> str:
                 in_list = False
             parts.append(f"<p>{_md_bold_to_html(_esc(line))}</p>")
 
+    _flush_table()
     if in_list:
         parts.append("</ul>")
     return "\n".join(parts)

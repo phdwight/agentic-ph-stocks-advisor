@@ -315,6 +315,58 @@ class TestBodyToHtml:
         for content in expected_li_contents:
             assert f"<li>{content}" in out
 
+    # --- Markdown table rendering ---
+
+    def test_markdown_table_renders_html_table(self):
+        """A simple two-row Markdown table becomes an HTML <table>."""
+        md = (
+            "| Metric | Value |\n"
+            "|--------|-------|\n"
+            "| Current Price | ₱38.00 |\n"
+            "| Fair Value | ₱42.00 |"
+        )
+        out = _body_to_html(md)
+        assert '<table class="metrics-table">' in out
+        assert "<thead>" in out
+        assert "<th>" in out
+        assert "<td>" in out
+        assert "₱38.00" in out
+        assert "₱42.00" in out
+
+    def test_table_separator_row_excluded(self):
+        """The |---|---| separator row must NOT produce a data row."""
+        md = (
+            "| Metric | Value |\n"
+            "|--------|-------|\n"
+            "| Entry Range | ₱18.50 – ₱20.00 |"
+        )
+        out = _body_to_html(md)
+        # Only one <tr> in tbody (no separator row)
+        assert out.count("<tr>") == 2  # 1 header + 1 data
+
+    def test_table_mixed_with_paragraph(self):
+        """Paragraph text before and after a table should render correctly."""
+        md = (
+            "Summary paragraph.\n\n"
+            "| Metric | Value |\n"
+            "|--------|-------|\n"
+            "| Price | ₱10.00 |\n\n"
+            "Closing remark."
+        )
+        out = _body_to_html(md)
+        assert out.index("<p>Summary") < out.index("<table")
+        assert out.index("</table>") < out.index("Closing")
+
+    def test_table_bold_cells(self):
+        """Bold markers inside table cells are converted to <strong>."""
+        md = (
+            "| Metric | Value |\n"
+            "|--------|-------|\n"
+            "| **Entry Range** | ₱18.50 |"
+        )
+        out = _body_to_html(md)
+        assert "<strong>Entry Range</strong>" in out
+
 
 class TestHtmlRender:
     def test_returns_bytes(self):

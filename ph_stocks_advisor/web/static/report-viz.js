@@ -166,6 +166,10 @@ function enhancePercentages(section) {
     if (el.querySelector(".pct-badge")) return;
 
     const html = el.innerHTML;
+    // Use plain textContent for context detection — innerHTML may contain
+    // <strong> / <em> tags that inflate character positions and cause the
+    // surrounding-text window to miss nearby directional words.
+    const plainText = el.textContent.toLowerCase();
 
     // Match patterns like "+15.2%", "-7.8%", "15.2%" with context
     const enhanced = html.replace(
@@ -174,19 +178,41 @@ function enhancePercentages(section) {
         const value = parseFloat(num);
         if (isNaN(value)) return match;
 
-        const isPositive = value > 0;
-        const isNegative = value < 0;
-        const color = isPositive
+        // Find this percentage in the plain text and grab context around it.
+        const pctLiteral = match.toLowerCase();
+        const plainIdx = plainText.indexOf(pctLiteral);
+        const ctxStart = Math.max(0, (plainIdx >= 0 ? plainIdx : 0) - 80);
+        const ctxEnd = Math.min(plainText.length, (plainIdx >= 0 ? plainIdx : 0) + match.length + 80);
+        const surroundingText = plainText.substring(ctxStart, ctxEnd);
+
+        // Words like "below", "down", "decline", "drop", "loss", "fell",
+        // "decrease" near a positive number mean the sentiment is actually
+        // negative (e.g. "16% below its 52-week high").
+        // Conversely, "above", "up", "gain", "rise", "grew", "increase"
+        // near a negative number would flip to positive sentiment.
+        const negativeContext = /\b(below|down|decline|drop|loss|fell|decrease|lost|lower)\b/;
+        const positiveContext = /\b(above|up|gain|rise|grew|increase|higher|over)\b/;
+
+        let sentiment;  // true = positive, false = negative, null = neutral
+        if (value > 0) {
+          sentiment = negativeContext.test(surroundingText) ? false : true;
+        } else if (value < 0) {
+          sentiment = positiveContext.test(surroundingText) ? true : false;
+        } else {
+          sentiment = null;
+        }
+
+        const color = sentiment === true
           ? "#5a9e82"
-          : isNegative
+          : sentiment === false
           ? "#c47068"
           : "#a09e9a";
-        const bgColor = isPositive
+        const bgColor = sentiment === true
           ? "rgba(90,158,130,0.12)"
-          : isNegative
+          : sentiment === false
           ? "rgba(196,112,104,0.12)"
           : "rgba(160,158,154,0.1)";
-        const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
+        const arrow = sentiment === true ? "↑" : sentiment === false ? "↓" : "";
 
         return `<span class="pct-badge" style="
           display:inline-flex;align-items:center;gap:0.2rem;
