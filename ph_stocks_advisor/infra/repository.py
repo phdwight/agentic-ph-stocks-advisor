@@ -134,6 +134,7 @@ class ReportRecord:
         movement_section: str,
         valuation_section: str,
         controversy_section: str,
+        sentiment_section: str = "",
         created_at: datetime | None = None,
     ) -> None:
         self.id = id
@@ -145,6 +146,7 @@ class ReportRecord:
         self.movement_section = movement_section
         self.valuation_section = valuation_section
         self.controversy_section = controversy_section
+        self.sentiment_section = sentiment_section
         self.created_at = created_at or datetime.now(tz=UTC)
 
     @classmethod
@@ -159,6 +161,7 @@ class ReportRecord:
             movement_section=report.movement_section,
             valuation_section=report.valuation_section,
             controversy_section=report.controversy_section,
+            sentiment_section=report.sentiment_section,
         )
 
     def __repr__(self) -> str:

@@ -1012,7 +1012,13 @@ a:hover {
 /* ---------- Report Page ---------- */
 
 .report-header {
+  position: sticky;
+  top: 60px;
+  z-index: 90;
+  background: var(--bg);
   padding: 2rem 0 1rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
 }
 
 .report-header-top {

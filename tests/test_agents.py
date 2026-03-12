@@ -18,6 +18,7 @@ from tests.dummy_responses import (
     DIVIDEND_ANALYSIS_RESPONSE,
     MOVEMENT_ANALYSIS_RESPONSE,
     PRICE_ANALYSIS_RESPONSE,
+    SENTIMENT_ANALYSIS_RESPONSE,
     VALUATION_ANALYSIS_RESPONSE,
 )
 from ph_stocks_advisor.agents.specialists import (
@@ -25,6 +26,7 @@ from ph_stocks_advisor.agents.specialists import (
     DividendAgent,
     MovementAgent,
     PriceAgent,
+    SentimentAgent,
     ValuationAgent,
 )
 
@@ -67,8 +69,15 @@ from ph_stocks_advisor.agents.specialists import (
             CONTROVERSY_ANALYSIS_RESPONSE,
             lambda r: len(r.data.sudden_spikes) == 1 and "spike" in r.analysis,
         ),
+        (
+            SentimentAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_sentiment_info",
+            "sample_sentiment_info",
+            SENTIMENT_ANALYSIS_RESPONSE,
+            lambda r: r.data.symbol == "TEL" and "Neutral" in r.analysis,
+        ),
     ],
-    ids=["price", "dividend", "movement", "valuation", "controversy"],
+    ids=["price", "dividend", "movement", "valuation", "controversy", "sentiment"],
 )
 def test_agent_run_returns_analysis(
     agent_cls,

@@ -278,6 +278,7 @@ class TestPortfolioAgent:
             avg_cost=25.0,
             current_price=30.0,
             base_report="TEL is a solid investment with good dividends.",
+            sentiment_context="Global outlook is neutral with no major geopolitical risks.",
         )
         assert "HOLD" in result
         llm.invoke.assert_called_once()
@@ -296,6 +297,7 @@ class TestPortfolioAgent:
             avg_cost=0,
             current_price=30.0,
             base_report="Report text.",
+            sentiment_context="",
         )
         assert isinstance(result, str)
 

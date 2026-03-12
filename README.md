@@ -6,14 +6,15 @@ Built with **LangGraph** + **LangChain** using a multi-agent architecture. Requi
 
 ## Architecture
 
-A **validation node** checks the stock symbol, then five specialist agents run **in parallel**, each responsible for a single analysis dimension. A **consolidator agent** synthesises their outputs into a final investor-friendly report.
+A **validation node** checks the stock symbol, then six specialist agents run **in parallel**, each responsible for a single analysis dimension. A **consolidator agent** synthesises their outputs into a final investor-friendly report.
 
 ```
                         ┌── Price Agent ────────────┐
                         ├── Dividend Agent ─────────┤
-START → Validate ──────►├── Movement Agent ─────────┼──► Consolidator ──► END
-                        ├── Valuation Agent ────────┤
-                        └── Controversy Agent ──────┘
+                        ├── Movement Agent ─────────┤
+START → Validate ──────►├── Valuation Agent ────────┼──► Consolidator ──► END
+                        ├── Controversy Agent ──────┤
+                        └── Sentiment Agent ────────┘
 ```
 
 | Agent | Responsibility |
@@ -23,6 +24,7 @@ START → Validate ──────►├── Movement Agent ─────
 | **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance; LLM-driven web search via tool calling |
 | **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
 | **Controversy Agent** | Price spike detection, risk factors; LLM-driven web search for news & controversies via tool calling |
+| **Sentiment Agent** | Global events impact (wars, pandemics, economic shifts, climate); LLM-driven web search for geopolitical & macro risks via tool calling |
 | **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict (via structured output; regex fallback) |
 | **Portfolio Agent** | Personalised hold / accumulate / trim advisory for elevated users based on their stock holdings (on-demand, not part of the main graph) |
 
@@ -373,7 +375,7 @@ ph_stocks_advisor/
 │   └── html.py                #   HtmlFormatter (pure-Python, ph-advisor-html)
 ├── agents/
 │   ├── __init__.py
-│   ├── specialists.py         # 5 specialist agent classes (3 with LLM tool calling for web search)
+│   ├── specialists.py         # 6 specialist agent classes (4 with LLM tool calling for web search)
 │   ├── consolidator.py        # Consolidator agent
 │   ├── portfolio.py           # Portfolio agent (personalised hold/accumulate/trim)
 │   ├── prompts.py             # Prompt templates per agent
@@ -394,7 +396,8 @@ ph_stocks_advisor/
 │   │   ├── dividend.py        #   Dividend data & sustainability analysis
 │   │   ├── movement.py        #   1-year movement, candlestick, TV perf
 │   │   ├── valuation.py       #   Fair-value estimation (Graham Number)
-│   │   └── controversy.py     #   Price anomalies & risk news
+│   │   ├── controversy.py     #   Price anomalies & risk news
+│   │   └── sentiment.py       #   Global events & macro-risk sentiment
 │   └── analysis/              # Pure data analysis (no I/O)
 │       └── candlestick.py     #   Candlestick pattern detection
 ├── graph/

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS reports (
     movement_section    TEXT        NOT NULL DEFAULT '',
     valuation_section   TEXT        NOT NULL DEFAULT '',
     controversy_section TEXT        NOT NULL DEFAULT '',
+    sentiment_section   TEXT        NOT NULL DEFAULT '',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 """
@@ -105,6 +106,11 @@ _MIGRATIONS_SQL = [
     """
     CREATE INDEX IF NOT EXISTS idx_portfolio_reports_user_symbol
     ON portfolio_reports (user_id, symbol, created_at DESC);
+    """,
+    # Added in v4 — sentiment_section for global-events / macro-risk analysis
+    """
+    ALTER TABLE reports
+        ADD COLUMN IF NOT EXISTS sentiment_section TEXT NOT NULL DEFAULT '';
     """,
 ]
 
@@ -178,8 +184,9 @@ class PostgresReportRepository(AbstractReportRepository):
                     """
                     INSERT INTO reports
                         (symbol, verdict, summary, price_section, dividend_section,
-                         movement_section, valuation_section, controversy_section, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         movement_section, valuation_section, controversy_section,
+                         sentiment_section, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -191,6 +198,7 @@ class PostgresReportRepository(AbstractReportRepository):
                         record.movement_section,
                         record.valuation_section,
                         record.controversy_section,
+                        record.sentiment_section,
                         record.created_at or datetime.now(tz=UTC),
                     ),
                 )
@@ -362,6 +370,7 @@ class PostgresReportRepository(AbstractReportRepository):
             movement_section=row["movement_section"],
             valuation_section=row["valuation_section"],
             controversy_section=row["controversy_section"],
+            sentiment_section=row.get("sentiment_section", "") if hasattr(row, "get") else "",
             created_at=row["created_at"],
         )
 

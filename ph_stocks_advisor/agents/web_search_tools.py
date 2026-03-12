@@ -67,3 +67,18 @@ def search_stock_controversies(symbol: str) -> str:
     or corporate governance concerns not already evident in the data.
     """
     return _tavily_controversies(symbol, company_name=_company_name(symbol))
+
+
+@tool
+def search_global_events(symbol: str) -> str:
+    """Search the web for current global events that could impact the
+    Philippine stock market — geopolitical conflicts, pandemics, global
+    economic shifts, interest-rate decisions, and climate events.
+
+    Use this tool to get the latest global context for your sentiment
+    assessment. Pass the stock symbol as the argument.
+    """
+    from ph_stocks_advisor.data.clients.tavily_search import (
+        search_global_events as _tavily_global_events,
+    )
+    return _tavily_global_events(symbol, company_name=_company_name(symbol))

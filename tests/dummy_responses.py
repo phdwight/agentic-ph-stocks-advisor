@@ -68,6 +68,19 @@ CONTROVERSY_ANALYSIS_RESPONSE = (
     "- No automated news feed configured — manual review recommended\n"
 )
 
+SENTIMENT_ANALYSIS_RESPONSE = (
+    "Global sentiment is cautiously Neutral for TEL and the broader PSE.\n\n"
+    "**Geopolitical risks:**\n"
+    "- South China Sea tensions remain elevated but have not escalated\n"
+    "- No direct impact on TEL's telco operations observed\n\n"
+    "**Health risks:**\n"
+    "- No active pandemic threat; COVID-19 is in endemic phase\n\n"
+    "**Global economic shifts:**\n"
+    "- US Fed holding rates steady benefits emerging-market inflows\n"
+    "- PHP/USD stable around ₱56-57 range\n\n"
+    "**Net sentiment: Neutral** — no major global headwinds or tailwinds.\n"
+)
+
 
 # ---------------------------------------------------------------------------
 # Consolidator responses — structured output path
@@ -104,5 +117,6 @@ AGENT_RESPONSES: dict[str, str] = {
     "MovementAgent": MOVEMENT_ANALYSIS_RESPONSE,
     "ValuationAgent": VALUATION_ANALYSIS_RESPONSE,
     "ControversyAgent": CONTROVERSY_ANALYSIS_RESPONSE,
+    "SentimentAgent": SENTIMENT_ANALYSIS_RESPONSE,
     "ConsolidatorAgent": CONSOLIDATOR_BUY_RESPONSE,
 }

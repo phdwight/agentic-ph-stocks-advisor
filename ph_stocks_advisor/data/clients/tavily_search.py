@@ -130,6 +130,27 @@ def search_stock_controversies(symbol: str, company_name: str = "") -> str:
     return _format_results(results, fallback="No controversies found via web search.")
 
 
+def search_global_events(symbol: str, company_name: str = "") -> str:
+    """Search the web for global events that may impact the Philippine market.
+
+    Covers geopolitical conflicts, pandemics, global economic shifts,
+    climate events, and other macro risks relevant to Philippine stocks.
+    Returns a formatted string of search results.
+    """
+    logger.info("Tavily search_global_events invoked — symbol=%s, company=%s", symbol, company_name)
+    year = get_today().year
+    query = (
+        f"global events affecting Philippine stock market {year} "
+        f"geopolitics war pandemic economy recession interest rate "
+        f"typhoon climate"
+    )
+    results = _search(query, max_results=5, search_depth="basic")
+    return _format_results(
+        results,
+        fallback="No significant global events news found via web search.",
+    )
+
+
 def _format_results(results: list[dict[str, Any]], fallback: str = "") -> str:
     """Format Tavily search results into a readable string."""
     if not results:

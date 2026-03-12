@@ -44,6 +44,8 @@ from ph_stocks_advisor.data.models import (
     MovementAnalysis,
     PriceAnalysis,
     PriceMovement,
+    SentimentAnalysis,
+    SentimentInfo,
     StockPrice,
     TrendDirection,
     ValuationAnalysis,
@@ -161,12 +163,22 @@ def sample_controversy_info() -> ControversyInfo:
 
 
 @pytest.fixture
+def sample_sentiment_info() -> SentimentInfo:
+    return SentimentInfo(
+        symbol="TEL",
+        global_events_news="No major global events impacting PH market.",
+        sector="Services",
+    )
+
+
+@pytest.fixture
 def sample_advisor_state(
     sample_stock_price: StockPrice,
     sample_dividend_info: DividendInfo,
     sample_price_movement: PriceMovement,
     sample_fair_value: FairValueEstimate,
     sample_controversy_info: ControversyInfo,
+    sample_sentiment_info: SentimentInfo,
 ) -> AdvisorState:
     return AdvisorState(
         symbol="TEL",
@@ -175,4 +187,5 @@ def sample_advisor_state(
         movement_analysis=MovementAnalysis(data=sample_price_movement, analysis="Trending up."),
         valuation_analysis=ValuationAnalysis(data=sample_fair_value, analysis="Undervalued."),
         controversy_analysis=ControversyAnalysis(data=sample_controversy_info, analysis="Minor risk."),
+        sentiment_analysis=SentimentAnalysis(data=sample_sentiment_info, analysis="Neutral global outlook."),
     )

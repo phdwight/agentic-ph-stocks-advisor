@@ -60,6 +60,7 @@ class Report(Base):
     movement_section = Column(Text, nullable=False, server_default="")
     valuation_section = Column(Text, nullable=False, server_default="")
     controversy_section = Column(Text, nullable=False, server_default="")
+    sentiment_section = Column(Text, nullable=False, server_default="")
     created_at = Column(DateTime(timezone=True), nullable=False)
 
 
@@ -117,6 +118,7 @@ class ReportAdmin(ModelView, model=Report):
         "movement_section",
         "valuation_section",
         "controversy_section",
+        "sentiment_section",
     ]
 
     can_create = False  # reports are created by the analysis pipeline

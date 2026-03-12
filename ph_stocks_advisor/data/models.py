@@ -230,6 +230,35 @@ class ControversyInfo(BaseModel):
     )
 
 
+class SentimentInfo(BaseModel):
+    """Global events and macro-sentiment data for a stock.
+
+    Captures geopolitical, health, economic, and climate events that
+    could affect the Philippine market and the stock specifically.
+    """
+
+    symbol: str
+    global_events_news: str = Field(
+        default="",
+        description=(
+            "Recent global events (geopolitics, pandemics, macro-economics, "
+            "climate) from Tavily web search that may impact the PSE."
+        ),
+    )
+    sector: str = Field(
+        default="",
+        description="The stock's PSE sector (e.g. Financials, Property, Services).",
+    )
+    peso_usd_rate: str = Field(
+        default="",
+        description="Latest approximate PHP/USD exchange rate context.",
+    )
+    bsp_rate: str = Field(
+        default="",
+        description="Latest Bangko Sentral ng Pilipinas (BSP) policy rate context.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Agent analysis results
 # ---------------------------------------------------------------------------
@@ -269,6 +298,13 @@ class ControversyAnalysis(BaseModel):
     analysis: str = ""
 
 
+class SentimentAnalysis(BaseModel):
+    """Output from the Sentiment / Global Events Agent."""
+
+    data: SentimentInfo
+    analysis: str = ""
+
+
 class ConsolidationResponse(BaseModel):
     """Structured LLM output from the consolidator agent.
 
@@ -302,6 +338,7 @@ class FinalReport(BaseModel):
     movement_section: str = ""
     valuation_section: str = ""
     controversy_section: str = ""
+    sentiment_section: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -322,4 +359,5 @@ class AdvisorState(BaseModel):
     movement_analysis: Optional[MovementAnalysis] = None
     valuation_analysis: Optional[ValuationAnalysis] = None
     controversy_analysis: Optional[ControversyAnalysis] = None
+    sentiment_analysis: Optional[SentimentAnalysis] = None
     final_report: Optional[FinalReport] = None

@@ -156,6 +156,57 @@ Data:
 Respond in plain English. Do NOT give a buy/not-buy verdict yet.
 """
 
+SENTIMENT_ANALYSIS_PROMPT = """\
+You are a Philippine stock market analyst specialising in market sentiment
+and global macro-risk assessment.
+Today's date is **{today}**.
+
+Your job is to evaluate how **current global events** may affect
+**{symbol}** and the Philippine stock market (PSE) in general.
+
+Given the following global-events data, write a concise analysis
+(4-7 sentences) covering:
+
+1. **Geopolitical risks** — wars, armed conflicts, territorial disputes
+   (e.g. South China Sea / West Philippine Sea tensions, Russia-Ukraine,
+   Middle East conflicts). Assess how these could disrupt trade, supply
+   chains, energy prices, or investor confidence in the Philippines.
+
+2. **Health / pandemic risks** — active pandemics, epidemics, or disease
+   outbreaks (e.g. COVID-19 waves, avian flu, mpox). Consider impact on
+   domestic consumption, BPO operations, tourism, and remittance flows.
+
+3. **Global economic shifts** — recession fears in major economies (US,
+   China, EU), central-bank interest-rate decisions, currency movements
+   (USD/PHP), oil price shocks, and commodity cycles. Philippine stocks
+   are sensitive to Fed policy, China slowdowns, and OFW remittance
+   corridors.
+
+4. **Climate & natural disasters** — typhoons, earthquakes, El Niño/La
+   Niña effects. These are recurring risks for Philippine agriculture
+   and infrastructure stocks.
+
+5. **Net sentiment assessment** — summarise the overall global-events
+   sentiment as **Positive**, **Neutral**, or **Negative** for the
+   Philippine market and for **{symbol}** specifically. Explain why.
+
+**Web Search Tools — ``search_global_events`` and ``search_stock_news``:**
+You have access to two web search tools:
+  • ``search_global_events`` — searches for current global events that
+    could impact the Philippine stock market (geopolitics, pandemics,
+    macro-economics, climate)
+  • ``search_stock_news`` — recent news specific to the stock
+You SHOULD call ``search_global_events`` to get the latest global
+context. Optionally call ``search_stock_news`` if you need to check
+how global events are specifically impacting this stock.
+Pass the stock symbol as the argument (e.g., ``{{"symbol": "{symbol}"}}``)
+
+Data:
+{data}
+
+Respond in plain English. Do NOT give a buy/not-buy verdict yet.
+"""
+
 VALUATION_ANALYSIS_PROMPT = """\
 You are a Philippine stock market analyst specialising in valuation.
 Today's date is **{today}**.
@@ -222,6 +273,9 @@ clear investment report written in plain English for a retail investor.
 **Controversy / Risk Analysis:**
 {controversy_analysis}
 
+**Sentiment / Global Events Analysis:**
+{sentiment_analysis}
+
 **IMPORTANT REIT CONTEXT:**
 If the dividend analysis mentions the stock is a REIT, keep in mind that
 Philippine REITs are legally required to distribute at least 90% of their
@@ -250,7 +304,7 @@ Your report MUST include:
    - If the stock is NOT BUY, suggest what price level would make it
      more attractive.
    Do NOT create a separate section for entry price — it lives in this table.
-2. Brief **bullet-pointed** sections for each of the five analysis areas.
+2. Brief **bullet-pointed** sections for each of the six analysis areas.
    Each section should have 3-6 bullet points starting with "- ".
    Do NOT write paragraphs for these — keep each bullet to one or two sentences.
 3. A final **Verdict** line that says exactly one of: **BUY** or **NOT BUY**.
@@ -279,6 +333,9 @@ The investor holds the following position in **{symbol}**:
 Below is the **latest stock analysis report** for {symbol}:
 
 {base_report}
+
+**Global Events & Market Sentiment:**
+{sentiment_context}
 
 Using all of the above, write a **personalised portfolio advisory note**
 (300-500 words) covering:
@@ -314,6 +371,10 @@ Using all of the above, write a **personalised portfolio advisory note**
 4. **Risk Considerations** — Highlight 2-3 risks specific to the investor's
    position size and average cost (e.g. concentration risk, dividend
    sustainability at current prices, upcoming ex-dates).
+   **Factor in the global events / sentiment context above** — if there are
+   geopolitical tensions, pandemic risks, or macro-economic headwinds, explain
+   how they could affect this specific holding and whether the investor
+   should adjust their position accordingly.
 
 End with a **one-line summary** in this exact format:
 **Recommendation: [HOLD / ACCUMULATE / TRIM]** — [one-sentence justification]

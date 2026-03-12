@@ -45,6 +45,7 @@ class ConsolidatorAgent:
             movement_analysis=state.movement_analysis.analysis if state.movement_analysis else "N/A",
             valuation_analysis=state.valuation_analysis.analysis if state.valuation_analysis else "N/A",
             controversy_analysis=state.controversy_analysis.analysis if state.controversy_analysis else "N/A",
+            sentiment_analysis=state.sentiment_analysis.analysis if state.sentiment_analysis else "N/A",
         )
 
         verdict, summary = self._invoke_structured(prompt)
@@ -58,6 +59,7 @@ class ConsolidatorAgent:
             movement_section=state.movement_analysis.analysis if state.movement_analysis else "",
             valuation_section=state.valuation_analysis.analysis if state.valuation_analysis else "",
             controversy_section=state.controversy_analysis.analysis if state.controversy_analysis else "",
+            sentiment_section=state.sentiment_analysis.analysis if state.sentiment_analysis else "",
         )
 
     # ------------------------------------------------------------------

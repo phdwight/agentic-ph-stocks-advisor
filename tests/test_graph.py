@@ -21,6 +21,8 @@ from ph_stocks_advisor.data.models import (
     MovementAnalysis,
     PriceAnalysis,
     PriceMovement,
+    SentimentAnalysis,
+    SentimentInfo,
     StockPrice,
     ValuationAnalysis,
     Verdict,
@@ -80,6 +82,12 @@ class TestRunAnalysisIntegration:
             analysis="Risk OK.",
         )
 
+        MockSentimentAgent = MagicMock()
+        MockSentimentAgent.return_value.run.return_value = SentimentAnalysis(
+            data=SentimentInfo(symbol="TEL"),
+            analysis="Sentiment OK.",
+        )
+
         MockConsolidator = MagicMock()
         MockConsolidator.return_value.run.return_value = FinalReport(
             symbol="TEL",
@@ -93,6 +101,7 @@ class TestRunAnalysisIntegration:
             ("movement_agent", "movement_analysis", MockMovementAgent),
             ("valuation_agent", "valuation_analysis", MockValuationAgent),
             ("controversy_agent", "controversy_analysis", MockControversyAgent),
+            ("sentiment_agent", "sentiment_analysis", MockSentimentAgent),
         ]
 
         mock_llm = MagicMock()

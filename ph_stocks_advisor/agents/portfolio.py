@@ -37,6 +37,7 @@ class PortfolioAgent:
         avg_cost: float,
         current_price: float,
         base_report: str,
+        sentiment_context: str = "",
     ) -> str:
         """Generate the portfolio-aware analysis text.
 
@@ -52,6 +53,9 @@ class PortfolioAgent:
             Live / latest price of the stock.
         base_report : str
             The full text of the latest stock analysis report.
+        sentiment_context : str
+            Global events / macro-sentiment analysis text to provide
+            broader market context for the advisory.
 
         Returns
         -------
@@ -73,6 +77,7 @@ class PortfolioAgent:
             unrealised_pl=unrealised_pl,
             unrealised_pl_pct=unrealised_pl_pct,
             base_report=base_report,
+            sentiment_context=sentiment_context or "No global events context available.",
         )
 
         response = self._llm.invoke([HumanMessage(content=prompt)])

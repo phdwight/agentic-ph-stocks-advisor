@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS reports (
     movement_section TEXT   NOT NULL DEFAULT '',
     valuation_section TEXT  NOT NULL DEFAULT '',
     controversy_section TEXT NOT NULL DEFAULT '',
+    sentiment_section TEXT NOT NULL DEFAULT '',
     created_at      TEXT    NOT NULL
 );
 """
@@ -113,8 +114,9 @@ class SQLiteReportRepository(AbstractReportRepository):
             """
             INSERT INTO reports
                 (symbol, verdict, summary, price_section, dividend_section,
-                 movement_section, valuation_section, controversy_section, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 movement_section, valuation_section, controversy_section,
+                 sentiment_section, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.symbol,
@@ -125,6 +127,7 @@ class SQLiteReportRepository(AbstractReportRepository):
                 record.movement_section,
                 record.valuation_section,
                 record.controversy_section,
+                record.sentiment_section,
                 record.created_at.isoformat() if record.created_at else datetime.now(tz=UTC).isoformat(),
             ),
         )
@@ -282,6 +285,7 @@ class SQLiteReportRepository(AbstractReportRepository):
             movement_section=row["movement_section"],
             valuation_section=row["valuation_section"],
             controversy_section=row["controversy_section"],
+            sentiment_section=row["sentiment_section"] if "sentiment_section" in row.keys() else "",
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 

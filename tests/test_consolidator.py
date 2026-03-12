@@ -53,6 +53,7 @@ class TestConsolidatorStructuredOutput:
         assert report.movement_section == "Trending up."
         assert report.valuation_section == "Undervalued."
         assert report.controversy_section == "Minor risk."
+        assert report.sentiment_section == "Neutral global outlook."
 
     def test_not_buy_via_structured_output(self, sample_advisor_state: AdvisorState):
         response = ConsolidationResponse(

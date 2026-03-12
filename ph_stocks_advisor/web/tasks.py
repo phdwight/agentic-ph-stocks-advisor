@@ -172,6 +172,7 @@ def portfolio_analyse_stock(
             avg_cost=avg_cost,
             current_price=current_price,
             base_report=record.summary or "",
+            sentiment_context=getattr(record, "sentiment_section", "") or "",
         )
 
         # Persist the portfolio report.

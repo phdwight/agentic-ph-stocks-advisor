@@ -1,7 +1,7 @@
 """
 LangGraph workflow definition.
 
-Orchestrates the five specialist agents in parallel, then feeds their
+Orchestrates the six specialist agents in parallel, then feeds their
 results into the consolidator agent for a final verdict.
 
 Open/Closed Principle: new analysis nodes are registered in the
@@ -25,6 +25,7 @@ from ph_stocks_advisor.agents.specialists import (
     DividendAgent,
     MovementAgent,
     PriceAgent,
+    SentimentAgent,
     ValuationAgent,
 )
 from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
@@ -35,6 +36,7 @@ from ph_stocks_advisor.data.models import (
     FinalReport,
     MovementAnalysis,
     PriceAnalysis,
+    SentimentAnalysis,
     ValuationAnalysis,
 )
 from ph_stocks_advisor.data.tools import SymbolNotFoundError, validate_symbol
@@ -60,6 +62,7 @@ AGENT_REGISTRY: list[AgentEntry] = [
     ("movement_agent", "movement_analysis", MovementAgent),
     ("valuation_agent", "valuation_analysis", ValuationAgent),
     ("controversy_agent", "controversy_analysis", ControversyAgent),
+    ("sentiment_agent", "sentiment_analysis", SentimentAgent),
 ]
 
 
@@ -77,6 +80,7 @@ class GraphState(TypedDict, total=False):
     movement_analysis: Optional[MovementAnalysis]
     valuation_analysis: Optional[ValuationAnalysis]
     controversy_analysis: Optional[ControversyAnalysis]
+    sentiment_analysis: Optional[SentimentAnalysis]
     final_report: Optional[FinalReport]
 
 
@@ -169,6 +173,7 @@ def _make_consolidate_node(
             movement_analysis=state.get("movement_analysis"),
             valuation_analysis=state.get("valuation_analysis"),
             controversy_analysis=state.get("controversy_analysis"),
+            sentiment_analysis=state.get("sentiment_analysis"),
         )
         result = agent.run(advisor_state)
         return {"final_report": result}  # type: ignore[return-value]
@@ -205,9 +210,10 @@ def _build_graph_impl(
     Topology:
         START ──┬── price_agent ────────┐
                 ├── dividend_agent ─────┤
-                ├── movement_agent ─────┼── consolidator ── END
-                ├── valuation_agent ────┤
-                └── controversy_agent ──┘
+                ├── movement_agent ─────┤
+                ├── valuation_agent ────┼── consolidator ── END
+                ├── controversy_agent ──┤
+                └── sentiment_agent ────┘
     """
     if llm is None:
         from ph_stocks_advisor.infra.config import get_llm

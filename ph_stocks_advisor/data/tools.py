@@ -11,6 +11,7 @@ New code should import directly from the service modules when possible:
 - ``movement_service`` — 1-year price movement, candlestick patterns, TV perf
 - ``valuation_service`` — fair-value estimation (Graham Number)
 - ``controversy_service`` — price anomalies, risk factors, web news
+- ``sentiment_service`` — global events, macro-risk, market sentiment
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from ph_stocks_advisor.data.services.dividend import fetch_dividend_info  # noqa
 from ph_stocks_advisor.data.services.movement import fetch_price_movement  # noqa: F401
 from ph_stocks_advisor.data.services.valuation import fetch_fair_value  # noqa: F401
 from ph_stocks_advisor.data.services.controversy import fetch_controversy_info  # noqa: F401
+from ph_stocks_advisor.data.services.sentiment import fetch_sentiment_info  # noqa: F401
 
 # Symbol validation (delegates to DragonFi)
 from ph_stocks_advisor.data.clients.dragonfi import (  # noqa: F401
@@ -53,6 +55,7 @@ __all__ = [
     "fetch_price_movement",
     "fetch_fair_value",
     "fetch_controversy_info",
+    "fetch_sentiment_info",
     "_detect_price_catalysts",
 ]
 

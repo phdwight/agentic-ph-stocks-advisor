@@ -43,6 +43,7 @@ def sample_report() -> FinalReport:
         movement_section="Uptrend over the year.",
         valuation_section="Undervalued by 10%.",
         controversy_section="Minor spike in June.",
+        sentiment_section="Global outlook is neutral.",
     )
 
 
@@ -156,6 +157,7 @@ class TestSQLiteRepository:
         assert fetched.movement_section == "Uptrend over the year."
         assert fetched.valuation_section == "Undervalued by 10%."
         assert fetched.controversy_section == "Minor spike in June."
+        assert fetched.sentiment_section == "Global outlook is neutral."
 
     # ------------------------------------------------------------------
     # Per-user symbol tracking
