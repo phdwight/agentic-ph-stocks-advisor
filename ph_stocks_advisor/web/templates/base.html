@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0e0e10">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}PH Stocks Advisor{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,6 +28,7 @@
         <a href="{{ url_for('auth.logout') }}" class="nav-logout">Sign Out</a>
         {% else %}
         <form method="post" action="{{ url_for('auth.switch_type') }}" class="dev-type-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <span class="nav-user-name">local dev</span>
           <button type="submit" class="nav-type-toggle {{ 'elevated' if current_user.user_type == 1 else 'normal' }}">
             {{ 'ELEVATED' if current_user.user_type == 1 else 'NORMAL' }}

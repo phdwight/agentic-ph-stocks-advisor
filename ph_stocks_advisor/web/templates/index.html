@@ -8,6 +8,7 @@
   <p class="hero-sub">Enter a PSE stock symbol for an AI-powered <strong>BUY</strong> or <strong>NOT BUY</strong> analysis.</p>
 
   <form id="analyse-form" class="analyse-form" method="post" action="/analyse">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="input-group">
       <input
         type="text"

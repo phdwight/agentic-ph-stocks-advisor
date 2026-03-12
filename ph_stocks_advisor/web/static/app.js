@@ -293,7 +293,10 @@ document.addEventListener("DOMContentLoaded", () => {
           delete activeSources[sym];
         }
         try {
-          await fetch(`/cancel/${taskId}`, { method: "POST" });
+          await fetch(`/cancel/${taskId}`, {
+            method: "POST",
+            headers: { "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || "" },
+          });
         } catch { /* best-effort */ }
         removeTask(sym);
         renderTracker();
@@ -341,7 +344,10 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const resp = await fetch("/analyse", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || "",
+        },
         body: `symbol=${encodeURIComponent(symbol)}`,
       });
 

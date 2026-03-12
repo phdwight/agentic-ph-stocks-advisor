@@ -14,11 +14,12 @@ enabling the worker to live in a separate container.
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import json
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, abort, jsonify, render_template, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from markupsafe import Markup
@@ -50,6 +51,16 @@ _INFLIGHT_TTL = 10 * 60  # 10 minutes
 def create_app() -> Flask:
     """Application factory — returns a configured Flask instance."""
     settings = get_settings()
+
+    # Fail fast if the default secret key is used with auth enabled.
+    _DEFAULT_SECRET = "ph-stocks-advisor-change-me-in-production"
+    if settings.auth_enabled and settings.flask_secret_key == _DEFAULT_SECRET:
+        raise RuntimeError(
+            "FLASK_SECRET_KEY must be changed from its default value "
+            "when authentication is enabled.  Set a strong random "
+            "value via the FLASK_SECRET_KEY environment variable."
+        )
+
     app = Flask(
         __name__,
         template_folder="templates",
@@ -61,6 +72,7 @@ def create_app() -> Flask:
     # plain HTTP so a Secure cookie would be silently dropped by the
     # browser, preventing session persistence (e.g. elevated-mode toggle).
     app.config["SESSION_COOKIE_SECURE"] = settings.auth_enabled
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     # Cache static assets in browsers for 1 hour; reduces load at scale.
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
@@ -90,6 +102,89 @@ def create_app() -> Flask:
     # Register the Entra ID authentication blueprint.
     app.register_blueprint(auth_bp)
 
+    # ------------------------------------------------------------------
+    # Security headers (CWE-693)
+    # ------------------------------------------------------------------
+
+    @app.after_request
+    def _set_security_headers(response):
+        response.headers.setdefault(
+            "X-Content-Type-Options", "nosniff"
+        )
+        response.headers.setdefault(
+            "X-Frame-Options", "SAMEORIGIN"
+        )
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        # CSP: allow inline styles/scripts needed by the UI but block
+        # everything else.  Tighten further when moving to a build step.
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com; "
+                "img-src 'self' data:; "
+                "connect-src 'self'; "
+                "frame-ancestors 'self'"
+            ),
+        )
+        if settings.auth_enabled:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        return response
+
+    # ------------------------------------------------------------------
+    # CSRF protection (CWE-352)
+    # ------------------------------------------------------------------
+    # Routes that are safe to exempt (no user state change, or have
+    # their own protection like OAuth state params).
+    _CSRF_EXEMPT_ENDPOINTS: set[str | None] = {
+        "healthz",
+        "auth.callback",
+        "auth.google_callback",
+        "auth.switch_type",
+    }
+
+    def _generate_csrf_token() -> str:
+        """Return the CSRF token for the current session, creating one if needed."""
+        if "_csrf_token" not in session:
+            session["_csrf_token"] = secrets.token_hex(32)
+        return session["_csrf_token"]
+
+    @app.before_request
+    def _csrf_protect():
+        """Validate CSRF token on state-changing requests.
+
+        Checks the ``X-CSRFToken`` header first (used by ``fetch()``
+        calls), then falls back to a ``csrf_token`` form field.
+        """
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return None
+        if request.endpoint in _CSRF_EXEMPT_ENDPOINTS:
+            return None
+        # When auth is disabled (local dev), skip CSRF enforcement.
+        if not settings.auth_enabled:
+            return None
+
+        token = (
+            request.headers.get("X-CSRFToken")
+            or (request.form.get("csrf_token") if request.form else None)
+            or (
+                (request.get_json(silent=True) or {}).get("csrf_token")
+                if request.is_json
+                else None
+            )
+        )
+        if not token or token != session.get("_csrf_token"):
+            logger.warning("CSRF validation failed for %s %s", request.method, request.path)
+            abort(403)
+        return None
+
     @app.template_filter("md_to_html")
     def md_to_html_filter(text: str) -> Markup:
         """Convert light-markdown section body to formatted HTML."""
@@ -97,10 +192,12 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_user():
-        """Make ``current_user`` and ``auth_enabled`` available in every template."""
+        """Make ``current_user``, ``auth_enabled``, and ``csrf_token``
+        available in every template."""
         return {
             "current_user": get_current_user(),
             "auth_enabled": get_settings().auth_enabled,
+            "csrf_token": _generate_csrf_token,
         }
 
     # ------------------------------------------------------------------
@@ -124,8 +221,8 @@ def create_app() -> Flask:
             r = get_redis()
             r.ping()
             checks["redis"] = "ok"
-        except Exception as exc:
-            checks["redis"] = f"error: {exc}"
+        except Exception:
+            checks["redis"] = "error"
             healthy = False
 
         # ── Database ─────────────────────────────────────────────────
@@ -134,8 +231,8 @@ def create_app() -> Flask:
             repo.list_recent_symbols(limit=1)
 
             checks["database"] = "ok"
-        except Exception as exc:
-            checks["database"] = f"error: {exc}"
+        except Exception:
+            checks["database"] = "error"
             healthy = False
 
         status_code = 200 if healthy else 503
@@ -298,6 +395,7 @@ def create_app() -> Flask:
         return jsonify({"status": "started", "symbol": symbol, "task_id": task.id})
 
     @app.route("/status/<task_id>")
+    @login_required
     def status(task_id: str):
         """Poll the status of a Celery task."""
         from ph_stocks_advisor.web.tasks import analyse_stock
@@ -339,6 +437,7 @@ def create_app() -> Flask:
         return jsonify({"state": result.state, "done": False})
 
     @app.route("/stream/<task_id>")
+    @login_required
     def stream(task_id: str):
         """SSE endpoint that pushes real-time progress events for a task.
 
@@ -368,6 +467,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/cancel/<task_id>", methods=["POST"])
+    @login_required
     def cancel(task_id: str):
         """Revoke (cancel) a running Celery task and clear inflight lock."""
         from ph_stocks_advisor.web.tasks import celery_app
@@ -694,6 +794,10 @@ def main() -> None:
 
     if args.debug:
         # Development: use Flask's built-in server with auto-reload.
+        logger.warning(
+            "Running in DEBUG mode with Werkzeug interactive debugger. "
+            "Never use --debug in production."
+        )
         app = create_app()
         app.run(host=args.host, port=args.port, debug=True)
     else:

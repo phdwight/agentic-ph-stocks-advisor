@@ -19,7 +19,7 @@ import logging
 import uuid
 from functools import wraps
 from typing import Any, Callable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import msal
 import requests as http_requests
@@ -38,6 +38,24 @@ from ph_stocks_advisor.infra.repository import UserRecord
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+def _safe_redirect_url(url: str | None, fallback: str | None = None) -> str:
+    """Return *url* only if it is a safe, relative (same-origin) path.
+
+    Prevents open-redirect attacks (CWE-601) by rejecting any URL that
+    contains a network location (``netloc``) or uses a non-HTTP scheme.
+    """
+    if url:
+        parsed = urlparse(url)
+        # Allow only relative paths (no scheme/netloc) or same-origin.
+        if not parsed.netloc and not parsed.scheme:
+            return url
+        # Also accept paths that start with "/" but urlparse may put
+        # the host in ``path`` for scheme-relative URLs like //evil.com.
+        if parsed.netloc:
+            return fallback or url_for("index")
+    return fallback or url_for("index")
 
 # Microsoft OIDC scopes — User.Read gives us the signed-in user's profile.
 _SCOPES = ["User.Read"]
@@ -238,7 +256,7 @@ def callback():
     logger.info("User signed in: %s", session["user"].get("email"))
 
     # Redirect to where the user originally wanted to go.
-    next_url = session.pop("next_url", None) or url_for("index")
+    next_url = _safe_redirect_url(session.pop("next_url", None))
     return redirect(next_url)
 
 
@@ -367,7 +385,7 @@ def google_callback():
 
     logger.info("Google user signed in: %s", session["user"].get("email"))
 
-    next_url = session.pop("next_url", None) or url_for("index")
+    next_url = _safe_redirect_url(session.pop("next_url", None))
     return redirect(next_url)
 
 
@@ -388,7 +406,7 @@ def switch_type():
 
     current = session.get("dev_user_type", 0)
     session["dev_user_type"] = 0 if current == 1 else 1
-    return redirect(request.referrer or url_for("index"))
+    return redirect(_safe_redirect_url(request.referrer))
 
 
 # ---------------------------------------------------------------------------

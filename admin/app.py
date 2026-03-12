@@ -5,15 +5,22 @@ This is a standalone Starlette + SQLAdmin application that connects to
 the same PostgreSQL database used by the main application, providing
 a web-based admin interface for browsing and managing reports and
 user-symbol associations.
+
+Security: protected by username/password authentication via SQLAdmin's
+``AuthenticationBackend``.  Credentials are read from environment
+variables ``ADMIN_USERNAME`` and ``ADMIN_PASSWORD``.
 """
 
 from __future__ import annotations
 
 import os
+import secrets
 
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from sqlalchemy import (
     Column,
@@ -25,6 +32,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase
 from sqladmin import Admin, ModelView
+from sqladmin.authentication import AuthenticationBackend
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +192,49 @@ class UserAdmin(ModelView, model=User):
 
 
 # ---------------------------------------------------------------------------
+# Authentication backend for SQLAdmin
+# ---------------------------------------------------------------------------
+
+_ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+_ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+
+class AdminAuth(AuthenticationBackend):
+    """Simple username/password gate for the admin panel.
+
+    When ``ADMIN_PASSWORD`` is not set the panel is **locked** — no
+    login is possible.  This prevents accidental exposure of an
+    unauthenticated admin interface in production (CWE-306).
+    """
+
+    async def login(self, request: Request) -> bool:
+        form = await request.form()
+        username = form.get("username", "")
+        password = form.get("password", "")
+
+        if not _ADMIN_PASSWORD:
+            # No password configured — deny all logins.
+            return False
+
+        if (
+            secrets.compare_digest(str(username), _ADMIN_USERNAME)
+            and secrets.compare_digest(str(password), _ADMIN_PASSWORD)
+        ):
+            request.session.update({"authenticated": True})
+            return True
+        return False
+
+    async def logout(self, request: Request) -> bool:
+        request.session.clear()
+        return True
+
+    async def authenticate(self, request: Request) -> RedirectResponse | bool:
+        if not request.session.get("authenticated"):
+            return RedirectResponse(request.url_for("admin:login"), status_code=302)
+        return True
+
+
+# ---------------------------------------------------------------------------
 # Starlette app + SQLAdmin wiring
 # ---------------------------------------------------------------------------
 
@@ -191,17 +242,28 @@ secret_key = os.environ.get(
     "ADMIN_SECRET_KEY", "sqladmin-dev-secret-change-me"
 )
 
+# Restrict trusted proxy hosts to Docker-internal networks by default.
+_trusted_hosts = os.environ.get("ADMIN_TRUSTED_HOSTS", "127.0.0.1,::1")
+trusted_hosts_list: list[str] | str = [
+    h.strip() for h in _trusted_hosts.split(",") if h.strip()
+]
+if "*" in trusted_hosts_list:
+    trusted_hosts_list = "*"
+
 app = Starlette(
     middleware=[
-        Middleware(ProxyHeadersMiddleware, trusted_hosts="*"),
+        Middleware(ProxyHeadersMiddleware, trusted_hosts=trusted_hosts_list),
         Middleware(SessionMiddleware, secret_key=secret_key),
     ],
 )
+
+authentication_backend = AdminAuth(secret_key=secret_key)
 
 admin = Admin(
     app,
     engine,
     title="PH Stocks Advisor — Admin",
+    authentication_backend=authentication_backend,
 )
 admin.add_view(ReportAdmin)
 admin.add_view(UserAdmin)

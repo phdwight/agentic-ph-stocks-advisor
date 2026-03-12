@@ -5,10 +5,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ph_advisor}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ph_advisor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-ph_advisor}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # Port is NOT exposed to the host by default (security best practice).
+    # Uncomment the next two lines for local development debugging:
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +23,10 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # Port is NOT exposed to the host by default (security best practice).
+    # Uncomment the next two lines for local development debugging:
+    # ports:
+    #   - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -53,7 +57,7 @@ services:
       TAVILY_SEARCH_DEPTH: ${TAVILY_SEARCH_DEPTH:-basic}
       # ── Database — always Postgres inside Docker ──────────────────────────
       DB_BACKEND: postgres
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:-ph_advisor}@db:5432/${POSTGRES_DB:-ph_advisor}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ph_advisor}
       # ── Redis ─────────────────────────────────────────────────────────────
       REDIS_URL: redis://redis:6379/0
       # ── API base URLs ─────────────────────────────────────────────────────
@@ -144,8 +148,10 @@ services:
     ports:
       - "${ADMIN_PORT:-8085}:8085"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:-ph_advisor}@db:5432/${POSTGRES_DB:-ph_advisor}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ph_advisor}
       ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-sqladmin-dev-secret-change-me}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
     restart: unless-stopped
 
 volumes:

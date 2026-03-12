@@ -9,6 +9,7 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   const POLL_MS = 3000;
+  const _csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content || "";
 
   const portfolioBtn = document.getElementById("portfolio-btn");
   const modal = document.getElementById("holdings-modal");
@@ -65,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const resp = await fetch(`/api/holdings/${encodeURIComponent(symbol)}`, {
           method: "DELETE",
+          headers: { "X-CSRFToken": _csrfToken() },
         });
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
@@ -120,7 +122,10 @@ document.addEventListener("DOMContentLoaded", () => {
       // 1. Save the holding.
       const saveResp = await fetch(`/api/holdings/${encodeURIComponent(symbol)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": _csrfToken(),
+        },
         body: JSON.stringify({ shares, avg_cost: avgCost }),
       });
       if (!saveResp.ok) {
@@ -138,7 +143,10 @@ document.addEventListener("DOMContentLoaded", () => {
       // 2. Trigger portfolio analysis.
       const analyseResp = await fetch(
         `/api/portfolio-analyse/${encodeURIComponent(symbol)}`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "X-CSRFToken": _csrfToken() },
+        }
       );
       if (!analyseResp.ok) {
         const data = await analyseResp.json().catch(() => ({}));
