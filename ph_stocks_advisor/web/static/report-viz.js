@@ -83,7 +83,7 @@ function create52WeekBar(low, high, current) {
     margin-bottom: 0.5rem;
     font-size: 0.72rem;
     font-weight: 600;
-    color: #a09e9a;
+    color: #a0a6be;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   `;
@@ -108,7 +108,7 @@ function create52WeekBar(low, high, current) {
   fill.style.cssText = `
     height: 100%;
     width: ${fillPct}%;
-    background: linear-gradient(90deg, #c47068, #c4a35a, #5a9e82);
+    background: linear-gradient(90deg, #C8A040, #F0F078, #72AAEE);
     border-radius: 3px;
     transition: width 1s ease-out;
   `;
@@ -124,9 +124,9 @@ function create52WeekBar(low, high, current) {
       width: 16px;
       height: 16px;
       background: #e8e6e3;
-      border: 2px solid #0e0e10;
+      border: 2px solid #080828;
       border-radius: 50%;
-      box-shadow: 0 0 8px rgba(139,126,200,0.4);
+      box-shadow: 0 0 8px rgba(43,43,143,0.4);
       z-index: 2;
     `;
     track.appendChild(marker);
@@ -140,7 +140,7 @@ function create52WeekBar(low, high, current) {
     justify-content: space-between;
     margin-top: 0.4rem;
     font-size: 0.72rem;
-    color: #6b6966;
+    color: #6b7088;
     font-variant-numeric: tabular-nums;
   `;
   ends.innerHTML = `
@@ -211,14 +211,14 @@ function enhancePercentages(section) {
         }
 
         const color = sentiment === true
-          ? "#5a9e82"
+          ? "#72AAEE"
           : sentiment === false
-          ? "#c47068"
-          : "#a09e9a";
+          ? "#C8A040"
+          : "#a0a6be";
         const bgColor = sentiment === true
-          ? "rgba(90,158,130,0.12)"
+          ? "rgba(114,170,238,0.12)"
           : sentiment === false
-          ? "rgba(196,112,104,0.12)"
+          ? "rgba(200,160,64,0.12)"
           : "rgba(160,158,154,0.1)";
         const arrow = sentiment === true ? "↑" : sentiment === false ? "↓" : "";
 
@@ -257,8 +257,8 @@ function enhanceRatioValues(section) {
         return `<strong>${label}</strong>: <span class="ratio-value" style="
           display:inline-block;
           padding:0.1rem 0.4rem;
-          background:rgba(107,150,184,0.12);
-          color:#6b96b8;
+          background:rgba(80,144,208,0.12);
+          color:#5090D0;
           border-radius:4px;
           font-weight:600;
           font-size:0.82rem;

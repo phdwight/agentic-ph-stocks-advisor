@@ -20,15 +20,15 @@ from ph_stocks_advisor.infra.repository import ReportRecord
 
 _CSS = """\
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-:root{--bg:#1a1e2e;--card:rgba(34,39,58,0.80);--text:#f0f1f5;--text-sec:#b4b9cc;
-  --text-muted:#828699;--accent:#6c63ff;--emerald:#34d399;--crimson:#f87171;
+:root{--bg:#080828;--card:rgba(16,14,62,0.80);--text:#f0f1f5;--text-sec:#a0a6be;
+  --text-muted:#6b7088;--accent:#2B2B8F;--emerald:#72AAEE;--crimson:#C8A040;
   --border:rgba(255,255,255,0.10);--radius:12px}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);
   color:var(--text);line-height:1.65;letter-spacing:-0.01em;padding:2rem;
   -webkit-font-smoothing:antialiased}
 .container{max-width:820px;margin:0 auto;overflow:hidden}
-header{background:rgba(34,39,58,0.85);backdrop-filter:blur(16px);
+header{background:rgba(16,14,62,0.85);backdrop-filter:blur(16px);
   border:1px solid rgba(255,255,255,0.08);border-radius:16px;
   padding:2rem 2.5rem 1.5rem;margin-bottom:1.5rem}
 header h1{font-size:1.75rem;font-weight:800;letter-spacing:-0.03em;margin-bottom:.35rem}
@@ -38,8 +38,8 @@ header .meta{font-size:.8rem;color:var(--text-muted)}
   text-transform:lowercase;letter-spacing:0.03em}
 .badge{display:inline-block;padding:.35rem 1.3rem;border-radius:999px;font-weight:700;
   font-size:.85rem;color:#fff;letter-spacing:0.04em}
-.badge.buy{background:var(--emerald);box-shadow:0 2px 12px rgba(52,211,153,0.3)}
-.badge.not-buy{background:var(--crimson);box-shadow:0 2px 12px rgba(248,113,113,0.3)}
+.badge.buy{background:var(--emerald);box-shadow:0 2px 12px rgba(114,170,238,0.3)}
+.badge.not-buy{background:var(--crimson);box-shadow:0 2px 12px rgba(200,160,64,0.3)}
 main{display:flex;flex-direction:column;gap:1.2rem}
 section{background:var(--card);backdrop-filter:blur(16px);
   border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:2rem 2.2rem}
@@ -57,7 +57,7 @@ footer .sources{font-style:italic;opacity:.7}
 @media print{body{padding:0;background:#fff;color:#222}
   section{background:#fff;border:1px solid #ddd}
   header{background:#f5f5f5;border:1px solid #ddd}
-  .badge.buy{background:#228b22}.badge.not-buy{background:#c83232}}
+  .badge.buy{background:#4488cc}.badge.not-buy{background:#b8962e}}
 """
 
 

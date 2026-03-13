@@ -91,9 +91,9 @@ def _strip_markdown_bold(text: str) -> str:
 def _write_section(pdf: _ReportPDF, title: str, body: str) -> None:
     """Write a titled section, handling bullet lists and paragraphs."""
     pdf.set_font("Helvetica", "B", 12)
-    pdf.set_text_color(30, 60, 120)
+    pdf.set_text_color(43, 43, 143)
     pdf.cell(0, 8, _sanitize(_strip_markdown_bold(title)), new_x="LMARGIN", new_y="NEXT")
-    pdf.set_draw_color(30, 60, 120)
+    pdf.set_draw_color(43, 43, 143)
     pdf.line(_MARGIN, pdf.get_y(), _MARGIN + 60, pdf.get_y())
     pdf.ln(3)
 
@@ -150,7 +150,7 @@ class PdfFormatter(OutputFormatter):
 
         # Title block
         pdf.set_font("Helvetica", "B", 20)
-        pdf.set_text_color(20, 40, 80)
+        pdf.set_text_color(16, 14, 62)
         pdf.cell(0, 12, f"{record.symbol} Stock Analysis", new_x="LMARGIN", new_y="NEXT")
 
         # Verdict label + pill-shaped badge
@@ -162,9 +162,9 @@ class PdfFormatter(OutputFormatter):
 
         # Pill badge (only the verdict value)
         if is_buy:
-            pdf.set_fill_color(34, 139, 34)
+            pdf.set_fill_color(114, 170, 238)
         else:
-            pdf.set_fill_color(200, 50, 50)
+            pdf.set_fill_color(200, 160, 64)
         pdf.set_text_color(255, 255, 255)
         badge_text = f" {record.verdict} "
         badge_w = pdf.get_string_width(badge_text) + 10
