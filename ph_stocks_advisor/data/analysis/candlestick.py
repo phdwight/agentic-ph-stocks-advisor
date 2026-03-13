@@ -66,7 +66,7 @@ def _detect_notable_candles(
 
     Returns descriptions sorted by absolute body size (largest first).
     """
-    results: list[str] = []
+    results: list[tuple[float, str]] = []
     opens = df["Open"].values
     closes = df["Close"].values
     highs = df["High"].values
@@ -79,7 +79,7 @@ def _detect_notable_candles(
             continue
         body_pct = ((c - o) / o) * 100
         if abs(body_pct) >= body_threshold_pct:
-            date_str = dates[i].strftime("%Y-%m-%d")
+            date_str = dates[i].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             direction = "bullish (green)" if body_pct > 0 else "bearish (red)"
             h, lo = float(highs[i]), float(lows[i])
             results.append(
@@ -108,7 +108,7 @@ def _detect_gaps(df: pd.DataFrame, *, gap_threshold_pct: float = 2.0) -> list[st
         today_open = float(opens[i])
         gap_pct = ((today_open - prev_close) / prev_close) * 100
         if abs(gap_pct) >= gap_threshold_pct:
-            date_str = dates[i].strftime("%Y-%m-%d")
+            date_str = dates[i].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             direction = "gap-UP" if gap_pct > 0 else "gap-DOWN"
             results.append(
                 f"{date_str}: {direction} of {gap_pct:+.1f}% (prev close {prev_close:.2f} → open {today_open:.2f})"
@@ -132,13 +132,13 @@ def _detect_volume_spikes(
     results: list[str] = []
 
     for i in range(window, len(df)):
-        avg = float(rolling_avg.iloc[i]) if not np.isnan(rolling_avg.iloc[i]) else 0
+        avg = float(rolling_avg.iloc[i]) if not np.isnan(rolling_avg.iloc[i]) else 0  # type: ignore[arg-type]
         if avg == 0:
             continue
         day_vol = float(vol.iloc[i])
         ratio = day_vol / avg
         if ratio >= multiplier:
-            date_str = df.index[i].strftime("%Y-%m-%d")
+            date_str = df.index[i].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             close_chg = ""
             if i > 0:
                 prev_c = float(df["Close"].iloc[i - 1])
@@ -176,8 +176,8 @@ def _detect_consecutive_pressure(
     def _flush() -> None:
         nonlocal streak_type, streak_start, streak_len, cumulative_pct
         if streak_len >= min_streak:
-            start_date = dates[streak_start].strftime("%Y-%m-%d")
-            end_date = dates[streak_start + streak_len - 1].strftime("%Y-%m-%d")
+            start_date = dates[streak_start].strftime("%Y-%m-%d")  # type: ignore[union-attr]
+            end_date = dates[streak_start + streak_len - 1].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             desc = (
                 f"{start_date} to {end_date}: {streak_len} consecutive "
                 f"{'bearish' if streak_type == 'bear' else 'bullish'} candles "

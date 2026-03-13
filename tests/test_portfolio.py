@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -31,7 +32,7 @@ from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
 
 
 @pytest.fixture
-def sqlite_repo(tmp_path) -> SQLiteReportRepository:
+def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository, None, None]:
     """Fresh SQLite repo with all tables created."""
     db_path = str(tmp_path / "test_portfolio.db")
     repo = SQLiteReportRepository(db_path=db_path)
@@ -520,7 +521,7 @@ class TestPortfolioCooldown:
         # Manually backdate the created_at to yesterday.
         import sqlite3
 
-        conn = sqlite3.connect(repo._db_path)
+        conn = sqlite3.connect(repo._db_path)  # type: ignore[attr-defined]
         yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         conn.execute(
             "UPDATE portfolio_reports SET created_at = ? WHERE user_id = ? AND symbol = ?",

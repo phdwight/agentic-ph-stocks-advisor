@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def detect_price_catalysts(profile: dict[str, Any]) -> list[str]:
+def detect_price_catalysts(profile: dict[str, Any] | None) -> list[str]:
     """Infer likely price catalysts from DragonFi profile data.
 
     Cross-references dividend yield, REIT status, and price position

@@ -143,7 +143,7 @@ def subscribe_progress(task_id: str) -> Generator[dict[str, Any], None, None]:
     stored = r.get(_state_key(task_id))
     if stored:
         try:
-            event = json.loads(stored)
+            event = json.loads(stored)  # type: ignore[arg-type]
             yield event
             if event.get("done"):
                 return
@@ -162,7 +162,7 @@ def subscribe_progress(task_id: str) -> Generator[dict[str, Any], None, None]:
 
             if msg and msg["type"] == "message":
                 try:
-                    event = json.loads(msg["data"])
+                    event = json.loads(msg["data"])  # type: ignore[arg-type]
                 except (json.JSONDecodeError, TypeError):
                     continue
 
@@ -179,7 +179,7 @@ def subscribe_progress(task_id: str) -> Generator[dict[str, Any], None, None]:
             stored = r.get(_state_key(task_id))
             if stored:
                 try:
-                    event = json.loads(stored)
+                    event = json.loads(stored)  # type: ignore[arg-type]
                 except (json.JSONDecodeError, TypeError):
                     continue
 

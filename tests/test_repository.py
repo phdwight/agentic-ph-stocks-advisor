@@ -8,6 +8,8 @@ services required.
 
 from __future__ import annotations
 
+from collections.abc import Generator
+
 import pytest
 
 from ph_stocks_advisor.data.models import FinalReport, Verdict
@@ -44,7 +46,7 @@ def sample_report() -> FinalReport:
 
 
 @pytest.fixture
-def sqlite_repo(tmp_path) -> SQLiteReportRepository:
+def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository, None, None]:
     """Create a fresh SQLite repo in a temp directory."""
     db_path = str(tmp_path / "test_reports.db")
     repo = SQLiteReportRepository(db_path=db_path)

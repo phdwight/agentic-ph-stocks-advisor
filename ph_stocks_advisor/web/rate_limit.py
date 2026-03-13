@@ -82,13 +82,13 @@ def reserve(
     key = _daily_key(user_id)
     ttl = _seconds_until_utc_midnight()
 
-    allowed_int, count = r.eval(_RESERVE_LUA, 1, key, limit, ttl)
-    allowed = bool(int(allowed_int))
+    allowed_int, count = r.eval(_RESERVE_LUA, 1, key, limit, ttl)  # type: ignore[misc]
+    allowed = bool(int(allowed_int))  # type: ignore[arg-type]
 
     if not allowed:
         logger.info("Rate limit reached for %s (%d/%d)", user_id, count, limit)
 
-    return allowed, int(count)
+    return allowed, int(count)  # type: ignore[arg-type]
 
 
 def release(
@@ -104,10 +104,10 @@ def release(
     """
     key = _daily_key(user_id)
     new_count = r.decr(key)
-    if new_count < 0:
+    if new_count < 0:  # type: ignore[operator]
         r.set(key, "0")
         new_count = 0
-    return new_count
+    return new_count  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +127,7 @@ def check_limit(
     """
     key = _daily_key(user_id)
     current = r.get(key)
-    current_count = int(current) if current is not None else 0
+    current_count = int(current) if current is not None else 0  # type: ignore[arg-type]
 
     if current_count >= limit:
         logger.info("Rate limit reached for %s (%d/%d)", user_id, current_count, limit)
@@ -152,7 +152,7 @@ def increment(
         ttl = _seconds_until_utc_midnight()
         r.expire(key, ttl)
 
-    return new_count
+    return new_count  # type: ignore[return-value]
 
 
 def check_and_increment(
@@ -181,5 +181,5 @@ def get_remaining(
     """Return how many analyses the user has left today."""
     key = _daily_key(user_id)
     current = r.get(key)
-    used = int(current) if current is not None else 0
+    used = int(current) if current is not None else 0  # type: ignore[arg-type]
     return max(limit - used, 0)

@@ -8,6 +8,7 @@ are mocked; logic under test stays real.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -59,7 +60,7 @@ def _google_env(monkeypatch):
 
 
 @pytest.fixture
-def app(_entra_env) -> Flask:
+def app(_entra_env) -> Generator[Flask, None, None]:
     """Create a Flask test app with Entra ID configured."""
     # Clear the lru_cache so env vars take effect.
     from ph_stocks_advisor.infra.config import get_settings
@@ -85,7 +86,7 @@ def client(app):
 
 
 @pytest.fixture
-def anon_app(_no_entra_env) -> Flask:
+def anon_app(_no_entra_env) -> Generator[Flask, None, None]:
     """Create a Flask test app *without* any auth provider (anonymous mode)."""
     from ph_stocks_advisor.infra.config import get_settings
 
@@ -109,7 +110,7 @@ def anon_client(anon_app):
 
 
 @pytest.fixture
-def google_app(_google_env) -> Flask:
+def google_app(_google_env) -> Generator[Flask, None, None]:
     """Create a Flask test app with Google OAuth2 configured."""
     from ph_stocks_advisor.infra.config import get_settings
 

@@ -25,5 +25,5 @@ class GeventWorkerNoSSL(GeventWorker):
     def patch(self) -> None:  # type: ignore[override]
         from gevent import monkey
 
-        monkey.noisy = False
+        monkey.noisy = False  # type: ignore[attr-defined]
         monkey.patch_all(ssl=False)

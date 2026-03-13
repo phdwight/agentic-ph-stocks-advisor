@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, TypedDict
+from typing import Any, Required, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
@@ -74,7 +74,7 @@ AGENT_REGISTRY: list[AgentEntry] = [
 
 
 class GraphState(TypedDict, total=False):
-    symbol: str
+    symbol: Required[str]
     error: str | None
     price_analysis: PriceAnalysis | None
     dividend_analysis: DividendAnalysis | None
@@ -232,17 +232,17 @@ def _build_graph_impl(
     workflow = StateGraph(GraphState)
 
     # Validation gate — runs first to ensure the symbol exists
-    workflow.add_node("validate", _make_validate_node(task_id=task_id))
+    workflow.add_node("validate", _make_validate_node(task_id=task_id))  # type: ignore[arg-type]
 
     # Dynamically register specialist nodes from the registry
     specialist_names: list[str] = []
     for node_name, state_key, agent_class in AGENT_REGISTRY:
         node_fn = _make_specialist_node(agent_class, state_key, mini_llm, task_id=task_id)
-        workflow.add_node(node_name, node_fn)
+        workflow.add_node(node_name, node_fn)  # type: ignore[arg-type]
         specialist_names.append(node_name)
 
     # Consolidator
-    workflow.add_node("consolidator", _make_consolidate_node(llm, task_id=task_id))
+    workflow.add_node("consolidator", _make_consolidate_node(llm, task_id=task_id))  # type: ignore[arg-type]
 
     # START → validate
     workflow.add_edge("__start__", "validate")
@@ -258,7 +258,7 @@ def _build_graph_impl(
     # all possible edges from the conditional branch.
     path_map: dict[str, str] = {name: name for name in specialist_names}
     path_map[END] = END
-    workflow.add_conditional_edges("validate", _route_after_validation, path_map=path_map)
+    workflow.add_conditional_edges("validate", _route_after_validation, path_map=path_map)  # type: ignore[arg-type]
 
     # Fan-in: all specialists feed into the consolidator
     for node_name in specialist_names:

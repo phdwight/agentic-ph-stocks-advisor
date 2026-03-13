@@ -121,7 +121,7 @@ def _make_client(monkeypatch):
                 return getattr(client, name)
 
             def close(self):
-                for cm in reversed(stack):
+                for cm in reversed(stack):  # type: ignore[arg-type]
                     cm.__exit__(None, None, None)
                 get_settings.cache_clear()
 

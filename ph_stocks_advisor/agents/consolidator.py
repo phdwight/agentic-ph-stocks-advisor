@@ -73,7 +73,7 @@ class ConsolidatorAgent:
         """
         try:
             structured_llm = self._llm.with_structured_output(ConsolidationResponse)
-            result: ConsolidationResponse = structured_llm.invoke([HumanMessage(content=prompt)])
+            result: ConsolidationResponse = structured_llm.invoke([HumanMessage(content=prompt)])  # type: ignore[assignment]
             logger.info("Structured output succeeded — verdict=%s", result.verdict.value)
             return result.verdict, result.summary
         except (NotImplementedError, AttributeError, TypeError) as exc:

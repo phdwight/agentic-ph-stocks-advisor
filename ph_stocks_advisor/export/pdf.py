@@ -195,7 +195,7 @@ class PdfFormatter(OutputFormatter):
                 continue
             _write_section(pdf, title, body)
 
-        return pdf.output()
+        return pdf.output()  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
