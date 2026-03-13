@@ -1,5 +1,11 @@
 """
 Shared test fixtures and helpers.
+
+Provides:
+- LangSmith tracing suppression for test sessions
+- Mock LLM factories (plain & structured-output)
+- Trajectory-tracking mock LLM for verifying agent step sequences
+- Sample domain data fixtures
 """
 
 from __future__ import annotations
@@ -189,3 +195,60 @@ def sample_advisor_state(
         controversy_analysis=ControversyAnalysis(data=sample_controversy_info, analysis="Minor risk."),
         sentiment_analysis=SentimentAnalysis(data=sample_sentiment_info, analysis="Neutral global outlook."),
     )
+
+
+# ---------------------------------------------------------------------------
+# Trajectory-tracking mock LLM  (verifies the *steps* the agent took)
+# ---------------------------------------------------------------------------
+
+
+class TrajectoryTracker:
+    """Records every LLM invocation and tool call for trajectory testing.
+
+    Usage::
+
+        tracker = TrajectoryTracker("Mock analysis.")
+        agent = PriceAgent(tracker.llm)
+        agent.run("TEL")
+        assert tracker.was_invoked
+        assert tracker.call_count == 1
+        # Inspect the prompt that was sent
+        assert "TEL" in tracker.prompts[0]
+    """
+
+    def __init__(self, response_text: str = "Mock analysis.") -> None:
+        self.prompts: list[str] = []
+        self.tool_calls: list[str] = []
+        self._response_text = response_text
+        self.llm = self._build_llm()
+
+    @property
+    def was_invoked(self) -> bool:
+        return len(self.prompts) > 0
+
+    @property
+    def call_count(self) -> int:
+        return len(self.prompts)
+
+    def _build_llm(self) -> MagicMock:
+        llm = MagicMock()
+        llm.invoke.side_effect = self._record_invoke
+        llm.with_structured_output.side_effect = NotImplementedError(
+            "mock LLM does not support structured output"
+        )
+        llm.bind_tools.return_value = llm
+        return llm
+
+    def _record_invoke(self, messages: Any, **kwargs: Any) -> AIMessage:
+        if isinstance(messages, list):
+            for msg in messages:
+                content = getattr(msg, "content", str(msg))
+                self.prompts.append(content)
+        else:
+            self.prompts.append(str(messages))
+        return AIMessage(content=self._response_text)
+
+
+def make_trajectory_tracker(response_text: str = "Mock analysis.") -> TrajectoryTracker:
+    """Factory for trajectory-tracking mocks."""
+    return TrajectoryTracker(response_text)

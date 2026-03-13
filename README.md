@@ -324,8 +324,36 @@ Override defaults via environment variables before running `deploy.sh`:
 ## Testing
 
 ```bash
+# Run all unit tests (fast, fully mocked, no API keys needed)
+pytest tests/ -v -m "not integration"
+
+# Run integration tests (requires OPENAI_API_KEY)
+pytest tests/ -v -m "integration"
+
+# Run everything
 pytest tests/ -v
 ```
+
+### Test Structure
+
+| Category | Marker | What it tests | LLM calls |
+|----------|--------|---------------|-----------|
+| **Unit** | _(default)_ | Deterministic logic, mocked LLMs, data models | Fully mocked |
+| **Trajectory** | _(default)_ | Agent step sequences (which nodes ran, prompt content, call order) | Fully mocked |
+| **Integration** | `@pytest.mark.integration` | End-to-end with real LLM calls | Real API calls |
+
+Unit and trajectory tests run in CI on every push. Integration tests run only when secrets are available (push to `develop`, not fork PRs).
+
+### Trajectory Testing
+
+Instead of asserting on the exact LLM output string, trajectory tests verify the **steps** the agent took:
+
+- Which data-fetching functions were called and with what arguments
+- Whether the LLM was invoked with the correct context (symbol, data)
+- That the graph executed all expected nodes in the right order
+- That invalid inputs short-circuit the pipeline correctly
+
+Use `make_trajectory_tracker()` from `conftest.py` to instrument any agent.
 
 All tests run offline with mocked data sources and mocked LLM calls — no API key required.
 
@@ -333,8 +361,13 @@ All tests run offline with mocked data sources and mocked LLM calls — no API k
 
 ```
 Dockerfile                         # Multi-stage container image
-docker-compose.yml                 # Compose v2 (app + Postgres + admin)
+docker-compose.yml                 # Compose v2 — local dev (builds from source)
+docker-compose.prod.yml            # Compose v2 — production (pulls pre-built GHCR images)
 .dockerignore                      # Files excluded from Docker build context
+.github/
+└── workflows/
+    ├── develop-ci.yml             # CI — lint, type-check, test (develop branch)
+    └── main-ci-cd.yml             # CI/CD — same checks + deploy to Azure (main branch)
 admin/                             # SQLAdmin database panel
 ├── app.py                     #   Flask + SQLAdmin wiring & model views
 ├── Dockerfile                 #   Container image for admin panel
@@ -411,7 +444,7 @@ ph_stocks_advisor/
     └── repository_postgres.py # PostgreSQL implementation
 
 tests/
-├── conftest.py                # Shared fixtures & mock helpers
+├── conftest.py                # Shared fixtures, mock helpers & trajectory tracker
 ├── test_tools.py
 ├── test_agents.py
 ├── test_auth.py               # Entra ID auth blueprint tests
@@ -419,6 +452,7 @@ tests/
 ├── test_consolidator.py
 ├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py
+├── test_trajectory.py          # Trajectory tests (agent step sequences & graph order)
 ├── test_dedup.py               # Concurrent analysis deduplication tests
 ├── test_healthz.py             # Heartbeat endpoint tests
 ├── test_rate_limit.py          # Per-user daily rate limiting tests
@@ -427,6 +461,89 @@ tests/
 ├── test_sse.py                # SSE progress streaming tests
 └── test_user_type.py          # User type system (elevated bypass) tests
 ```
+
+### CI/CD
+
+Two GitHub Actions workflows follow a **develop → main** promotion strategy:
+
+| Workflow | Branch | Jobs | Deploys? |
+|----------|--------|------|----------|
+| `develop-ci.yml` | `develop` | Lint, type-check, unit tests, integration tests | No |
+| `main-ci-cd.yml` | `main` | Same CI checks + build & push GHCR images + deploy | Yes (push only) |
+
+Both use `uv` for fast dependency installation and share the same quality gates:
+
+1. **Ruff** — lint (style + security rules) & format check
+2. **Pyright** — type checking in basic mode
+3. **Unit tests** — all `pytest` tests except `@pytest.mark.integration` (no secrets needed)
+4. **Integration tests** — real LLM calls (only when `OPENAI_API_KEY` secret is available)
+
+#### Deployment Targets
+
+The `main` workflow supports **two deployment targets** that run in parallel. Each is auto-detected based on which secrets are configured — enable one, both, or neither:
+
+On every push to `main`, a **build-images** job builds Docker images and pushes them to **GitHub Container Registry** (`ghcr.io`). The deploy jobs run after images are published:
+
+| Target | Triggered when | How it works |
+|--------|---------------|--------------|
+| **Azure Container Apps** | `AZURE_CREDENTIALS` secret is set | Runs `deploy.sh --update`, tags images with commit SHA |
+| **Docker Compose via SSH** | `DEPLOY_SSH_KEY` secret is set | SSHs into the server, pulls pre-built GHCR images via `docker-compose.prod.yml`, restarts services, runs health check |
+
+#### GitHub Secrets
+
+| Secret | Used by | Required? | Purpose |
+|--------|---------|-----------|---------|
+| `OPENAI_API_KEY` | CI (both workflows) | Yes | LLM calls in integration tests |
+| `LANGCHAIN_API_KEY` | CI (both workflows) | No | LangSmith tracing in integration tests |
+| **Azure deployment** | | | |
+| `AZURE_CREDENTIALS` | `deploy-azure` job | For Azure | Service principal JSON (`az ad sp create-for-rbac --json-auth`) |
+| `TAVILY_API_KEY` | `deploy-azure` job | No | Web search (passed to Azure env vars) |
+| **SSH deployment** | | | |
+| `DEPLOY_HOST` | `deploy-ssh` job | For SSH | Production server hostname or IP |
+| `DEPLOY_USER` | `deploy-ssh` job | For SSH | SSH username |
+| `DEPLOY_SSH_KEY` | `deploy-ssh` job | For SSH | SSH private key (e.g. `id_ed25519`) |
+| `DEPLOY_PORT` | `deploy-ssh` job | No | SSH port (default: `22`) |
+
+#### GitHub Variables (optional)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AZURE_RESOURCE_GROUP` | `ph-stocks-advisor-rg` | Azure resource group name |
+| `AZURE_APP_NAME` | `phstocks` | Azure Container Apps name prefix |
+| `DEPLOY_PATH` | `~/ph-stocks-advisor` | Project directory on the SSH server |
+
+#### SSH Server Setup (Pre-built Images)
+
+The SSH deploy job uses **pre-built images from GHCR** — the server does **not** need the source code or Git.
+
+On the target machine, do a one-time setup:
+
+```bash
+mkdir -p ~/ph-stocks-advisor && cd ~/ph-stocks-advisor
+
+# 1. Copy docker-compose.prod.yml from the repo (or download it)
+curl -fsSL https://raw.githubusercontent.com/<owner>/agentic-ph-stocks-advisor/main/docker-compose.prod.yml \
+  -o docker-compose.prod.yml
+
+# 2. Create .env
+cat > .env <<'EOF'
+OPENAI_API_KEY=sk-...
+POSTGRES_PASSWORD=<strong-password>
+ADMIN_PASSWORD=<strong-password>
+APP_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor:latest
+ADMIN_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor-admin:latest
+EOF
+
+# 3. Log in to GHCR (only needed for private repos)
+echo $GITHUB_PAT | docker login ghcr.io -u <username> --password-stdin
+
+# 4. First launch
+docker compose -f docker-compose.prod.yml up -d
+```
+
+After this, every push to `main` will automatically pull new images and restart the services.
+
+> **Deploying to another device?** Copy `docker-compose.prod.yml` + `.env` to any machine with Docker, set `APP_IMAGE` and `ADMIN_IMAGE`, and run `docker compose -f docker-compose.prod.yml up -d`.
 
 ## Environment Variables
 
@@ -488,6 +605,8 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `PG_POOL_MAX` | No | `5` | Maximum PostgreSQL connections in pool |
 | `REDIS_MAX_CONNECTIONS` | No | `10` | Maximum connections in the shared Redis pool |
 | `CELERY_CONCURRENCY` | No | `4` | Celery worker concurrency (prefork processes) |
+| `APP_IMAGE` | No | `ghcr.io/OWNER/agentic-ph-stocks-advisor:latest` | App Docker image for `docker-compose.prod.yml` |
+| `ADMIN_IMAGE` | No | `ghcr.io/OWNER/agentic-ph-stocks-advisor-admin:latest` | Admin Docker image for `docker-compose.prod.yml` |
 
 ## Scaling Tiers
 
