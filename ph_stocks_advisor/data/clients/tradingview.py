@@ -23,30 +23,57 @@ logger = logging.getLogger(__name__)
 
 def _scanner_url() -> str:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().tradingview_scanner_url
 
 
 def _timeout() -> int:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().http_timeout
+
 
 # Columns we request from TradingView's scanner
 _COLUMNS = [
     # Today's OHLCV
-    "close", "open", "high", "low", "volume",
+    "close",
+    "open",
+    "high",
+    "low",
+    "volume",
     # Performance (% change over period)
-    "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "Perf.YTD",
+    "Perf.W",
+    "Perf.1M",
+    "Perf.3M",
+    "Perf.6M",
+    "Perf.Y",
+    "Perf.YTD",
     # Volatility (annualised std-dev estimates)
-    "Volatility.D", "Volatility.W", "Volatility.M",
+    "Volatility.D",
+    "Volatility.W",
+    "Volatility.M",
     # 52-week extremes
-    "price_52_week_high", "price_52_week_low",
+    "price_52_week_high",
+    "price_52_week_low",
 ]
 
 _COLUMN_KEYS = [
-    "close", "open", "high", "low", "volume",
-    "perf_week", "perf_1m", "perf_3m", "perf_6m", "perf_year", "perf_ytd",
-    "volatility_daily", "volatility_weekly", "volatility_monthly",
-    "week_high_52", "week_low_52",
+    "close",
+    "open",
+    "high",
+    "low",
+    "volume",
+    "perf_week",
+    "perf_1m",
+    "perf_3m",
+    "perf_6m",
+    "perf_year",
+    "perf_ytd",
+    "volatility_daily",
+    "volatility_weekly",
+    "volatility_monthly",
+    "week_high_52",
+    "week_low_52",
 ]
 
 
@@ -71,7 +98,9 @@ def fetch_tradingview_snapshot(symbol: str) -> dict[str, Any]:
         )
         if resp.status_code != 200:
             logger.debug(
-                "TradingView scanner returned %s for %s", resp.status_code, tv_symbol,
+                "TradingView scanner returned %s for %s",
+                resp.status_code,
+                tv_symbol,
             )
             return {}
 
@@ -82,7 +111,7 @@ def fetch_tradingview_snapshot(symbol: str) -> dict[str, Any]:
 
         values = rows[0].get("d", [])
         result: dict[str, Any] = {}
-        for key, val in zip(_COLUMN_KEYS, values):
+        for key, val in zip(_COLUMN_KEYS, values, strict=False):
             result[key] = float(val) if val is not None else 0.0
         return result
 

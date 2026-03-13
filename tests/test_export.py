@@ -6,13 +6,11 @@ PdfFormatter, HtmlFormatter, registry, and generic CLI.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ph_stocks_advisor.export import (
-    FORMATTER_REGISTRY,
     HtmlFormatter,
     OutputFormatter,
     PdfFormatter,
@@ -21,7 +19,6 @@ from ph_stocks_advisor.export import (
 )
 from ph_stocks_advisor.export.html import _body_to_html, _esc, _md_bold_to_html
 from ph_stocks_advisor.infra.repository import ReportRecord
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -102,18 +99,22 @@ class TestParseSections:
 
     # --- Markdown ATX heading support ---
 
-    @pytest.mark.parametrize("text,expected_titles", [
-        (
-            "### Price Analysis\n- Price is PHP 14.26\n### Dividend Analysis\n- Yield is 7%",
-            ["Price Analysis", "Dividend Analysis"],
-        ),
-        ("## Overview\nSome overview text.", ["Overview"]),
-        ("### Price Analysis:\n- Bullet", ["Price Analysis"]),
-        (
-            "**Price Analysis:**\n- Price bullet\n### Dividend Analysis\n- Dividend bullet",
-            ["Price Analysis", "Dividend Analysis"],
-        ),
-    ], ids=["h3", "h2", "h3-trailing-colon", "mixed-bold-and-h3"])
+    @pytest.mark.parametrize(
+        "text,expected_titles",
+        [
+            (
+                "### Price Analysis\n- Price is PHP 14.26\n### Dividend Analysis\n- Yield is 7%",
+                ["Price Analysis", "Dividend Analysis"],
+            ),
+            ("## Overview\nSome overview text.", ["Overview"]),
+            ("### Price Analysis:\n- Bullet", ["Price Analysis"]),
+            (
+                "**Price Analysis:**\n- Price bullet\n### Dividend Analysis\n- Dividend bullet",
+                ["Price Analysis", "Dividend Analysis"],
+            ),
+        ],
+        ids=["h3", "h2", "h3-trailing-colon", "mixed-bold-and-h3"],
+    )
     def test_markdown_heading_recognition(self, text, expected_titles):
         sections = parse_sections(text)
         titles = [t for t, _ in sections]
@@ -137,41 +138,49 @@ class TestParseSections:
 
     # --- Trailing dashes in headings (regression: MREIT PDF output) ---
 
-    @pytest.mark.parametrize("text", [
-        "**Price Analysis:----**\n- Bullet one",
-        "### Price Analysis----\n- Bullet one",
-        "**Price Analysis----:**\n- Bullet one",
-    ], ids=["bold-trailing", "h3-trailing", "bold-dashes-before-colon"])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "**Price Analysis:----**\n- Bullet one",
+            "### Price Analysis----\n- Bullet one",
+            "**Price Analysis----:**\n- Bullet one",
+        ],
+        ids=["bold-trailing", "h3-trailing", "bold-dashes-before-colon"],
+    )
     def test_trailing_dashes_stripped_from_heading(self, text):
         sections = parse_sections(text)
         assert sections[0][0] == "Price Analysis"
         assert "--" not in sections[0][0]
 
-    @pytest.mark.parametrize("text,expected_titles", [
-        (
-            "Summary paragraph.\n\n**Price Analysis**\n- BDO is at PHP 138.50.\n\n"
-            "**Dividend Analysis**\n- Dividend yield is about 3.1%.\n",
-            ["Price Analysis", "Dividend Analysis"],
-        ),
-        (
-            "### Price Analysis----\n - MREIT is at PHP 14.26\n"
-            "### Dividend Analysis----\n - Trailing dividend yield is about 7.06%\n"
-            "### Price Movement Analysis----\n - Over roughly a year, the stock is up about +5.6%\n",
-            ["Price Analysis", "Dividend Analysis", "Price Movement Analysis"],
-        ),
-        (
-            "Executive Summary:\nAREIT is trading near the lower end.\n\n"
-            "Price Analysis:\n- Current price is PHP 40.05\n\n"
-            "Dividend Analysis:\n- Yield is 5.8%\n",
-            ["Executive Summary", "Price Analysis", "Dividend Analysis"],
-        ),
-        (
-            "Executive Summary:\nSummary text here.\n\n"
-            "**Price Analysis:**\n- Price bullet\n"
-            "Valuation Analysis:\n- Undervalued.\n",
-            ["Executive Summary", "Price Analysis", "Valuation Analysis"],
-        ),
-    ], ids=["bold-no-colon", "mreit-dashes", "plain-text", "plain-text-mixed-bold"])
+    @pytest.mark.parametrize(
+        "text,expected_titles",
+        [
+            (
+                "Summary paragraph.\n\n**Price Analysis**\n- BDO is at PHP 138.50.\n\n"
+                "**Dividend Analysis**\n- Dividend yield is about 3.1%.\n",
+                ["Price Analysis", "Dividend Analysis"],
+            ),
+            (
+                "### Price Analysis----\n - MREIT is at PHP 14.26\n"
+                "### Dividend Analysis----\n - Trailing dividend yield is about 7.06%\n"
+                "### Price Movement Analysis----\n - Over roughly a year, the stock is up about +5.6%\n",
+                ["Price Analysis", "Dividend Analysis", "Price Movement Analysis"],
+            ),
+            (
+                "Executive Summary:\nAREIT is trading near the lower end.\n\n"
+                "Price Analysis:\n- Current price is PHP 40.05\n\n"
+                "Dividend Analysis:\n- Yield is 5.8%\n",
+                ["Executive Summary", "Price Analysis", "Dividend Analysis"],
+            ),
+            (
+                "Executive Summary:\nSummary text here.\n\n"
+                "**Price Analysis:**\n- Price bullet\n"
+                "Valuation Analysis:\n- Undervalued.\n",
+                ["Executive Summary", "Price Analysis", "Valuation Analysis"],
+            ),
+        ],
+        ids=["bold-no-colon", "mreit-dashes", "plain-text", "plain-text-mixed-bold"],
+    )
     def test_heading_style_variants(self, text, expected_titles):
         sections = parse_sections(text)
         titles = [t for t, _ in sections]
@@ -191,11 +200,7 @@ class TestParseSections:
 
     def test_duplicate_title_stripped_from_body(self):
         """When body starts with the same title, it's removed."""
-        text = (
-            "**Executive Summary:**\n"
-            "Executive Summary:\n"
-            "AREIT is trading near the lower end.\n"
-        )
+        text = "**Executive Summary:**\nExecutive Summary:\nAREIT is trading near the lower end.\n"
         sections = parse_sections(text)
         body = sections[0][1]
         assert not body.strip().startswith("Executive Summary")
@@ -240,10 +245,14 @@ class TestOutputFormatterContract:
 
 
 class TestGetFormatter:
-    @pytest.mark.parametrize("fmt_name,expected_cls", [
-        ("pdf", PdfFormatter),
-        ("html", HtmlFormatter),
-    ], ids=["pdf", "html"])
+    @pytest.mark.parametrize(
+        "fmt_name,expected_cls",
+        [
+            ("pdf", PdfFormatter),
+            ("html", HtmlFormatter),
+        ],
+        ids=["pdf", "html"],
+    )
     def test_returns_correct_formatter(self, fmt_name, expected_cls):
         assert isinstance(get_formatter(fmt_name), expected_cls)
 
@@ -259,9 +268,7 @@ class TestGetFormatter:
 
 class TestHtmlEsc:
     def test_escapes_html_entities_and_quotes(self):
-        assert _esc("<script>alert('x')</script>") == (
-            "&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;"
-        )
+        assert _esc("<script>alert('x')</script>") == ("&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;")
         assert "&quot;" in _esc('"hello"')
 
 
@@ -302,13 +309,17 @@ class TestBodyToHtml:
         assert "--" not in out
         assert "7%." in out
 
-    @pytest.mark.parametrize("input_text,expected_li_contents", [
-        (
-            "- - At PHP 138.50, BDO is closer\n- - The move was small",
-            ["At PHP 138.50", "The move was small"],
-        ),
-        ("- - - deeply nested", ["deeply nested"]),
-    ], ids=["double-dash", "triple-dash"])
+    @pytest.mark.parametrize(
+        "input_text,expected_li_contents",
+        [
+            (
+                "- - At PHP 138.50, BDO is closer\n- - The move was small",
+                ["At PHP 138.50", "The move was small"],
+            ),
+            ("- - - deeply nested", ["deeply nested"]),
+        ],
+        ids=["double-dash", "triple-dash"],
+    )
     def test_repeated_dash_bullets_collapsed(self, input_text, expected_li_contents):
         """LLM sometimes produces '- - text'; should render as single bullet."""
         out = _body_to_html(input_text)
@@ -319,12 +330,7 @@ class TestBodyToHtml:
 
     def test_markdown_table_renders_html_table(self):
         """A simple two-row Markdown table becomes an HTML <table>."""
-        md = (
-            "| Metric | Value |\n"
-            "|--------|-------|\n"
-            "| Current Price | ₱38.00 |\n"
-            "| Fair Value | ₱42.00 |"
-        )
+        md = "| Metric | Value |\n|--------|-------|\n| Current Price | ₱38.00 |\n| Fair Value | ₱42.00 |"
         out = _body_to_html(md)
         assert '<table class="metrics-table">' in out
         assert "<thead>" in out
@@ -335,35 +341,21 @@ class TestBodyToHtml:
 
     def test_table_separator_row_excluded(self):
         """The |---|---| separator row must NOT produce a data row."""
-        md = (
-            "| Metric | Value |\n"
-            "|--------|-------|\n"
-            "| Entry Range | ₱18.50 – ₱20.00 |"
-        )
+        md = "| Metric | Value |\n|--------|-------|\n| Entry Range | ₱18.50 – ₱20.00 |"
         out = _body_to_html(md)
         # Only one <tr> in tbody (no separator row)
         assert out.count("<tr>") == 2  # 1 header + 1 data
 
     def test_table_mixed_with_paragraph(self):
         """Paragraph text before and after a table should render correctly."""
-        md = (
-            "Summary paragraph.\n\n"
-            "| Metric | Value |\n"
-            "|--------|-------|\n"
-            "| Price | ₱10.00 |\n\n"
-            "Closing remark."
-        )
+        md = "Summary paragraph.\n\n| Metric | Value |\n|--------|-------|\n| Price | ₱10.00 |\n\nClosing remark."
         out = _body_to_html(md)
         assert out.index("<p>Summary") < out.index("<table")
         assert out.index("</table>") < out.index("Closing")
 
     def test_table_bold_cells(self):
         """Bold markers inside table cells are converted to <strong>."""
-        md = (
-            "| Metric | Value |\n"
-            "|--------|-------|\n"
-            "| **Entry Range** | ₱18.50 |"
-        )
+        md = "| Metric | Value |\n|--------|-------|\n| **Entry Range** | ₱18.50 |"
         out = _body_to_html(md)
         assert "<strong>Entry Range</strong>" in out
 
@@ -405,10 +397,14 @@ class TestHtmlRender:
         html = HtmlFormatter().render(_make_record(symbol="SM")).decode()
         assert "<title>SM Stock Analysis</title>" in html
 
-    @pytest.mark.parametrize("verdict,badge_class", [
-        ("BUY", "badge buy"),
-        ("NOT BUY", "badge not-buy"),
-    ], ids=["buy", "not-buy"])
+    @pytest.mark.parametrize(
+        "verdict,badge_class",
+        [
+            ("BUY", "badge buy"),
+            ("NOT BUY", "badge not-buy"),
+        ],
+        ids=["buy", "not-buy"],
+    )
     def test_verdict_badge(self, verdict, badge_class):
         html = HtmlFormatter().render(_make_record(verdict=verdict)).decode()
         assert f'class="{badge_class}"' in html
@@ -420,7 +416,7 @@ class TestHtmlRender:
         assert 'class="verdict-label"' in html
         assert "Verdict:" in html
         # The badge itself should only contain the verdict value
-        assert '>BUY</span>' in html
+        assert ">BUY</span>" in html
 
     def test_badge_is_pill_shaped(self):
         """CSS should use large border-radius for a pill shape."""
@@ -530,12 +526,15 @@ class TestExportCli:
 
         out = tmp_path / "report.html"
 
-        with patch(
-            "ph_stocks_advisor.export.formatter.get_repository",
-            return_value=mock_repo,
-        ), patch(
-            "sys.argv",
-            ["export", "TEL", "-o", str(out)],
+        with (
+            patch(
+                "ph_stocks_advisor.export.formatter.get_repository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sys.argv",
+                ["export", "TEL", "-o", str(out)],
+            ),
         ):
             from ph_stocks_advisor.export.html import main as html_main
 
@@ -553,12 +552,15 @@ class TestExportCli:
 
         out = tmp_path / "report.pdf"
 
-        with patch(
-            "ph_stocks_advisor.export.formatter.get_repository",
-            return_value=mock_repo,
-        ), patch(
-            "sys.argv",
-            ["export", "TEL", "-o", str(out)],
+        with (
+            patch(
+                "ph_stocks_advisor.export.formatter.get_repository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sys.argv",
+                ["export", "TEL", "-o", str(out)],
+            ),
         ):
             from ph_stocks_advisor.export.pdf import main as pdf_main
 
@@ -571,13 +573,17 @@ class TestExportCli:
         mock_repo = MagicMock()
         mock_repo.get_latest_by_symbol.return_value = None
 
-        with patch(
-            "ph_stocks_advisor.export.formatter.get_repository",
-            return_value=mock_repo,
-        ), patch(
-            "sys.argv",
-            ["export", "TEL"],
-        ), pytest.raises(SystemExit) as exc_info:
+        with (
+            patch(
+                "ph_stocks_advisor.export.formatter.get_repository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sys.argv",
+                ["export", "TEL"],
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
             from ph_stocks_advisor.export.html import main as html_main
 
             html_main()
@@ -591,12 +597,15 @@ class TestExportCli:
 
         out = tmp_path / "report.html"
 
-        with patch(
-            "ph_stocks_advisor.export.formatter.get_repository",
-            return_value=mock_repo,
-        ), patch(
-            "sys.argv",
-            ["export", "TEL", "--id", "42", "-o", str(out)],
+        with (
+            patch(
+                "ph_stocks_advisor.export.formatter.get_repository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "sys.argv",
+                ["export", "TEL", "--id", "42", "-o", str(out)],
+            ),
         ):
             from ph_stocks_advisor.export.html import main as html_main
 

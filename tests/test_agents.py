@@ -12,6 +12,14 @@ from unittest.mock import patch
 
 import pytest
 
+from ph_stocks_advisor.agents.specialists import (
+    ControversyAgent,
+    DividendAgent,
+    MovementAgent,
+    PriceAgent,
+    SentimentAgent,
+    ValuationAgent,
+)
 from tests.conftest import make_mock_llm
 from tests.dummy_responses import (
     CONTROVERSY_ANALYSIS_RESPONSE,
@@ -20,14 +28,6 @@ from tests.dummy_responses import (
     PRICE_ANALYSIS_RESPONSE,
     SENTIMENT_ANALYSIS_RESPONSE,
     VALUATION_ANALYSIS_RESPONSE,
-)
-from ph_stocks_advisor.agents.specialists import (
-    ControversyAgent,
-    DividendAgent,
-    MovementAgent,
-    PriceAgent,
-    SentimentAgent,
-    ValuationAgent,
 )
 
 

@@ -8,7 +8,6 @@ the expected format easy to update if agent prompts change.
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Specialist agent responses
 # ---------------------------------------------------------------------------

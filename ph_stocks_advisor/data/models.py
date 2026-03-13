@@ -8,23 +8,22 @@ and the shared graph state used across the LangGraph workflow.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
 
-class Verdict(str, Enum):
+
+class Verdict(str, Enum):  # noqa: UP042
     """Final investment verdict."""
 
     BUY = "BUY"
     NOT_BUY = "NOT BUY"
 
 
-class TrendDirection(str, Enum):
+class TrendDirection(str, Enum):  # noqa: UP042
     UPTREND = "uptrend"
     DOWNTREND = "downtrend"
     SIDEWAYS = "sideways"
@@ -33,6 +32,7 @@ class TrendDirection(str, Enum):
 # ---------------------------------------------------------------------------
 # Domain value objects
 # ---------------------------------------------------------------------------
+
 
 class StockPrice(BaseModel):
     """Current and historical price information."""
@@ -85,11 +85,7 @@ class DividendAnnouncement(BaseModel):
 
     def to_summary(self) -> str:
         """Human-readable one-line summary."""
-        return (
-            f"{self.dividend_rate}/share, "
-            f"ex-date {self.ex_date}, "
-            f"payment {self.payment_date}"
-        )
+        return f"{self.dividend_rate}/share, ex-date {self.ex_date}, payment {self.payment_date}"
 
 
 class DividendInfo(BaseModel):
@@ -109,7 +105,7 @@ class DividendInfo(BaseModel):
     dividend_rate: float = 0.0
     dividend_yield: float = 0.0
     payout_ratio: float = 0.0
-    ex_dividend_date: Optional[str] = None
+    ex_dividend_date: str | None = None
     five_year_avg_yield: float = 0.0
     is_reit: bool = False
     annual_dividend_per_share: float = 0.0
@@ -263,6 +259,7 @@ class SentimentInfo(BaseModel):
 # Agent analysis results
 # ---------------------------------------------------------------------------
 
+
 class PriceAnalysis(BaseModel):
     """Output from the Price Analysis Agent."""
 
@@ -345,6 +342,7 @@ class FinalReport(BaseModel):
 # LangGraph shared state
 # ---------------------------------------------------------------------------
 
+
 class AdvisorState(BaseModel):
     """
     Shared state flowing through the LangGraph workflow.
@@ -354,10 +352,10 @@ class AdvisorState(BaseModel):
     """
 
     symbol: str = ""
-    price_analysis: Optional[PriceAnalysis] = None
-    dividend_analysis: Optional[DividendAnalysis] = None
-    movement_analysis: Optional[MovementAnalysis] = None
-    valuation_analysis: Optional[ValuationAnalysis] = None
-    controversy_analysis: Optional[ControversyAnalysis] = None
-    sentiment_analysis: Optional[SentimentAnalysis] = None
-    final_report: Optional[FinalReport] = None
+    price_analysis: PriceAnalysis | None = None
+    dividend_analysis: DividendAnalysis | None = None
+    movement_analysis: MovementAnalysis | None = None
+    valuation_analysis: ValuationAnalysis | None = None
+    controversy_analysis: ControversyAnalysis | None = None
+    sentiment_analysis: SentimentAnalysis | None = None
+    final_report: FinalReport | None = None

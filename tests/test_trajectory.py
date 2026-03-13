@@ -12,12 +12,8 @@ All tests are fully mocked — no API keys or network access required.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from tests.conftest import make_trajectory_tracker
-from tests.dummy_responses import PRICE_ANALYSIS_RESPONSE
 from ph_stocks_advisor.agents.specialists import PriceAgent
 from ph_stocks_advisor.data.models import (
     ControversyAnalysis,
@@ -35,6 +31,8 @@ from ph_stocks_advisor.data.models import (
     ValuationAnalysis,
     Verdict,
 )
+from tests.conftest import make_trajectory_tracker
+from tests.dummy_responses import PRICE_ANALYSIS_RESPONSE
 
 
 class TestAgentTrajectory:
@@ -58,9 +56,7 @@ class TestAgentTrajectory:
         assert tracker.call_count >= 1, "LLM should be invoked at least once"
 
         # Step 3: the prompt sent to the LLM mentions the symbol
-        assert any("TEL" in p for p in tracker.prompts), (
-            "LLM prompt should contain the stock symbol"
-        )
+        assert any("TEL" in p for p in tracker.prompts), "LLM prompt should contain the stock symbol"
 
         # Step 4: result has the expected structure
         assert result.data.symbol == "TEL"
@@ -91,27 +87,33 @@ class TestGraphTrajectory:
             return mock_cls
 
         MockPriceAgent = _make_mock_agent(
-            "PriceAgent", "price_analysis",
+            "PriceAgent",
+            "price_analysis",
             PriceAnalysis(data=StockPrice(symbol="TEL", current_price=1250.0), analysis="OK"),
         )
         MockDividendAgent = _make_mock_agent(
-            "DividendAgent", "dividend_analysis",
+            "DividendAgent",
+            "dividend_analysis",
             DividendAnalysis(data=DividendInfo(symbol="TEL"), analysis="OK"),
         )
         MockMovementAgent = _make_mock_agent(
-            "MovementAgent", "movement_analysis",
+            "MovementAgent",
+            "movement_analysis",
             MovementAnalysis(data=PriceMovement(symbol="TEL"), analysis="OK"),
         )
         MockValuationAgent = _make_mock_agent(
-            "ValuationAgent", "valuation_analysis",
+            "ValuationAgent",
+            "valuation_analysis",
             ValuationAnalysis(data=FairValueEstimate(symbol="TEL"), analysis="OK"),
         )
         MockControversyAgent = _make_mock_agent(
-            "ControversyAgent", "controversy_analysis",
+            "ControversyAgent",
+            "controversy_analysis",
             ControversyAnalysis(data=ControversyInfo(symbol="TEL"), analysis="OK"),
         )
         MockSentimentAgent = _make_mock_agent(
-            "SentimentAgent", "sentiment_analysis",
+            "SentimentAgent",
+            "sentiment_analysis",
             SentimentAnalysis(data=SentimentInfo(symbol="TEL"), analysis="OK"),
         )
 
@@ -144,12 +146,14 @@ class TestGraphTrajectory:
 
         # All 6 specialist agents were executed
         expected_agents = {
-            "PriceAgent", "DividendAgent", "MovementAgent",
-            "ValuationAgent", "ControversyAgent", "SentimentAgent",
+            "PriceAgent",
+            "DividendAgent",
+            "MovementAgent",
+            "ValuationAgent",
+            "ControversyAgent",
+            "SentimentAgent",
         }
-        assert set(executed_agents) == expected_agents, (
-            f"Expected all 6 agents to run, got: {executed_agents}"
-        )
+        assert set(executed_agents) == expected_agents, f"Expected all 6 agents to run, got: {executed_agents}"
 
         # Consolidator was called exactly once, after all specialists
         MockConsolidator.return_value.run.assert_called_once()

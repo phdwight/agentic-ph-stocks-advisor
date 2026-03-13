@@ -18,13 +18,13 @@ import re
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
+from ph_stocks_advisor.agents.prompts import CONSOLIDATION_PROMPT
 from ph_stocks_advisor.data.models import (
     AdvisorState,
     ConsolidationResponse,
     FinalReport,
     Verdict,
 )
-from ph_stocks_advisor.agents.prompts import CONSOLIDATION_PROMPT
 from ph_stocks_advisor.infra.config import get_today
 
 logger = logging.getLogger(__name__)
@@ -73,9 +73,7 @@ class ConsolidatorAgent:
         """
         try:
             structured_llm = self._llm.with_structured_output(ConsolidationResponse)
-            result: ConsolidationResponse = structured_llm.invoke(
-                [HumanMessage(content=prompt)]
-            )
+            result: ConsolidationResponse = structured_llm.invoke([HumanMessage(content=prompt)])
             logger.info("Structured output succeeded — verdict=%s", result.verdict.value)
             return result.verdict, result.summary
         except (NotImplementedError, AttributeError, TypeError) as exc:
@@ -110,11 +108,7 @@ class ConsolidatorAgent:
             re.IGNORECASE,
         )
         if structured:
-            return (
-                Verdict.NOT_BUY
-                if "NOT" in structured.group(1).upper()
-                else Verdict.BUY
-            )
+            return Verdict.NOT_BUY if "NOT" in structured.group(1).upper() else Verdict.BUY
 
         # --- 2. Word-boundary fallback (handles free-form text) ---
         # Search backwards by scanning all matches and taking the last one.

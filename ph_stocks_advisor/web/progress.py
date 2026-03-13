@@ -24,11 +24,12 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 import redis as redis_lib
 
-from ph_stocks_advisor.infra.config import get_redis, get_settings
+from ph_stocks_advisor.infra.config import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +117,7 @@ def publish_progress(
         # Broadcast to any connected subscribers.
         r.publish(_channel(task_id), payload)
     except Exception:
-        logger.debug(
-            "Failed to publish progress for task %s", task_id, exc_info=True
-        )
+        logger.debug("Failed to publish progress for task %s", task_id, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +191,12 @@ def subscribe_progress(task_id: str) -> Generator[dict[str, Any], None, None]:
                     return
 
         # Deadline exceeded — emit a synthetic timeout event.
-        yield {"step": STEP_SAVING, "label": "Timed out", "done": True,
-               "error": "Progress stream timed out. Check status manually."}
+        yield {
+            "step": STEP_SAVING,
+            "label": "Timed out",
+            "done": True,
+            "error": "Progress stream timed out. Check status manually.",
+        }
     finally:
         pubsub.unsubscribe(_channel(task_id))
         pubsub.close()

@@ -16,22 +16,24 @@ New code should import directly from the service modules when possible:
 
 from __future__ import annotations
 
-# Domain services (re-exports)
-from ph_stocks_advisor.data.services.price import (  # noqa: F401
-    detect_price_catalysts as _detect_price_catalysts,
-    fetch_stock_price,
-)
-from ph_stocks_advisor.data.services.dividend import fetch_dividend_info  # noqa: F401
-from ph_stocks_advisor.data.services.movement import fetch_price_movement  # noqa: F401
-from ph_stocks_advisor.data.services.valuation import fetch_fair_value  # noqa: F401
-from ph_stocks_advisor.data.services.controversy import fetch_controversy_info  # noqa: F401
-from ph_stocks_advisor.data.services.sentiment import fetch_sentiment_info  # noqa: F401
-
 # Symbol validation (delegates to DragonFi)
 from ph_stocks_advisor.data.clients.dragonfi import (  # noqa: F401
     SymbolNotFoundError,
     validate_pse_symbol,
 )
+from ph_stocks_advisor.data.services.controversy import fetch_controversy_info  # noqa: F401
+from ph_stocks_advisor.data.services.dividend import fetch_dividend_info  # noqa: F401
+from ph_stocks_advisor.data.services.movement import fetch_price_movement  # noqa: F401
+
+# Domain services (re-exports)
+from ph_stocks_advisor.data.services.price import (  # noqa: F401
+    detect_price_catalysts as _detect_price_catalysts,
+)
+from ph_stocks_advisor.data.services.price import (
+    fetch_stock_price,
+)
+from ph_stocks_advisor.data.services.sentiment import fetch_sentiment_info  # noqa: F401
+from ph_stocks_advisor.data.services.valuation import fetch_fair_value  # noqa: F401
 
 
 def validate_symbol(symbol: str) -> str:
@@ -58,4 +60,3 @@ __all__ = [
     "fetch_sentiment_info",
     "_detect_price_catalysts",
 ]
-

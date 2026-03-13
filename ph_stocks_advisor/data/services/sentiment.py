@@ -40,6 +40,7 @@ def _fetch_global_events_news(symbol: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def fetch_sentiment_info(symbol: str) -> SentimentInfo:
     """Gather global-events and macro-sentiment context for *symbol*.
 

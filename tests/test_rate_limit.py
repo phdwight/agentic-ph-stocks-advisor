@@ -18,7 +18,6 @@ import ph_stocks_advisor.web.app as _app_mod
 import ph_stocks_advisor.web.rate_limit as _rl_mod
 import ph_stocks_advisor.web.tasks as _tasks_mod
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -209,12 +208,16 @@ class TestRelease:
 class TestCheckLimit:
     """Direct tests for the read-only check_limit function."""
 
-    @pytest.mark.parametrize("user,seed_count,expected_allowed,expected_count", [
-        ("user@test.com", 0, True, 0),
-        ("user@test.com", 3, True, 3),
-        ("user@test.com", 5, False, 5),
-        ("over@test.com", 7, False, 7),
-    ], ids=["no-usage", "under-limit", "at-limit", "over-limit"])
+    @pytest.mark.parametrize(
+        "user,seed_count,expected_allowed,expected_count",
+        [
+            ("user@test.com", 0, True, 0),
+            ("user@test.com", 3, True, 3),
+            ("user@test.com", 5, False, 5),
+            ("over@test.com", 7, False, 7),
+        ],
+        ids=["no-usage", "under-limit", "at-limit", "over-limit"],
+    )
     def test_check_limit_result(self, fake_redis, user, seed_count, expected_allowed, expected_count):
         if seed_count:
             _seed_counter(fake_redis, user, seed_count)
@@ -258,11 +261,15 @@ class TestIncrement:
 class TestGetRemaining:
     """Tests for the get_remaining helper."""
 
-    @pytest.mark.parametrize("increments,expected_remaining", [
-        (0, 5),
-        (2, 3),
-        (5, 0),
-    ], ids=["no-usage", "partial-usage", "exhausted"])
+    @pytest.mark.parametrize(
+        "increments,expected_remaining",
+        [
+            (0, 5),
+            (2, 3),
+            (5, 0),
+        ],
+        ids=["no-usage", "partial-usage", "exhausted"],
+    )
     def test_remaining_quota(self, fake_redis, increments, expected_remaining):
         for _ in range(increments):
             _rl_mod.increment(fake_redis, "user@test.com")
@@ -297,9 +304,7 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-001"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
             client.post("/analyse", data={"symbol": "ABC"})
 
         remaining = _rl_mod.get_remaining(fake_redis, "dev@localhost", 3)
@@ -310,9 +315,7 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-001"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
             for i in range(3):
                 task.id = f"task-{i}"
                 resp = client.post("/analyse", data={"symbol": f"SYM{i}"})
@@ -338,9 +341,7 @@ class TestAnalyseRateLimit:
 
         with (
             patch.object(_app_mod, "get_repository", return_value=mock_repo),
-            patch.object(
-                _tasks_mod.analyse_stock, "delay", return_value=task
-            ),
+            patch.object(_tasks_mod.analyse_stock, "delay", return_value=task),
         ):
             # Cached request — should not count
             resp = client.post("/analyse", data={"symbol": "TEL"})
@@ -357,9 +358,7 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-new"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
             # Join — should not count
             resp = client.post("/analyse", data={"symbol": "TEL"})
             assert resp.status_code == 200
@@ -378,6 +377,7 @@ class TestAnalyseRateLimit:
         assert "quota resets" in data["error"]
         assert "reset_at" in data
         from datetime import datetime
+
         reset_dt = datetime.fromisoformat(data["reset_at"])
         assert reset_dt.hour == 0 and reset_dt.minute == 0
 
@@ -386,9 +386,7 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-001"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ) as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task) as mock_delay:
             client.post("/analyse", data={"symbol": "ABC"})
 
         mock_delay.assert_called_once_with("ABC", user_id="dev@localhost")

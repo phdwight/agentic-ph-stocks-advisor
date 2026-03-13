@@ -11,7 +11,6 @@ rather than importing concrete settings directly.
 
 from __future__ import annotations
 
-import calendar
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -47,9 +46,7 @@ return {1, new}
 def _seconds_until_utc_midnight() -> int:
     """Return the number of seconds from now until the next 00:00 UTC."""
     now = datetime.now(tz=UTC)
-    tomorrow = (now + timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     return int((tomorrow - now).total_seconds())
 
 
@@ -89,9 +86,7 @@ def reserve(
     allowed = bool(int(allowed_int))
 
     if not allowed:
-        logger.info(
-            "Rate limit reached for %s (%d/%d)", user_id, count, limit
-        )
+        logger.info("Rate limit reached for %s (%d/%d)", user_id, count, limit)
 
     return allowed, int(count)
 
@@ -135,9 +130,7 @@ def check_limit(
     current_count = int(current) if current is not None else 0
 
     if current_count >= limit:
-        logger.info(
-            "Rate limit reached for %s (%d/%d)", user_id, current_count, limit
-        )
+        logger.info("Rate limit reached for %s (%d/%d)", user_id, current_count, limit)
         return False, current_count
 
     return True, current_count

@@ -29,12 +29,15 @@ logger = logging.getLogger(__name__)
 
 def _base_url() -> str:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().pse_edge_base_url
 
 
 def _timeout() -> int:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().http_timeout
+
 
 # In-process cache: symbol → (cmpy_id, security_id)
 _ID_CACHE: dict[str, tuple[str, str]] = {}
@@ -43,6 +46,7 @@ _ID_CACHE: dict[str, tuple[str, str]] = {}
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _resolve_cmpy_id(symbol: str) -> str | None:
     """Look up the PSE EDGE ``cmpy_id`` for a ticker symbol.
@@ -128,6 +132,7 @@ def _resolve_ids(symbol: str) -> tuple[str, str] | None:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def fetch_pse_edge_ohlcv(
     symbol: str,
     *,
@@ -170,7 +175,9 @@ def fetch_pse_edge_ohlcv(
         )
         if resp.status_code != 200:
             logger.warning(
-                "PSE EDGE chart data returned %s for %s", resp.status_code, symbol,
+                "PSE EDGE chart data returned %s for %s",
+                resp.status_code,
+                symbol,
             )
             return pd.DataFrame()
 
@@ -195,14 +202,16 @@ def fetch_pse_edge_ohlcv(
             except ValueError:
                 continue
 
-            rows.append({
-                "Date": dt_val,
-                "Open": float(rec.get("OPEN", 0)),
-                "High": float(rec.get("HIGH", 0)),
-                "Low": float(rec.get("LOW", 0)),
-                "Close": float(rec.get("CLOSE", 0)),
-                "Volume": float(rec.get("VALUE", 0)),
-            })
+            rows.append(
+                {
+                    "Date": dt_val,
+                    "Open": float(rec.get("OPEN", 0)),
+                    "High": float(rec.get("HIGH", 0)),
+                    "Low": float(rec.get("LOW", 0)),
+                    "Close": float(rec.get("CLOSE", 0)),
+                    "Volume": float(rec.get("VALUE", 0)),
+                }
+            )
 
         if not rows:
             return pd.DataFrame()

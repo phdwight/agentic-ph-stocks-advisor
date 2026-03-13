@@ -11,18 +11,15 @@ from __future__ import annotations
 
 import logging
 
-import pandas as pd
-
 from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
 from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_profile
-from ph_stocks_advisor.data.models import PriceMovement, TrendDirection
-from ph_stocks_advisor.data.services.price import detect_price_catalysts
 from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
 from ph_stocks_advisor.data.clients.tradingview import (
     fetch_tradingview_snapshot,
     format_tv_performance_summary,
 )
-
+from ph_stocks_advisor.data.models import PriceMovement, TrendDirection
+from ph_stocks_advisor.data.services.price import detect_price_catalysts
 from ph_stocks_advisor.infra.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -31,6 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _classify_trend(change_pct: float) -> TrendDirection:
     """Classify a percentage change into a trend direction."""
@@ -45,6 +43,7 @@ def _classify_trend(change_pct: float) -> TrendDirection:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def fetch_price_movement(symbol: str) -> PriceMovement:
     """Fetch 1-year price history and compute movement metrics.
@@ -124,9 +123,7 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
         if tv_year_pct:
             change_pct = round(tv_year_pct, 2)
         else:
-            change_pct = (
-                round(((current - low52) / low52) * 100, 2) if low52 > 0 else 0.0
-            )
+            change_pct = round(((current - low52) / low52) * 100, 2) if low52 > 0 else 0.0
 
         trend = _classify_trend(change_pct)
 

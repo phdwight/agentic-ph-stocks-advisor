@@ -17,11 +17,11 @@ from unittest.mock import MagicMock
 import pytest
 from langchain_core.messages import AIMessage
 
-
 # ---------------------------------------------------------------------------
 # Disable LangSmith tracing for the entire test session so mocked
 # LangGraph runs don't show up as real traces in the dashboard.
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _disable_langsmith_tracing():
@@ -39,14 +39,14 @@ def _disable_langsmith_tracing():
         else:
             os.environ[k] = v
 
-from ph_stocks_advisor.data.models import (
+
+from ph_stocks_advisor.data.models import (  # noqa: E402
     AdvisorState,
     ControversyAnalysis,
     ControversyInfo,
     DividendAnalysis,
     DividendInfo,
     FairValueEstimate,
-    FinalReport,
     MovementAnalysis,
     PriceAnalysis,
     PriceMovement,
@@ -55,9 +55,7 @@ from ph_stocks_advisor.data.models import (
     StockPrice,
     TrendDirection,
     ValuationAnalysis,
-    Verdict,
 )
-
 
 # ---------------------------------------------------------------------------
 # Mock LLM that returns canned responses
@@ -77,9 +75,7 @@ def make_mock_llm(response_text: str = "Mock analysis.") -> MagicMock:
     """
     llm = MagicMock()
     llm.invoke.return_value = AIMessage(content=response_text)
-    llm.with_structured_output.side_effect = NotImplementedError(
-        "mock LLM does not support structured output"
-    )
+    llm.with_structured_output.side_effect = NotImplementedError("mock LLM does not support structured output")
     llm.bind_tools.return_value = llm
     return llm
 
@@ -233,9 +229,7 @@ class TrajectoryTracker:
     def _build_llm(self) -> MagicMock:
         llm = MagicMock()
         llm.invoke.side_effect = self._record_invoke
-        llm.with_structured_output.side_effect = NotImplementedError(
-            "mock LLM does not support structured output"
-        )
+        llm.with_structured_output.side_effect = NotImplementedError("mock LLM does not support structured output")
         llm.bind_tools.return_value = llm
         return llm
 

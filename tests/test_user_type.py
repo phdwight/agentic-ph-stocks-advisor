@@ -22,10 +22,9 @@ import ph_stocks_advisor.web.app as _app_mod
 import ph_stocks_advisor.web.auth as _auth_mod
 import ph_stocks_advisor.web.rate_limit as _rl_mod
 import ph_stocks_advisor.web.tasks as _tasks_mod
+from ph_stocks_advisor.infra.config import _reset_repository
 from ph_stocks_advisor.infra.repository import UserRecord, UserType
 from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
-from ph_stocks_advisor.infra.config import _reset_repository
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -194,14 +193,21 @@ def sqlite_repo(tmp_path) -> SQLiteReportRepository:
 class TestUserType:
     """Tests for UserType enum and UserRecord.is_elevated property."""
 
-    @pytest.mark.parametrize("user_type,expected_elevated", [
-        (UserType.NORMAL, False),
-        (UserType.ELEVATED, True),
-    ], ids=["normal", "elevated"])
+    @pytest.mark.parametrize(
+        "user_type,expected_elevated",
+        [
+            (UserType.NORMAL, False),
+            (UserType.ELEVATED, True),
+        ],
+        ids=["normal", "elevated"],
+    )
     def test_user_record_type_and_elevation(self, user_type, expected_elevated):
         user = UserRecord(
-            oid="oid-1", name="Test", email="test@example.com",
-            provider="google", user_type=user_type,
+            oid="oid-1",
+            name="Test",
+            email="test@example.com",
+            provider="google",
+            user_type=user_type,
         )
         assert user.user_type == user_type
         assert user.is_elevated is expected_elevated
@@ -217,9 +223,7 @@ class TestUserTypePersistence:
 
     def test_save_user_with_default_type(self, sqlite_repo):
         """A user saved without explicit user_type gets NORMAL (0)."""
-        user = UserRecord(
-            oid="oid-10", name="Normal User", email="normal@test.com", provider="google"
-        )
+        user = UserRecord(oid="oid-10", name="Normal User", email="normal@test.com", provider="google")
         sqlite_repo.save_user(user)
 
         fetched = sqlite_repo.get_user("oid-10")
@@ -313,9 +317,7 @@ class TestUserTypePersistence:
 class TestElevatedBypassesRateLimit:
     """Elevated users are exempt from the daily analysis limit."""
 
-    def test_elevated_user_not_blocked_after_limit(
-        self, elevated_client, fake_redis
-    ):
+    def test_elevated_user_not_blocked_after_limit(self, elevated_client, fake_redis):
         """Even after exceeding the limit counter, elevated users succeed."""
         client, _ = elevated_client
         _seed_counter(fake_redis, "dev@localhost", 10)  # way over limit=3
@@ -323,36 +325,26 @@ class TestElevatedBypassesRateLimit:
         task = MagicMock()
         task.id = "task-elevated"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
             resp = client.post("/analyse", data={"symbol": "TEL"})
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["status"] == "started"
 
-    def test_elevated_user_unlimited_analyses(
-        self, elevated_client, fake_redis
-    ):
+    def test_elevated_user_unlimited_analyses(self, elevated_client, fake_redis):
         """Elevated user can dispatch more analyses than the limit."""
         client, _ = elevated_client
         task = MagicMock()
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
             for i in range(10):  # limit is 3
                 task.id = f"task-{i}"
                 resp = client.post("/analyse", data={"symbol": f"SYM{i}"})
-                assert resp.status_code == 200, (
-                    f"Request {i + 1} should succeed for elevated user"
-                )
+                assert resp.status_code == 200, f"Request {i + 1} should succeed for elevated user"
                 data = resp.get_json()
                 assert data["status"] == "started"
 
-    def test_elevated_user_still_joins_inflight(
-        self, elevated_client, fake_redis
-    ):
+    def test_elevated_user_still_joins_inflight(self, elevated_client, fake_redis):
         """Even elevated users join an in-flight analysis (no duplicates)."""
         client, _ = elevated_client
         fake_redis.set("analysis:inflight:TEL", "task-existing", ex=600)
@@ -362,9 +354,7 @@ class TestElevatedBypassesRateLimit:
         data = resp.get_json()
         assert data["status"] == "joined"
 
-    def test_elevated_skip_cache_and_rate_limit_after_cooldown(
-        self, elevated_client, fake_redis
-    ):
+    def test_elevated_skip_cache_and_rate_limit_after_cooldown(self, elevated_client, fake_redis):
         """Elevated user bypasses cache AND rate limit when cooldown passed."""
         client, mock_repo = elevated_client
 
@@ -379,9 +369,7 @@ class TestElevatedBypassesRateLimit:
         task = MagicMock()
         task.id = "task-both"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
             resp = client.post("/analyse", data={"symbol": "TEL"})
             assert resp.status_code == 200
             data = resp.get_json()
@@ -396,9 +384,7 @@ class TestElevatedBypassesRateLimit:
 class TestElevatedDailyCooldown:
     """Elevated users cannot re-analyse the same stock on the same UTC day."""
 
-    def test_elevated_blocked_when_analysed_today(
-        self, elevated_client, fake_redis
-    ):
+    def test_elevated_blocked_when_analysed_today(self, elevated_client, fake_redis):
         """Elevated user gets 429 with report link when the stock was analysed today."""
         client, mock_repo = elevated_client
 
@@ -415,9 +401,7 @@ class TestElevatedDailyCooldown:
         assert data["report_id"] == 42
         assert data["symbol"] == "TEL"
 
-    def test_elevated_cooldown_reset_at_is_next_midnight(
-        self, elevated_client, fake_redis
-    ):
+    def test_elevated_cooldown_reset_at_is_next_midnight(self, elevated_client, fake_redis):
         """The reset_at timestamp in the cooldown response is next UTC midnight."""
         client, mock_repo = elevated_client
 
@@ -434,9 +418,7 @@ class TestElevatedDailyCooldown:
         assert reset_at.minute == 0
         assert reset_at.second == 0
 
-    def test_elevated_cooldown_per_stock_not_global(
-        self, elevated_client, fake_redis
-    ):
+    def test_elevated_cooldown_per_stock_not_global(self, elevated_client, fake_redis):
         """Cooldown is per-stock: analysing SYM1 today doesn't block SYM2."""
         client, mock_repo = elevated_client
 
@@ -457,10 +439,7 @@ class TestElevatedDailyCooldown:
         # SYM2 — no report, should start
         task = MagicMock()
         task.id = "task-sym2"
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task
-        ):
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
             resp2 = client.post("/analyse", data={"symbol": "SYM2"})
             assert resp2.status_code == 200
             assert resp2.get_json()["status"] == "started"
-

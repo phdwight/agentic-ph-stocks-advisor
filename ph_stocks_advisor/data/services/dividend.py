@@ -8,18 +8,17 @@ and sustainability analysis.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from ph_stocks_advisor.data.clients.dragonfi import (
     fetch_annual_cashflow_trends,
     fetch_annual_income_trends,
     fetch_stock_profile,
 )
-from ph_stocks_advisor.data.clients.pse_edge_dividends import (
-    fetch_recent_dividend_declarations,
-)
 from ph_stocks_advisor.data.clients.pse_edge_company_dividends import (
     fetch_company_dividend_announcements,
+)
+from ph_stocks_advisor.data.clients.pse_edge_dividends import (
+    fetch_recent_dividend_declarations,
 )
 from ph_stocks_advisor.data.models import DividendInfo
 
@@ -55,24 +54,20 @@ def _build_sustainability_note(
             growth = ((last_ni - first_ni) / first_ni) * 100
             parts.append(
                 f"Net income grew ~{growth:.0f}% from {years_sorted[0]} to "
-                f"{years_sorted[-1]} ({first_ni/1e9:.2f}B → {last_ni/1e9:.2f}B PHP), "
+                f"{years_sorted[-1]} ({first_ni / 1e9:.2f}B → {last_ni / 1e9:.2f}B PHP), "
                 "supporting the dividend."
             )
         elif last_ni > 0:
-            parts.append(
-                f"Net income in {years_sorted[-1]}: {last_ni/1e9:.2f}B PHP."
-            )
+            parts.append(f"Net income in {years_sorted[-1]}: {last_ni / 1e9:.2f}B PHP.")
 
     if payout_ratio > 0:
-        parts.append(f"Estimated payout ratio: {payout_ratio*100:.1f}%.")
+        parts.append(f"Estimated payout ratio: {payout_ratio * 100:.1f}%.")
 
     if fcf_trend:
         latest_fcf_year = max(fcf_trend.keys())
         latest_fcf = fcf_trend[latest_fcf_year]
         if latest_fcf > 0:
-            parts.append(
-                f"Free cash flow in {latest_fcf_year}: {latest_fcf/1e9:.2f}B PHP (positive)."
-            )
+            parts.append(f"Free cash flow in {latest_fcf_year}: {latest_fcf / 1e9:.2f}B PHP (positive).")
 
     return " ".join(parts)
 
@@ -80,6 +75,7 @@ def _build_sustainability_note(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def fetch_dividend_info(symbol: str) -> DividendInfo:
     """Fetch dividend data for a PSE-listed stock.
@@ -139,9 +135,7 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
         try:
             declarations = fetch_recent_dividend_declarations(symbol)
             if declarations:
-                declared_dividends = "; ".join(
-                    d.to_summary() for d in declarations
-                )
+                declared_dividends = "; ".join(d.to_summary() for d in declarations)
                 # Use the most recent ex-date as the ex_dividend_date
                 if declarations[0].ex_date:
                     ex_dividend_date_str = declarations[0].ex_date
@@ -155,7 +149,8 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
         except Exception as exc:
             logger.warning(
                 "PSE EDGE company dividend page fetch failed for %s: %s",
-                symbol, exc,
+                symbol,
+                exc,
             )
 
         return DividendInfo(
@@ -163,7 +158,7 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             dividend_rate=dividend_rate,
             dividend_yield=div_yield,
             payout_ratio=payout_ratio,
-            ex_dividend_date=ex_dividend_date_str if 'ex_dividend_date_str' in dir() else None,
+            ex_dividend_date=ex_dividend_date_str if "ex_dividend_date_str" in dir() else None,
             five_year_avg_yield=0.0,
             is_reit=is_reit,
             annual_dividend_per_share=dividend_rate,

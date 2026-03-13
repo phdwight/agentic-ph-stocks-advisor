@@ -10,25 +10,19 @@ Covers:
 from __future__ import annotations
 
 import json
-import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import ph_stocks_advisor.web.app as _app_mod
 import ph_stocks_advisor.web.progress as progress_mod
-import ph_stocks_advisor.web.tasks as _tasks_mod
 from ph_stocks_advisor.web.progress import (
-    STEP_AGENTS,
-    STEP_CONSOLIDATING,
     STEP_FETCHING,
     STEP_LABELS,
     STEP_QUEUED,
     STEP_SAVING,
-    STEP_VALIDATING,
     publish_progress,
 )
-
 
 # ---------------------------------------------------------------------------
 # In-memory Redis Pub/Sub fake
@@ -38,7 +32,7 @@ from ph_stocks_advisor.web.progress import (
 class FakeRedisPubSub:
     """Minimal Pub/Sub fake that works with ``subscribe_progress``."""
 
-    def __init__(self, store: "FakeRedisWithPubSub"):
+    def __init__(self, store: FakeRedisWithPubSub):
         self._store = store
         self._channels: list[str] = []
         self._msg_queue: list[dict] = []
@@ -99,6 +93,7 @@ class FakeRedisWithPubSub:
 
     def scan_iter(self, pattern: str) -> list[str]:
         import fnmatch
+
         return [k for k in self._store if fnmatch.fnmatch(k, pattern)]
 
     def decr(self, key: str) -> int:
@@ -218,9 +213,7 @@ class TestPublishProgress:
 
     def test_error_event(self, fake_redis):
         with patch.object(progress_mod, "_get_redis", return_value=fake_redis):
-            publish_progress(
-                "task-err", STEP_SAVING, done=True, error="LLM timeout"
-            )
+            publish_progress("task-err", STEP_SAVING, done=True, error="LLM timeout")
 
         msgs = fake_redis._pubsub_queues["analysis:progress:task-err"]
         event = json.loads(msgs[0])
@@ -309,7 +302,7 @@ class TestStreamEndpoint:
             resp = client.get("/stream/task-sse2")
 
         body = resp.data.decode()
-        lines = [l for l in body.split("\n") if l.startswith("data:")]
+        lines = [line for line in body.split("\n") if line.startswith("data:")]
         assert len(lines) >= 1
 
         last = json.loads(lines[-1].removeprefix("data: "))

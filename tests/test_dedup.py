@@ -17,7 +17,6 @@ import pytest
 import ph_stocks_advisor.web.app as _app_mod  # noqa: E402
 import ph_stocks_advisor.web.tasks as _tasks_mod  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -117,9 +116,7 @@ class TestAnalyseDedup:
         task_result = MagicMock()
         task_result.id = "task-abc-123"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task_result
-        ) as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task_result) as mock_delay:
             resp = client.post("/analyse", data={"symbol": "TEL"})
 
         data = resp.get_json()
@@ -136,9 +133,7 @@ class TestAnalyseDedup:
         """Second concurrent request should reuse the in-flight task."""
         fake_redis.set("analysis:inflight:TEL", "task-abc-123", ex=600)
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay"
-        ) as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "delay") as mock_delay:
             resp = client.post("/analyse", data={"symbol": "TEL"})
 
         data = resp.get_json()
@@ -154,9 +149,7 @@ class TestAnalyseDedup:
         task_sm = MagicMock()
         task_sm.id = "task-sm-001"
 
-        with patch.object(
-            _tasks_mod.analyse_stock, "delay", return_value=task_sm
-        ) as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task_sm) as mock_delay:
             resp = client.post("/analyse", data={"symbol": "SM"})
 
         data = resp.get_json()

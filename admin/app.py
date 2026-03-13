@@ -16,12 +16,8 @@ from __future__ import annotations
 import os
 import secrets
 
-from starlette.applications import Starlette
-from starlette.middleware import Middleware
-from starlette.middleware.sessions import SessionMiddleware
-from starlette.requests import Request
-from starlette.responses import RedirectResponse
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+from sqladmin import Admin, ModelView
+from sqladmin.authentication import AuthenticationBackend
 from sqlalchemy import (
     Column,
     DateTime,
@@ -31,9 +27,12 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
-from sqladmin import Admin, ModelView
-from sqladmin.authentication import AuthenticationBackend
-
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 # ---------------------------------------------------------------------------
 # Database setup
@@ -216,9 +215,8 @@ class AdminAuth(AuthenticationBackend):
             # No password configured — deny all logins.
             return False
 
-        if (
-            secrets.compare_digest(str(username), _ADMIN_USERNAME)
-            and secrets.compare_digest(str(password), _ADMIN_PASSWORD)
+        if secrets.compare_digest(str(username), _ADMIN_USERNAME) and secrets.compare_digest(
+            str(password), _ADMIN_PASSWORD
         ):
             request.session.update({"authenticated": True})
             return True
@@ -238,15 +236,11 @@ class AdminAuth(AuthenticationBackend):
 # Starlette app + SQLAdmin wiring
 # ---------------------------------------------------------------------------
 
-secret_key = os.environ.get(
-    "ADMIN_SECRET_KEY", "sqladmin-dev-secret-change-me"
-)
+secret_key = os.environ.get("ADMIN_SECRET_KEY", "sqladmin-dev-secret-change-me")
 
 # Restrict trusted proxy hosts to Docker-internal networks by default.
 _trusted_hosts = os.environ.get("ADMIN_TRUSTED_HOSTS", "127.0.0.1,::1")
-trusted_hosts_list: list[str] | str = [
-    h.strip() for h in _trusted_hosts.split(",") if h.strip()
-]
+trusted_hosts_list: list[str] | str = [h.strip() for h in _trusted_hosts.split(",") if h.strip()]
 if "*" in trusted_hosts_list:
     trusted_hosts_list = "*"
 

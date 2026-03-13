@@ -20,8 +20,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
 
 import requests
 
@@ -30,11 +28,13 @@ logger = logging.getLogger(__name__)
 
 def _base_url() -> str:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().pse_edge_base_url
 
 
 def _timeout() -> int:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().http_timeout
 
 
@@ -42,16 +42,17 @@ def _timeout() -> int:
 # Data transfer object
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class DeclaredDividend:
     """A single cash-dividend declaration scraped from PSE EDGE."""
 
     symbol: str
-    amount_per_share: Optional[str]
-    ex_date: Optional[str]
-    record_date: Optional[str]
-    payment_date: Optional[str]
-    announce_date: Optional[str] = None
+    amount_per_share: str | None
+    ex_date: str | None
+    record_date: str | None
+    payment_date: str | None
+    announce_date: str | None = None
 
     def to_summary(self) -> str:
         """Human-readable one-line summary for LLM consumption."""
@@ -76,16 +77,14 @@ class DeclaredDividend:
 _DATE_RE = re.compile(r"[A-Za-z]{3}\s+\d{1,2},\s*\d{4}")
 
 
-def _parse_disclosure_html(html: str) -> Optional[DeclaredDividend]:
+def _parse_disclosure_html(html: str) -> DeclaredDividend | None:
     """Extract dividend fields from an SEC Form 6-1 HTML body."""
     # Flatten to searchable text
     text = re.sub(r"<[^>]+>", "\n", html)
     text = re.sub(r"\s+", " ", text).strip()
 
     # Stock symbol — appears right before "PSE Disclosure Form 6-1"
-    sym_match = re.search(
-        r"\b([A-Z0-9]{2,10})\s+PSE\s+Disclosure\s+Form\s+6-1", text
-    )
+    sym_match = re.search(r"\b([A-Z0-9]{2,10})\s+PSE\s+Disclosure\s+Form\s+6-1", text)
     if not sym_match:
         return None
     symbol = sym_match.group(1)
@@ -112,7 +111,7 @@ def _parse_disclosure_html(html: str) -> Optional[DeclaredDividend]:
     )
 
 
-def _fetch_disclosure_content(edge_no: str) -> Optional[str]:
+def _fetch_disclosure_content(edge_no: str) -> str | None:
     """Fetch the raw HTML content of a PSE EDGE disclosure."""
     base = _base_url()
     try:
@@ -125,9 +124,7 @@ def _fetch_disclosure_content(edge_no: str) -> Optional[str]:
         if viewer.status_code != 200:
             return None
 
-        iframe_match = re.search(
-            r"/downloadHtml\.do\?file_id=(\d+)", viewer.text
-        )
+        iframe_match = re.search(r"/downloadHtml\.do\?file_id=(\d+)", viewer.text)
         if not iframe_match:
             return None
 
@@ -147,6 +144,7 @@ def _fetch_disclosure_content(edge_no: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def fetch_recent_dividend_declarations(
     symbol: str,
@@ -188,9 +186,7 @@ def fetch_recent_dividend_declarations(
             timeout=_timeout(),
         )
         if resp.status_code != 200:
-            logger.warning(
-                "PSE EDGE disclosure search returned %s", resp.status_code
-            )
+            logger.warning("PSE EDGE disclosure search returned %s", resp.status_code)
             return []
     except requests.RequestException as exc:
         logger.warning("PSE EDGE disclosure search failed: %s", exc)
@@ -201,9 +197,7 @@ def fetch_recent_dividend_declarations(
     rows = re.findall(r"<tr[^>]*>.*?</tr>", resp.text, re.DOTALL)
     for row in rows:
         id_match = re.search(r"openPopup\('([^']+)'\)", row)
-        date_match = re.search(
-            r"class=\"alignC\">\s*([A-Za-z]{3}\s+\d{1,2},\s*\d{4})", row
-        )
+        date_match = re.search(r"class=\"alignC\">\s*([A-Za-z]{3}\s+\d{1,2},\s*\d{4})", row)
         if id_match:
             announce = date_match.group(1) if date_match else None
             ids_dates.append((id_match.group(1), announce or ""))

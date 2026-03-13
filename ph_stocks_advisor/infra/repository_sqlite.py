@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime
-from typing import Optional
 
 from ph_stocks_advisor.infra.repository import (
     AbstractReportRepository,
@@ -135,12 +134,12 @@ class SQLiteReportRepository(AbstractReportRepository):
         record.id = cursor.lastrowid
         return cursor.lastrowid  # type: ignore[return-value]
 
-    def get_by_id(self, record_id: int) -> Optional[ReportRecord]:
+    def get_by_id(self, record_id: int) -> ReportRecord | None:
         conn = self._get_conn()
         row = conn.execute("SELECT * FROM reports WHERE id = ?", (record_id,)).fetchone()
         return self._row_to_record(row) if row else None
 
-    def get_latest_by_symbol(self, symbol: str) -> Optional[ReportRecord]:
+    def get_latest_by_symbol(self, symbol: str) -> ReportRecord | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM reports WHERE symbol = ? ORDER BY created_at DESC LIMIT 1",
@@ -187,9 +186,7 @@ class SQLiteReportRepository(AbstractReportRepository):
         )
         conn.commit()
 
-    def list_user_symbols(
-        self, user_id: str, limit: int = 50
-    ) -> list[ReportRecord]:
+    def list_user_symbols(self, user_id: str, limit: int = 50) -> list[ReportRecord]:
         conn = self._get_conn()
         rows = conn.execute(
             """
@@ -241,7 +238,7 @@ class SQLiteReportRepository(AbstractReportRepository):
         )
         conn.commit()
 
-    def get_user(self, oid: str) -> Optional[UserRecord]:
+    def get_user(self, oid: str) -> UserRecord | None:
         conn = self._get_conn()
         row = conn.execute("SELECT * FROM users WHERE oid = ?", (oid,)).fetchone()
         if row is None:
@@ -256,11 +253,9 @@ class SQLiteReportRepository(AbstractReportRepository):
             last_login_at=datetime.fromisoformat(row["last_login_at"]),
         )
 
-    def get_user_by_email(self, email: str) -> Optional[UserRecord]:
+    def get_user_by_email(self, email: str) -> UserRecord | None:
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM users WHERE email = ? LIMIT 1", (email,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE email = ? LIMIT 1", (email,)).fetchone()
         if row is None:
             return None
         return UserRecord(
@@ -285,7 +280,11 @@ class SQLiteReportRepository(AbstractReportRepository):
             movement_section=row["movement_section"],
             valuation_section=row["valuation_section"],
             controversy_section=row["controversy_section"],
-            sentiment_section=row["sentiment_section"] if "sentiment_section" in row.keys() else "",
+            sentiment_section=(
+                row["sentiment_section"]
+                if "sentiment_section" in row.keys()  # noqa: SIM118
+                else ""
+            ),
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
@@ -314,7 +313,7 @@ class SQLiteReportRepository(AbstractReportRepository):
         )
         conn.commit()
 
-    def get_holding(self, user_id: str, symbol: str) -> Optional[HoldingRecord]:
+    def get_holding(self, user_id: str, symbol: str) -> HoldingRecord | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM holdings WHERE user_id = ? AND symbol = ?",
@@ -375,9 +374,7 @@ class SQLiteReportRepository(AbstractReportRepository):
                 record.avg_cost,
                 record.analysis,
                 record.base_report_id,
-                record.created_at.isoformat()
-                if record.created_at
-                else datetime.now(tz=UTC).isoformat(),
+                record.created_at.isoformat() if record.created_at else datetime.now(tz=UTC).isoformat(),
             ),
         )
         conn.commit()
@@ -385,8 +382,10 @@ class SQLiteReportRepository(AbstractReportRepository):
         return cursor.lastrowid  # type: ignore[return-value]
 
     def get_portfolio_report(
-        self, user_id: str, symbol: str,
-    ) -> Optional[PortfolioReportRecord]:
+        self,
+        user_id: str,
+        symbol: str,
+    ) -> PortfolioReportRecord | None:
         conn = self._get_conn()
         row = conn.execute(
             """

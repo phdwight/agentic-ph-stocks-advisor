@@ -10,7 +10,6 @@ from __future__ import annotations
 import abc
 from datetime import UTC, datetime
 from enum import IntEnum
-from typing import Optional
 
 from ph_stocks_advisor.data.models import FinalReport
 
@@ -114,10 +113,7 @@ class PortfolioReportRecord:
         self.created_at = created_at or datetime.now(tz=UTC)
 
     def __repr__(self) -> str:
-        return (
-            f"PortfolioReportRecord(id={self.id}, user_id={self.user_id!r}, "
-            f"symbol={self.symbol!r})"
-        )
+        return f"PortfolioReportRecord(id={self.id}, user_id={self.user_id!r}, symbol={self.symbol!r})"
 
 
 class ReportRecord:
@@ -150,7 +146,7 @@ class ReportRecord:
         self.created_at = created_at or datetime.now(tz=UTC)
 
     @classmethod
-    def from_final_report(cls, report: FinalReport) -> "ReportRecord":
+    def from_final_report(cls, report: FinalReport) -> ReportRecord:
         return cls(
             id=None,
             symbol=report.symbol,
@@ -188,11 +184,11 @@ class AbstractReportRepository(abc.ABC):
         """Persist a report record. Returns the generated ID."""
 
     @abc.abstractmethod
-    def get_by_id(self, record_id: int) -> Optional[ReportRecord]:
+    def get_by_id(self, record_id: int) -> ReportRecord | None:
         """Retrieve a single report by its ID."""
 
     @abc.abstractmethod
-    def get_latest_by_symbol(self, symbol: str) -> Optional[ReportRecord]:
+    def get_latest_by_symbol(self, symbol: str) -> ReportRecord | None:
         """Return the most recent report for a given stock symbol."""
 
     @abc.abstractmethod
@@ -216,9 +212,7 @@ class AbstractReportRepository(abc.ABC):
         """
 
     @abc.abstractmethod
-    def list_user_symbols(
-        self, user_id: str, limit: int = 50
-    ) -> list[ReportRecord]:
+    def list_user_symbols(self, user_id: str, limit: int = 50) -> list[ReportRecord]:
         """Return the latest report for each symbol the user has analysed.
 
         Behaves like ``list_recent_symbols`` but scoped to symbols the
@@ -239,11 +233,11 @@ class AbstractReportRepository(abc.ABC):
         """
 
     @abc.abstractmethod
-    def get_user(self, oid: str) -> Optional[UserRecord]:
+    def get_user(self, oid: str) -> UserRecord | None:
         """Retrieve a user by their unique ``oid``, or ``None``."""
 
     @abc.abstractmethod
-    def get_user_by_email(self, email: str) -> Optional[UserRecord]:
+    def get_user_by_email(self, email: str) -> UserRecord | None:
         """Retrieve a user by their email address, or ``None``."""
 
     # ------------------------------------------------------------------
@@ -260,7 +254,7 @@ class AbstractReportRepository(abc.ABC):
         """
 
     @abc.abstractmethod
-    def get_holding(self, user_id: str, symbol: str) -> Optional[HoldingRecord]:
+    def get_holding(self, user_id: str, symbol: str) -> HoldingRecord | None:
         """Retrieve a user's holding for a specific symbol, or ``None``."""
 
     @abc.abstractmethod
@@ -281,8 +275,10 @@ class AbstractReportRepository(abc.ABC):
 
     @abc.abstractmethod
     def get_portfolio_report(
-        self, user_id: str, symbol: str,
-    ) -> Optional[PortfolioReportRecord]:
+        self,
+        user_id: str,
+        symbol: str,
+    ) -> PortfolioReportRecord | None:
         """Return the latest portfolio report for a user + symbol."""
 
     @abc.abstractmethod

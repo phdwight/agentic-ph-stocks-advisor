@@ -14,12 +14,14 @@ closed over in every node, so nodes never call ``get_llm()`` directly.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional, TypedDict
+from collections.abc import Callable
+from typing import Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
+from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
 from ph_stocks_advisor.agents.specialists import (
     ControversyAgent,
     DividendAgent,
@@ -28,7 +30,6 @@ from ph_stocks_advisor.agents.specialists import (
     SentimentAgent,
     ValuationAgent,
 )
-from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
 from ph_stocks_advisor.data.models import (
     AdvisorState,
     ControversyAnalysis,
@@ -74,14 +75,14 @@ AGENT_REGISTRY: list[AgentEntry] = [
 
 class GraphState(TypedDict, total=False):
     symbol: str
-    error: Optional[str]
-    price_analysis: Optional[PriceAnalysis]
-    dividend_analysis: Optional[DividendAnalysis]
-    movement_analysis: Optional[MovementAnalysis]
-    valuation_analysis: Optional[ValuationAnalysis]
-    controversy_analysis: Optional[ControversyAnalysis]
-    sentiment_analysis: Optional[SentimentAnalysis]
-    final_report: Optional[FinalReport]
+    error: str | None
+    price_analysis: PriceAnalysis | None
+    dividend_analysis: DividendAnalysis | None
+    movement_analysis: MovementAnalysis | None
+    valuation_analysis: ValuationAnalysis | None
+    controversy_analysis: ControversyAnalysis | None
+    sentiment_analysis: SentimentAnalysis | None
+    final_report: FinalReport | None
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +109,7 @@ def _make_specialist_node(
                     STEP_AGENTS,
                     publish_progress,
                 )
+
                 publish_progress(
                     task_id,
                     STEP_AGENTS,
@@ -140,6 +142,7 @@ def _make_validate_node(
                 STEP_VALIDATING,
                 publish_progress,
             )
+
             publish_progress(task_id, STEP_VALIDATING)
 
         try:
@@ -163,6 +166,7 @@ def _make_consolidate_node(
                 STEP_CONSOLIDATING,
                 publish_progress,
             )
+
             publish_progress(task_id, STEP_CONSOLIDATING)
 
         agent = ConsolidatorAgent(llm)

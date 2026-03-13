@@ -20,9 +20,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ph_stocks_advisor.infra.config import get_repository, get_settings, _parse_tz
+from ph_stocks_advisor.infra.config import _parse_tz, get_repository, get_settings
 from ph_stocks_advisor.infra.repository import ReportRecord
-
 
 # ---------------------------------------------------------------------------
 # Disclaimer & data-source attribution (shared by every output format)
@@ -35,8 +34,7 @@ DISCLAIMER = (
 )
 
 DATA_SOURCES = (
-    "Data Sources: DragonFi (api.dragonfi.ph), PSE EDGE (edge.pse.com.ph), "
-    "TradingView Scanner, Tavily Web Search"
+    "Data Sources: DragonFi (api.dragonfi.ph), PSE EDGE (edge.pse.com.ph), TradingView Scanner, Tavily Web Search"
 )
 
 
@@ -59,6 +57,7 @@ def format_timestamp(dt_val: datetime | None) -> str:
 # Shared summary parser (used by every formatter)
 # ---------------------------------------------------------------------------
 
+
 def _strip_trailing_dashes(line: str) -> str:
     """Remove trailing sequences of dashes/hyphens (``--``, ``----``, …).
 
@@ -75,7 +74,7 @@ def _clean_title(title: str) -> str:
     Strips trailing colons, dashes, whitespace, and markdown bold markers
     that the LLM occasionally mixes into headings.
     """
-    title = re.sub(r"-{2,}", "", title)   # remove runs of 2+ dashes anywhere
+    title = re.sub(r"-{2,}", "", title)  # remove runs of 2+ dashes anywhere
     title = re.sub(r"\*{2,}", "", title)  # remove leftover bold markers
     return title.strip().rstrip(":")
 
@@ -145,9 +144,7 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
         #           **Price Analysis:----**
         #           **Price Analysis----:**
         #           **Price Analysis**          (no colon)
-        heading_match = re.match(
-            r"^\*\*(.+?)(?::[-\s]*\*\*|-{2,}:\*\*|:\*\*|\*\*)\s*$", stripped
-        )
+        heading_match = re.match(r"^\*\*(.+?)(?::[-\s]*\*\*|-{2,}:\*\*|:\*\*|\*\*)\s*$", stripped)
         if heading_match:
             if current_lines:
                 sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
@@ -194,6 +191,7 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
 # Abstract base class
 # ---------------------------------------------------------------------------
 
+
 class OutputFormatter(abc.ABC):
     """Base class every report-export format must implement.
 
@@ -235,6 +233,7 @@ class OutputFormatter(abc.ABC):
 # Generic CLI entry point (reusable by every format)
 # ---------------------------------------------------------------------------
 
+
 def export_cli(formatter: OutputFormatter) -> None:
     """Standalone CLI that fetches a saved report and exports it.
 
@@ -248,11 +247,16 @@ def export_cli(formatter: OutputFormatter) -> None:
     )
     parser.add_argument("symbol", help="Stock symbol (e.g. MREIT)")
     parser.add_argument(
-        "--id", type=int, default=None,
+        "--id",
+        type=int,
+        default=None,
         help="Specific report ID (default: latest)",
     )
     parser.add_argument(
-        "-o", "--output", type=str, default=None,
+        "-o",
+        "--output",
+        type=str,
+        default=None,
         help=f"Output path (default: <SYMBOL>_report{formatter.file_extension})",
     )
     args = parser.parse_args()
@@ -264,9 +268,7 @@ def export_cli(formatter: OutputFormatter) -> None:
         if args.id:
             record = repo.get_by_id(args.id)
             if record and record.symbol != symbol:
-                print(
-                    f"⚠️  Report id={args.id} is for {record.symbol}, not {symbol}"
-                )
+                print(f"⚠️  Report id={args.id} is for {record.symbol}, not {symbol}")
         else:
             record = repo.get_latest_by_symbol(symbol)
     finally:

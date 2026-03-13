@@ -17,7 +17,11 @@ from langchain_core.tools import tool
 
 from ph_stocks_advisor.data.clients.tavily_search import (
     search_dividend_news as _tavily_dividend_news,
+)
+from ph_stocks_advisor.data.clients.tavily_search import (
     search_stock_controversies as _tavily_controversies,
+)
+from ph_stocks_advisor.data.clients.tavily_search import (
     search_stock_news as _tavily_stock_news,
 )
 
@@ -81,4 +85,5 @@ def search_global_events(symbol: str) -> str:
     from ph_stocks_advisor.data.clients.tavily_search import (
         search_global_events as _tavily_global_events,
     )
+
     return _tavily_global_events(symbol, company_name=_company_name(symbol))

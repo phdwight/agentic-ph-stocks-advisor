@@ -15,7 +15,6 @@ from ph_stocks_advisor.data.clients.pse_edge_company_dividends import (
 )
 from ph_stocks_advisor.data.models import DividendAnnouncement, DividendInfo
 
-
 # ---------------------------------------------------------------------------
 # Sample HTML fixtures (mirrors real PSE EDGE output)
 # ---------------------------------------------------------------------------
@@ -184,10 +183,14 @@ class TestParseDividendRows:
         assert third.dividend_rate == "Php0.59"
         assert third.ex_date == "Aug 28, 2025"
 
-    @pytest.mark.parametrize("html", [
-        EMPTY_TABLE_HTML,
-        "<table><thead></thead></table>",
-    ], ids=["empty-tbody", "no-tbody"])
+    @pytest.mark.parametrize(
+        "html",
+        [
+            EMPTY_TABLE_HTML,
+            "<table><thead></thead></table>",
+        ],
+        ids=["empty-tbody", "no-tbody"],
+    )
     def test_returns_empty_for_edge_cases(self, html):
         assert _parse_dividend_rows(html) == []
 

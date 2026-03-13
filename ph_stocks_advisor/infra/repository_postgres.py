@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Generator, Optional
 
 import psycopg2  # type: ignore[import-untyped]
 import psycopg2.extras  # type: ignore[import-untyped]
@@ -208,14 +208,14 @@ class PostgresReportRepository(AbstractReportRepository):
             record.id = record_id
             return record_id
 
-    def get_by_id(self, record_id: int) -> Optional[ReportRecord]:
+    def get_by_id(self, record_id: int) -> ReportRecord | None:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT * FROM reports WHERE id = %s", (record_id,))
                 row = cur.fetchone()
             return self._row_to_record(row) if row else None
 
-    def get_latest_by_symbol(self, symbol: str) -> Optional[ReportRecord]:
+    def get_latest_by_symbol(self, symbol: str) -> ReportRecord | None:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(
@@ -267,9 +267,7 @@ class PostgresReportRepository(AbstractReportRepository):
                 )
             conn.commit()
 
-    def list_user_symbols(
-        self, user_id: str, limit: int = 50
-    ) -> list[ReportRecord]:
+    def list_user_symbols(self, user_id: str, limit: int = 50) -> list[ReportRecord]:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(
@@ -322,7 +320,7 @@ class PostgresReportRepository(AbstractReportRepository):
                 )
             conn.commit()
 
-    def get_user(self, oid: str) -> Optional[UserRecord]:
+    def get_user(self, oid: str) -> UserRecord | None:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT * FROM users WHERE oid = %s", (oid,))
@@ -339,12 +337,10 @@ class PostgresReportRepository(AbstractReportRepository):
                 last_login_at=row["last_login_at"],
             )
 
-    def get_user_by_email(self, email: str) -> Optional[UserRecord]:
+    def get_user_by_email(self, email: str) -> UserRecord | None:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM users WHERE email = %s LIMIT 1", (email,)
-                )
+                cur.execute("SELECT * FROM users WHERE email = %s LIMIT 1", (email,))
                 row = cur.fetchone()
             if row is None:
                 return None
@@ -400,7 +396,7 @@ class PostgresReportRepository(AbstractReportRepository):
                 )
             conn.commit()
 
-    def get_holding(self, user_id: str, symbol: str) -> Optional[HoldingRecord]:
+    def get_holding(self, user_id: str, symbol: str) -> HoldingRecord | None:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(
@@ -478,8 +474,10 @@ class PostgresReportRepository(AbstractReportRepository):
             return record_id
 
     def get_portfolio_report(
-        self, user_id: str, symbol: str,
-    ) -> Optional[PortfolioReportRecord]:
+        self,
+        user_id: str,
+        symbol: str,
+    ) -> PortfolioReportRecord | None:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(
