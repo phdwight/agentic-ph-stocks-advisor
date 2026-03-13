@@ -18,6 +18,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11"
   UV_CACHE_DIR: /tmp/.uv-cache
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── Lint & type-check ────────────────────────────────────────────────────
@@ -92,7 +93,8 @@ jobs:
         run: uv sync --dev --extra dev
 
       - name: Run integration tests
-        run: uv run pytest tests/ -v -m "integration" --tb=short
+        run: |
+          uv run pytest tests/ -v -m "integration" --tb=short || code=$?; if [ "${code:-0}" -eq 5 ]; then echo "No integration tests found — skipping."; exit 0; else exit "${code:-0}"; fi
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
