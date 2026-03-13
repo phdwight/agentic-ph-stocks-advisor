@@ -11,18 +11,17 @@ from __future__ import annotations
 
 import pytest
 
-from tests.conftest import make_mock_llm, make_structured_mock_llm
-from tests.dummy_responses import (
-    CONSOLIDATOR_BUY_RESPONSE,
-    CONSOLIDATOR_NOT_BUY_RESPONSE,
-)
 from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
 from ph_stocks_advisor.data.models import (
     AdvisorState,
     ConsolidationResponse,
     Verdict,
 )
-
+from tests.conftest import make_mock_llm, make_structured_mock_llm
+from tests.dummy_responses import (
+    CONSOLIDATOR_BUY_RESPONSE,
+    CONSOLIDATOR_NOT_BUY_RESPONSE,
+)
 
 # ---------------------------------------------------------------------------
 # Tests for the structured-output (primary) path
@@ -68,7 +67,6 @@ class TestConsolidatorStructuredOutput:
         assert report.verdict == Verdict.NOT_BUY
 
 
-
 # ---------------------------------------------------------------------------
 # Tests for the regex-fallback path
 # ---------------------------------------------------------------------------
@@ -77,12 +75,20 @@ class TestConsolidatorStructuredOutput:
 class TestConsolidatorRegexFallback:
     """Verify fallback when with_structured_output raises."""
 
-    @pytest.mark.parametrize("response,expected_verdict,summary_substr", [
-        (CONSOLIDATOR_BUY_RESPONSE, Verdict.BUY, "solid"),
-        (CONSOLIDATOR_NOT_BUY_RESPONSE, Verdict.NOT_BUY, None),
-    ], ids=["buy", "not-buy"])
+    @pytest.mark.parametrize(
+        "response,expected_verdict,summary_substr",
+        [
+            (CONSOLIDATOR_BUY_RESPONSE, Verdict.BUY, "solid"),
+            (CONSOLIDATOR_NOT_BUY_RESPONSE, Verdict.NOT_BUY, None),
+        ],
+        ids=["buy", "not-buy"],
+    )
     def test_run_returns_correct_verdict(
-        self, sample_advisor_state: AdvisorState, response, expected_verdict, summary_substr,
+        self,
+        sample_advisor_state: AdvisorState,
+        response,
+        expected_verdict,
+        summary_substr,
     ):
         llm = make_mock_llm(response)
         agent = ConsolidatorAgent(llm)
@@ -99,17 +105,20 @@ class TestConsolidatorRegexFallback:
 
 
 class TestExtractVerdict:
-    @pytest.mark.parametrize("text,expected", [
-        ("Verdict: BUY", Verdict.BUY),
-        ("Verdict: NOT BUY", Verdict.NOT_BUY),
-        ("**Verdict: BUY**", Verdict.BUY),
-        ("**Verdict: NOT BUY**", Verdict.NOT_BUY),
-        ("no verdict here", Verdict.NOT_BUY),
-        ("Analysis complete. Overall: BUY", Verdict.BUY),
-        ("Analysis complete. Overall: NOT BUY", Verdict.NOT_BUY),
-        ("**verdict: not buy**", Verdict.NOT_BUY),
-        ("**Verdict: Buy**", Verdict.BUY),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Verdict: BUY", Verdict.BUY),
+            ("Verdict: NOT BUY", Verdict.NOT_BUY),
+            ("**Verdict: BUY**", Verdict.BUY),
+            ("**Verdict: NOT BUY**", Verdict.NOT_BUY),
+            ("no verdict here", Verdict.NOT_BUY),
+            ("Analysis complete. Overall: BUY", Verdict.BUY),
+            ("Analysis complete. Overall: NOT BUY", Verdict.NOT_BUY),
+            ("**verdict: not buy**", Verdict.NOT_BUY),
+            ("**Verdict: Buy**", Verdict.BUY),
+        ],
+    )
     def test_basic_verdict_extraction(self, text, expected):
         assert ConsolidatorAgent._extract_verdict(text) == expected
 

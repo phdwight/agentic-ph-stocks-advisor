@@ -12,8 +12,8 @@ import logging
 import pandas as pd
 
 from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_news
-from ph_stocks_advisor.data.models import ControversyInfo
 from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
+from ph_stocks_advisor.data.models import ControversyInfo
 from ph_stocks_advisor.infra.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _fetch_history(symbol: str) -> pd.DataFrame:
     """Fetch ~1-year daily OHLCV history from PSE EDGE.
@@ -38,6 +39,7 @@ def _fetch_history(symbol: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def fetch_controversy_info(symbol: str) -> ControversyInfo:
     """Detect potential price anomalies and gather recent news.
@@ -58,27 +60,19 @@ def fetch_controversy_info(symbol: str) -> ControversyInfo:
         for date, ret in returns.items():
             if abs(ret) > s.spike_std_multiplier * std_ret and abs(ret) > s.spike_min_abs_return:
                 direction = "spike up" if ret > 0 else "spike down"
-                spikes.append(
-                    f"{date.strftime('%Y-%m-%d')}: {direction} of {ret*100:.1f}%"
-                )
+                spikes.append(f"{date.strftime('%Y-%m-%d')}: {direction} of {ret * 100:.1f}%")  # type: ignore[union-attr]
 
         if std_ret > s.high_volatility_threshold:
-            risk_factors.append(
-                f"High daily volatility (std > {s.high_volatility_threshold*100:.0f}%)"
-            )
+            risk_factors.append(f"High daily volatility (std > {s.high_volatility_threshold * 100:.0f}%)")
 
         avg_price = hist["Close"].mean()
         last_price = hist["Close"].iloc[-1]
         if last_price > avg_price * s.overvaluation_multiplier:
             over_pct = round((s.overvaluation_multiplier - 1) * 100)
-            risk_factors.append(
-                f"Current price is >{over_pct}% above 52-week average — potential overvaluation"
-            )
+            risk_factors.append(f"Current price is >{over_pct}% above 52-week average — potential overvaluation")
         elif last_price < avg_price * s.distress_multiplier:
             under_pct = round((1 - s.distress_multiplier) * 100)
-            risk_factors.append(
-                f"Current price is >{under_pct}% below 52-week average — potential distress"
-            )
+            risk_factors.append(f"Current price is >{under_pct}% below 52-week average — potential distress")
 
     # Fetch recent news from DragonFi
     news_items = fetch_stock_news(symbol, page_size=5)

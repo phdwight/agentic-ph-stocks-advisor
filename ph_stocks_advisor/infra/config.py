@@ -8,10 +8,12 @@ class attributes so they can be changed via ``.env`` without touching code.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import os
 import re as _re
 from functools import lru_cache
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -53,12 +55,8 @@ class Settings:
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
     # -- API base URLs ---------------------------------------------------------
-    dragonfi_base_url: str = os.getenv(
-        "DRAGONFI_BASE_URL", "https://api.dragonfi.ph/api/v2"
-    )
-    pse_edge_base_url: str = os.getenv(
-        "PSE_EDGE_BASE_URL", "https://edge.pse.com.ph"
-    )
+    dragonfi_base_url: str = os.getenv("DRAGONFI_BASE_URL", "https://api.dragonfi.ph/api/v2")
+    pse_edge_base_url: str = os.getenv("PSE_EDGE_BASE_URL", "https://edge.pse.com.ph")
     tradingview_scanner_url: str = os.getenv(
         "TRADINGVIEW_SCANNER_URL",
         "https://scanner.tradingview.com/philippines/scan",
@@ -75,9 +73,7 @@ class Settings:
     entra_client_secret: str = os.getenv("ENTRA_CLIENT_SECRET", "")
     entra_tenant_id: str = os.getenv("ENTRA_TENANT_ID", "common")
     entra_redirect_path: str = os.getenv("ENTRA_REDIRECT_PATH", "/auth/callback")
-    flask_secret_key: str = os.getenv(
-        "FLASK_SECRET_KEY", "ph-stocks-advisor-change-me-in-production"
-    )
+    flask_secret_key: str = os.getenv("FLASK_SECRET_KEY", "ph-stocks-advisor-change-me-in-production")
 
     @property
     def entra_authority(self) -> str:
@@ -86,9 +82,7 @@ class Settings:
     # -- Google OAuth2 ---------------------------------------------------------
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
     google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    google_redirect_path: str = os.getenv(
-        "GOOGLE_REDIRECT_PATH", "/auth/google/callback"
-    )
+    google_redirect_path: str = os.getenv("GOOGLE_REDIRECT_PATH", "/auth/google/callback")
 
     @property
     def auth_enabled(self) -> bool:
@@ -99,15 +93,11 @@ class Settings:
 
     @property
     def google_enabled(self) -> bool:
-        return bool(
-            self.google_client_id and self.google_client_id != "NOTSET"
-        )
+        return bool(self.google_client_id and self.google_client_id != "NOTSET")
 
     @property
     def entra_enabled(self) -> bool:
-        return bool(
-            self.entra_client_id and self.entra_client_id != "NOTSET"
-        )
+        return bool(self.entra_client_id and self.entra_client_id != "NOTSET")
 
     # -- HTTP timeouts (seconds) -----------------------------------------------
     http_timeout: int = int(os.getenv("HTTP_TIMEOUT", "15"))
@@ -120,25 +110,15 @@ class Settings:
     # Spike detection (controversy_service)
     spike_std_multiplier: float = float(os.getenv("SPIKE_STD_MULTIPLIER", "3"))
     spike_min_abs_return: float = float(os.getenv("SPIKE_MIN_ABS_RETURN", "0.05"))
-    high_volatility_threshold: float = float(
-        os.getenv("HIGH_VOLATILITY_THRESHOLD", "0.03")
-    )
-    overvaluation_multiplier: float = float(
-        os.getenv("OVERVALUATION_MULTIPLIER", "1.3")
-    )
+    high_volatility_threshold: float = float(os.getenv("HIGH_VOLATILITY_THRESHOLD", "0.03"))
+    overvaluation_multiplier: float = float(os.getenv("OVERVALUATION_MULTIPLIER", "1.3"))
     distress_multiplier: float = float(os.getenv("DISTRESS_MULTIPLIER", "0.7"))
 
     # Price catalyst detection (price_service)
-    catalyst_yield_threshold: float = float(
-        os.getenv("CATALYST_YIELD_THRESHOLD", "3.0")
-    )
+    catalyst_yield_threshold: float = float(os.getenv("CATALYST_YIELD_THRESHOLD", "3.0"))
     catalyst_range_pct: float = float(os.getenv("CATALYST_RANGE_PCT", "65"))
-    catalyst_day_change_pct: float = float(
-        os.getenv("CATALYST_DAY_CHANGE_PCT", "0.5")
-    )
-    catalyst_near_high_pct: float = float(
-        os.getenv("CATALYST_NEAR_HIGH_PCT", "5")
-    )
+    catalyst_day_change_pct: float = float(os.getenv("CATALYST_DAY_CHANGE_PCT", "0.5"))
+    catalyst_near_high_pct: float = float(os.getenv("CATALYST_NEAR_HIGH_PCT", "5"))
 
     # -- Rate limiting ---------------------------------------------------------
     daily_analysis_limit: int = int(os.getenv("DAILY_ANALYSIS_LIMIT", "5"))
@@ -153,11 +133,14 @@ def get_settings() -> Settings:
 # Redis connection pool (shared across threads / Gunicorn workers)
 # ---------------------------------------------------------------------------
 
-_redis_pool: "redis_lib.ConnectionPool | None" = None
-_redis_pool_raw: "redis_lib.ConnectionPool | None" = None
+if TYPE_CHECKING:
+    import redis as redis_lib
+
+_redis_pool: redis_lib.ConnectionPool | None = None  # type: ignore[name-defined]
+_redis_pool_raw: redis_lib.ConnectionPool | None = None  # type: ignore[name-defined]
 
 
-def get_redis() -> "redis_lib.Redis":
+def get_redis() -> redis_lib.Redis:  # type: ignore[name-defined]
     """Return a Redis client backed by a shared ``ConnectionPool``.
 
     The pool is created lazily on first call and reused thereafter,
@@ -179,7 +162,7 @@ def get_redis() -> "redis_lib.Redis":
     return redis_lib.Redis(connection_pool=_redis_pool)
 
 
-def get_redis_raw() -> "redis_lib.Redis":
+def get_redis_raw() -> redis_lib.Redis:  # type: ignore[name-defined]
     """Return a Redis client that does **not** decode responses.
 
     Flask-Session (and any other consumer that stores binary / pickled
@@ -206,9 +189,7 @@ def _parse_tz(name: str) -> dt.tzinfo:
     * IANA names  – ``Asia/Manila``, ``US/Eastern``, ``UTC``
     * Offset form – ``UTC+8``, ``GMT+8``, ``UTC-5``, ``GMT-05:30``
     """
-    m = _re.match(
-        r"^(?:UTC|GMT)([+-])(\d{1,2})(?::(\d{2}))?$", name, _re.IGNORECASE
-    )
+    m = _re.match(r"^(?:UTC|GMT)([+-])(\d{1,2})(?::(\d{2}))?$", name, _re.IGNORECASE)
     if m:
         sign = 1 if m.group(1) == "+" else -1
         hours = int(m.group(2))
@@ -253,7 +234,7 @@ def get_mini_llm(settings: Settings | None = None) -> BaseChatModel:
     )
 
 
-_repository: "AbstractReportRepository | None" = None
+_repository: AbstractReportRepository | None = None
 
 
 def get_repository(settings: Settings | None = None) -> AbstractReportRepository:
@@ -291,8 +272,6 @@ def _reset_repository() -> None:
     """Close and discard the cached repository (for testing only)."""
     global _repository
     if _repository is not None:
-        try:
+        with contextlib.suppress(Exception):
             _repository.close()
-        except Exception:
-            pass
         _repository = None

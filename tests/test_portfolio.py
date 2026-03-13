@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -25,14 +26,13 @@ from ph_stocks_advisor.infra.repository import (
 )
 from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def sqlite_repo(tmp_path) -> SQLiteReportRepository:
+def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository, None, None]:
     """Fresh SQLite repo with all tables created."""
     db_path = str(tmp_path / "test_portfolio.db")
     repo = SQLiteReportRepository(db_path=db_path)
@@ -71,9 +71,7 @@ class TestHoldingRecord:
         assert h.total_cost == 25_500.0
 
     def test_repr(self):
-        h = HoldingRecord(
-            user_id="alice@test.com", symbol="TEL", shares=100, avg_cost=10.0
-        )
+        h = HoldingRecord(user_id="alice@test.com", symbol="TEL", shares=100, avg_cost=10.0)
         assert "TEL" in repr(h)
         assert "alice@test.com" in repr(h)
 
@@ -104,9 +102,7 @@ class TestPortfolioReportRecord:
 
 class TestSQLiteHoldings:
     def test_save_and_get_holding(self, sqlite_repo):
-        h = HoldingRecord(
-            user_id="alice@test.com", symbol="TEL", shares=1000, avg_cost=25.0
-        )
+        h = HoldingRecord(user_id="alice@test.com", symbol="TEL", shares=1000, avg_cost=25.0)
         sqlite_repo.save_holding(h)
 
         fetched = sqlite_repo.get_holding("alice@test.com", "TEL")
@@ -117,14 +113,10 @@ class TestSQLiteHoldings:
 
     def test_save_holding_upsert(self, sqlite_repo):
         """Saving the same user+symbol again should update, not duplicate."""
-        h1 = HoldingRecord(
-            user_id="alice@test.com", symbol="TEL", shares=1000, avg_cost=25.0
-        )
+        h1 = HoldingRecord(user_id="alice@test.com", symbol="TEL", shares=1000, avg_cost=25.0)
         sqlite_repo.save_holding(h1)
 
-        h2 = HoldingRecord(
-            user_id="alice@test.com", symbol="TEL", shares=2000, avg_cost=22.0
-        )
+        h2 = HoldingRecord(user_id="alice@test.com", symbol="TEL", shares=2000, avg_cost=22.0)
         sqlite_repo.save_holding(h2)
 
         fetched = sqlite_repo.get_holding("alice@test.com", "TEL")
@@ -136,9 +128,7 @@ class TestSQLiteHoldings:
         assert sqlite_repo.get_holding("nobody@test.com", "TEL") is None
 
     def test_delete_holding(self, sqlite_repo):
-        h = HoldingRecord(
-            user_id="alice@test.com", symbol="SM", shares=500, avg_cost=100.0
-        )
+        h = HoldingRecord(user_id="alice@test.com", symbol="SM", shares=500, avg_cost=100.0)
         sqlite_repo.save_holding(h)
         sqlite_repo.delete_holding("alice@test.com", "SM")
         assert sqlite_repo.get_holding("alice@test.com", "SM") is None
@@ -148,21 +138,9 @@ class TestSQLiteHoldings:
         sqlite_repo.delete_holding("nobody@test.com", "XYZ")
 
     def test_list_holdings(self, sqlite_repo):
-        sqlite_repo.save_holding(
-            HoldingRecord(
-                user_id="alice@test.com", symbol="TEL", shares=100, avg_cost=25.0
-            )
-        )
-        sqlite_repo.save_holding(
-            HoldingRecord(
-                user_id="alice@test.com", symbol="SM", shares=200, avg_cost=1000.0
-            )
-        )
-        sqlite_repo.save_holding(
-            HoldingRecord(
-                user_id="bob@test.com", symbol="BDO", shares=50, avg_cost=150.0
-            )
-        )
+        sqlite_repo.save_holding(HoldingRecord(user_id="alice@test.com", symbol="TEL", shares=100, avg_cost=25.0))
+        sqlite_repo.save_holding(HoldingRecord(user_id="alice@test.com", symbol="SM", shares=200, avg_cost=1000.0))
+        sqlite_repo.save_holding(HoldingRecord(user_id="bob@test.com", symbol="BDO", shares=50, avg_cost=150.0))
 
         alice_holdings = sqlite_repo.list_holdings("alice@test.com")
         assert len(alice_holdings) == 2
@@ -178,9 +156,7 @@ class TestSQLiteHoldings:
 
     def test_holding_symbol_uppercased(self, sqlite_repo):
         """Saving with lowercase symbol should store as uppercase."""
-        h = HoldingRecord(
-            user_id="alice@test.com", symbol="tel", shares=100, avg_cost=25.0
-        )
+        h = HoldingRecord(user_id="alice@test.com", symbol="tel", shares=100, avg_cost=25.0)
         sqlite_repo.save_holding(h)
         assert sqlite_repo.get_holding("alice@test.com", "TEL") is not None
 
@@ -265,12 +241,10 @@ class TestSQLitePortfolioReports:
 
 class TestPortfolioAgent:
     def test_portfolio_agent_generates_analysis(self):
-        from tests.conftest import make_mock_llm
         from ph_stocks_advisor.agents.portfolio import PortfolioAgent
+        from tests.conftest import make_mock_llm
 
-        llm = make_mock_llm(
-            "**Recommendation: HOLD** — TEL is undervalued with strong dividend yield."
-        )
+        llm = make_mock_llm("**Recommendation: HOLD** — TEL is undervalued with strong dividend yield.")
         agent = PortfolioAgent(llm)
         result = agent.run(
             symbol="TEL",
@@ -285,8 +259,8 @@ class TestPortfolioAgent:
 
     def test_portfolio_agent_handles_zero_cost(self):
         """When total cost is zero, unrealised P/L % should not crash."""
-        from tests.conftest import make_mock_llm
         from ph_stocks_advisor.agents.portfolio import PortfolioAgent
+        from tests.conftest import make_mock_llm
 
         llm = make_mock_llm("Recommendation: ACCUMULATE")
         agent = PortfolioAgent(llm)
@@ -310,8 +284,8 @@ class TestPortfolioAgent:
 @pytest.fixture
 def app(tmp_path):
     """Create a Flask test app with a temporary SQLite backend."""
-    from ph_stocks_advisor.web.app import create_app
     from ph_stocks_advisor.infra.config import Settings, _reset_repository
+    from ph_stocks_advisor.web.app import create_app
 
     _reset_repository()
 
@@ -319,10 +293,11 @@ def app(tmp_path):
     settings.db_backend = "sqlite"
     settings.sqlite_path = str(tmp_path / "test_api.db")
 
-    with patch("ph_stocks_advisor.web.app.get_settings", return_value=settings), \
-         patch("ph_stocks_advisor.web.app.get_redis") as mock_redis, \
-         patch("ph_stocks_advisor.infra.config.get_settings", return_value=settings):
-
+    with (
+        patch("ph_stocks_advisor.web.app.get_settings", return_value=settings),
+        patch("ph_stocks_advisor.web.app.get_redis") as mock_redis,
+        patch("ph_stocks_advisor.infra.config.get_settings", return_value=settings),
+    ):
         mock_redis_instance = MagicMock()
         mock_redis.return_value = mock_redis_instance
         mock_redis_instance.ping.return_value = True
@@ -332,6 +307,7 @@ def app(tmp_path):
 
         # Initialize the repo.
         from ph_stocks_advisor.infra.config import get_repository
+
         repo = get_repository(settings)
         repo.initialize()
 
@@ -463,12 +439,12 @@ class TestPortfolioCooldown:
         client.post("/api/holdings/TEL", json={"shares": 1000, "avg_cost": 25.0})
 
         # Seed a base report and a portfolio report created "now" (today).
+        from ph_stocks_advisor.data.models import FinalReport, Verdict
         from ph_stocks_advisor.infra.config import get_repository
         from ph_stocks_advisor.infra.repository import (
             PortfolioReportRecord,
             ReportRecord,
         )
-        from ph_stocks_advisor.data.models import FinalReport, Verdict
 
         repo = get_repository()
         report = FinalReport(
@@ -509,12 +485,13 @@ class TestPortfolioCooldown:
         client.post("/api/holdings/TEL", json={"shares": 1000, "avg_cost": 25.0})
 
         from datetime import timedelta
+
+        from ph_stocks_advisor.data.models import FinalReport, Verdict
         from ph_stocks_advisor.infra.config import get_repository
         from ph_stocks_advisor.infra.repository import (
             PortfolioReportRecord,
             ReportRecord,
         )
-        from ph_stocks_advisor.data.models import FinalReport, Verdict
 
         repo = get_repository()
         report = FinalReport(
@@ -543,7 +520,8 @@ class TestPortfolioCooldown:
 
         # Manually backdate the created_at to yesterday.
         import sqlite3
-        conn = sqlite3.connect(repo._db_path)
+
+        conn = sqlite3.connect(repo._db_path)  # type: ignore[attr-defined]
         yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         conn.execute(
             "UPDATE portfolio_reports SET created_at = ? WHERE user_id = ? AND symbol = ?",
@@ -571,12 +549,12 @@ class TestPortfolioCooldown:
         client.post("/api/holdings/TEL", json={"shares": 1000, "avg_cost": 25.0})
         client.post("/api/holdings/SM", json={"shares": 500, "avg_cost": 1000.0})
 
+        from ph_stocks_advisor.data.models import FinalReport, Verdict
         from ph_stocks_advisor.infra.config import get_repository
         from ph_stocks_advisor.infra.repository import (
             PortfolioReportRecord,
             ReportRecord,
         )
-        from ph_stocks_advisor.data.models import FinalReport, Verdict
 
         repo = get_repository()
 

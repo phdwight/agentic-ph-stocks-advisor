@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Result container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CandlestickSummary:
     """Aggregated candlestick pattern findings."""
@@ -38,27 +39,15 @@ class CandlestickSummary:
         """Format findings into an LLM-friendly summary string."""
         sections: list[str] = []
         if self.notable_candles:
-            sections.append(
-                "**Notable Candles:**\n" + "\n".join(f"  • {c}" for c in self.notable_candles)
-            )
+            sections.append("**Notable Candles:**\n" + "\n".join(f"  • {c}" for c in self.notable_candles))
         if self.gap_events:
-            sections.append(
-                "**Gap Events:**\n" + "\n".join(f"  • {g}" for g in self.gap_events)
-            )
+            sections.append("**Gap Events:**\n" + "\n".join(f"  • {g}" for g in self.gap_events))
         if self.volume_spikes:
-            sections.append(
-                "**Volume Spikes:**\n" + "\n".join(f"  • {v}" for v in self.volume_spikes)
-            )
+            sections.append("**Volume Spikes:**\n" + "\n".join(f"  • {v}" for v in self.volume_spikes))
         if self.selling_pressure_periods:
-            sections.append(
-                "**Selling Pressure:**\n"
-                + "\n".join(f"  • {s}" for s in self.selling_pressure_periods)
-            )
+            sections.append("**Selling Pressure:**\n" + "\n".join(f"  • {s}" for s in self.selling_pressure_periods))
         if self.buying_pressure_periods:
-            sections.append(
-                "**Buying Pressure:**\n"
-                + "\n".join(f"  • {b}" for b in self.buying_pressure_periods)
-            )
+            sections.append("**Buying Pressure:**\n" + "\n".join(f"  • {b}" for b in self.buying_pressure_periods))
         return "\n".join(sections) if sections else "No notable candlestick patterns detected."
 
 
@@ -66,14 +55,18 @@ class CandlestickSummary:
 # Individual detectors
 # ---------------------------------------------------------------------------
 
+
 def _detect_notable_candles(
-    df: pd.DataFrame, *, body_threshold_pct: float = 5.0, top_n: int = 5,
+    df: pd.DataFrame,
+    *,
+    body_threshold_pct: float = 5.0,
+    top_n: int = 5,
 ) -> list[str]:
     """Find large bearish or bullish candles (body > threshold %).
 
     Returns descriptions sorted by absolute body size (largest first).
     """
-    results: list[str] = []
+    results: list[tuple[float, str]] = []
     opens = df["Open"].values
     closes = df["Close"].values
     highs = df["High"].values
@@ -86,12 +79,15 @@ def _detect_notable_candles(
             continue
         body_pct = ((c - o) / o) * 100
         if abs(body_pct) >= body_threshold_pct:
-            date_str = dates[i].strftime("%Y-%m-%d")
+            date_str = dates[i].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             direction = "bullish (green)" if body_pct > 0 else "bearish (red)"
-            h, l = float(highs[i]), float(lows[i])
+            h, lo = float(highs[i]), float(lows[i])
             results.append(
-                (abs(body_pct), f"{date_str}: Large {direction} candle — "
-                 f"O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} ({body_pct:+.1f}%)")
+                (
+                    abs(body_pct),
+                    f"{date_str}: Large {direction} candle — "
+                    f"O:{o:.2f} H:{h:.2f} L:{lo:.2f} C:{c:.2f} ({body_pct:+.1f}%)",
+                )
             )
 
     results.sort(key=lambda x: x[0], reverse=True)
@@ -112,18 +108,20 @@ def _detect_gaps(df: pd.DataFrame, *, gap_threshold_pct: float = 2.0) -> list[st
         today_open = float(opens[i])
         gap_pct = ((today_open - prev_close) / prev_close) * 100
         if abs(gap_pct) >= gap_threshold_pct:
-            date_str = dates[i].strftime("%Y-%m-%d")
+            date_str = dates[i].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             direction = "gap-UP" if gap_pct > 0 else "gap-DOWN"
             results.append(
-                f"{date_str}: {direction} of {gap_pct:+.1f}% "
-                f"(prev close {prev_close:.2f} → open {today_open:.2f})"
+                f"{date_str}: {direction} of {gap_pct:+.1f}% (prev close {prev_close:.2f} → open {today_open:.2f})"
             )
 
     return results
 
 
 def _detect_volume_spikes(
-    df: pd.DataFrame, *, multiplier: float = 3.0, window: int = 20,
+    df: pd.DataFrame,
+    *,
+    multiplier: float = 3.0,
+    window: int = 20,
 ) -> list[str]:
     """Find days where volume exceeds the rolling average by *multiplier* x."""
     if "Volume" not in df.columns or df["Volume"].sum() == 0:
@@ -134,13 +132,13 @@ def _detect_volume_spikes(
     results: list[str] = []
 
     for i in range(window, len(df)):
-        avg = float(rolling_avg.iloc[i]) if not np.isnan(rolling_avg.iloc[i]) else 0
+        avg = float(rolling_avg.iloc[i]) if not np.isnan(rolling_avg.iloc[i]) else 0  # type: ignore[arg-type]
         if avg == 0:
             continue
         day_vol = float(vol.iloc[i])
         ratio = day_vol / avg
         if ratio >= multiplier:
-            date_str = df.index[i].strftime("%Y-%m-%d")
+            date_str = df.index[i].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             close_chg = ""
             if i > 0:
                 prev_c = float(df["Close"].iloc[i - 1])
@@ -149,15 +147,16 @@ def _detect_volume_spikes(
                     pct = ((cur_c - prev_c) / prev_c) * 100
                     close_chg = f", price {pct:+.1f}%"
             results.append(
-                f"{date_str}: Volume spike {ratio:.1f}x average "
-                f"({day_vol:,.0f} vs avg {avg:,.0f}{close_chg})"
+                f"{date_str}: Volume spike {ratio:.1f}x average ({day_vol:,.0f} vs avg {avg:,.0f}{close_chg})"
             )
 
     return results
 
 
 def _detect_consecutive_pressure(
-    df: pd.DataFrame, *, min_streak: int = 3,
+    df: pd.DataFrame,
+    *,
+    min_streak: int = 3,
 ) -> tuple[list[str], list[str]]:
     """Detect streaks of consecutive bearish or bullish candles.
 
@@ -177,8 +176,8 @@ def _detect_consecutive_pressure(
     def _flush() -> None:
         nonlocal streak_type, streak_start, streak_len, cumulative_pct
         if streak_len >= min_streak:
-            start_date = dates[streak_start].strftime("%Y-%m-%d")
-            end_date = dates[streak_start + streak_len - 1].strftime("%Y-%m-%d")
+            start_date = dates[streak_start].strftime("%Y-%m-%d")  # type: ignore[union-attr]
+            end_date = dates[streak_start + streak_len - 1].strftime("%Y-%m-%d")  # type: ignore[union-attr]
             desc = (
                 f"{start_date} to {end_date}: {streak_len} consecutive "
                 f"{'bearish' if streak_type == 'bear' else 'bullish'} candles "
@@ -217,6 +216,7 @@ def _detect_consecutive_pressure(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def analyse_candlesticks(hist: pd.DataFrame) -> CandlestickSummary:
     """Run all candlestick detectors on an OHLCV DataFrame.

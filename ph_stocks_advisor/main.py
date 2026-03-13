@@ -20,14 +20,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from ph_stocks_advisor.infra.config import get_repository
-from ph_stocks_advisor.graph.workflow import run_analysis
 from ph_stocks_advisor.data.models import FinalReport
-from ph_stocks_advisor.infra.repository import ReportRecord
 from ph_stocks_advisor.export import FORMATTER_REGISTRY, get_formatter
 from ph_stocks_advisor.export.formatter import DATA_SOURCES, DISCLAIMER
-
-
+from ph_stocks_advisor.graph.workflow import run_analysis
+from ph_stocks_advisor.infra.config import get_repository
+from ph_stocks_advisor.infra.repository import ReportRecord
 
 
 def _print_report(report: FinalReport) -> None:
@@ -49,26 +47,30 @@ def _parse_args() -> argparse.Namespace:
         description="Agentic AI Philippine Stock Advisor",
     )
     parser.add_argument(
-        "symbols", nargs="+",
+        "symbols",
+        nargs="+",
         help="One or more PSE stock symbols (e.g. TEL SM MREIT)",
     )
 
     # Dynamically add --pdf, --html, … from the formatter registry
     for name in FORMATTER_REGISTRY:
         parser.add_argument(
-            f"--{name}", action="store_true",
+            f"--{name}",
+            action="store_true",
             help=f"Generate a {name.upper()} report after analysis",
         )
 
     parser.add_argument(
-        "-o", "--output", type=str, default=None,
+        "-o",
+        "--output",
+        type=str,
+        default=None,
         help="Output path (default: <SYMBOL>_report.<ext>)",
     )
     return parser.parse_args()
 
 
-def _analyse_single(symbol: str, requested_formats: list[str],
-                     output_path: str | None) -> bool:
+def _analyse_single(symbol: str, requested_formats: list[str], output_path: str | None) -> bool:
     """Run analysis for one symbol. Returns True on success."""
     symbol = symbol.upper().replace(".PS", "")
     print(f"\n🔍 Analysing {symbol} — this may take a minute …\n")
@@ -123,6 +125,7 @@ def _analyse_single(symbol: str, requested_formats: list[str],
                 out = Path(output_path)
             else:
                 from ph_stocks_advisor.infra.config import get_settings
+
                 output_dir = get_settings().output_dir
                 out = Path(output_dir) / default_name if output_dir else Path(default_name)
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -155,8 +158,7 @@ def main(symbol: str | None = None) -> None:
                 requested_formats.append(name)
 
     if len(symbols) > 1 and output_path:
-        print("⚠️  -o/--output ignored when analysing multiple symbols "
-              "(each file is auto-named <SYMBOL>_report.<ext>).")
+        print("⚠️  -o/--output ignored when analysing multiple symbols (each file is auto-named <SYMBOL>_report.<ext>).")
         output_path = None
 
     failures: list[str] = []

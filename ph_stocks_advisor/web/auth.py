@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import msal
@@ -56,6 +57,7 @@ def _safe_redirect_url(url: str | None, fallback: str | None = None) -> str:
         if parsed.netloc:
             return fallback or url_for("index")
     return fallback or url_for("index")
+
 
 # Microsoft OIDC scopes — User.Read gives us the signed-in user's profile.
 _SCOPES = ["User.Read"]
@@ -238,12 +240,14 @@ def callback():
     # Persist user in the database (upsert).
     try:
         repo = get_repository()
-        repo.save_user(UserRecord(
-            oid=session["user"]["oid"],
-            name=session["user"]["name"],
-            email=session["user"]["email"],
-            provider="microsoft",
-        ))
+        repo.save_user(
+            UserRecord(
+                oid=session["user"]["oid"],
+                name=session["user"]["name"],
+                email=session["user"]["email"],
+                provider="microsoft",
+            )
+        )
         # Read back user_type from DB (may have been set to elevated
         # by an admin).  The save_user upsert does NOT overwrite
         # user_type, so the DB value is authoritative.
@@ -271,9 +275,7 @@ def google_signin():
     settings = get_settings()
     session["google_state"] = str(uuid.uuid4())
 
-    redirect_uri = (
-        request.url_root.rstrip("/") + settings.google_redirect_path
-    )
+    redirect_uri = request.url_root.rstrip("/") + settings.google_redirect_path
     params = urlencode(
         {
             "client_id": settings.google_client_id,
@@ -311,9 +313,7 @@ def google_callback():
     if not code:
         return redirect(url_for("auth.login"))
 
-    redirect_uri = (
-        request.url_root.rstrip("/") + settings.google_redirect_path
-    )
+    redirect_uri = request.url_root.rstrip("/") + settings.google_redirect_path
 
     # Exchange authorization code for tokens.
     token_resp = http_requests.post(
@@ -368,12 +368,14 @@ def google_callback():
     # Persist user in the database (upsert).
     try:
         repo = get_repository()
-        repo.save_user(UserRecord(
-            oid=session["user"]["oid"],
-            name=session["user"]["name"],
-            email=session["user"]["email"],
-            provider="google",
-        ))
+        repo.save_user(
+            UserRecord(
+                oid=session["user"]["oid"],
+                name=session["user"]["name"],
+                email=session["user"]["email"],
+                provider="google",
+            )
+        )
         # Read back user_type from DB (may have been set to elevated
         # by an admin).  The save_user upsert does NOT overwrite
         # user_type, so the DB value is authoritative.
@@ -427,8 +429,7 @@ def logout():
     # If the user signed in via Microsoft, redirect to Entra's logout.
     if provider != "google" and settings.entra_enabled:
         logout_url = (
-            f"{settings.entra_authority}/oauth2/v2.0/logout"
-            f"?post_logout_redirect_uri={request.url_root.rstrip('/')}"
+            f"{settings.entra_authority}/oauth2/v2.0/logout?post_logout_redirect_uri={request.url_root.rstrip('/')}"
         )
         return redirect(logout_url)
 

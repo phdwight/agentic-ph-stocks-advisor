@@ -10,7 +10,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import ph_stocks_advisor.graph.workflow as workflow_mod
-from ph_stocks_advisor.graph.workflow import AGENT_REGISTRY, _build_graph_impl, run_analysis
 from ph_stocks_advisor.data.models import (
     ControversyAnalysis,
     ControversyInfo,
@@ -27,6 +26,7 @@ from ph_stocks_advisor.data.models import (
     ValuationAnalysis,
     Verdict,
 )
+from ph_stocks_advisor.graph.workflow import AGENT_REGISTRY, _build_graph_impl, run_analysis
 
 
 class TestBuildGraph:

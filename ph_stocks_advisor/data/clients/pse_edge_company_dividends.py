@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 import requests
 
@@ -36,11 +35,13 @@ logger = logging.getLogger(__name__)
 
 def _base_url() -> str:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().pse_edge_base_url
 
 
 def _timeout() -> int:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().http_timeout
 
 
@@ -51,7 +52,7 @@ def _timeout() -> int:
 _CMPY_ID_CACHE: dict[str, str] = {}
 
 
-def _resolve_cmpy_id(symbol: str) -> Optional[str]:
+def _resolve_cmpy_id(symbol: str) -> str | None:
     """Look up the PSE EDGE ``cmpy_id`` for a ticker symbol."""
     symbol = symbol.upper()
     if symbol in _CMPY_ID_CACHE:
@@ -67,7 +68,8 @@ def _resolve_cmpy_id(symbol: str) -> Optional[str]:
         if resp.status_code != 200:
             logger.debug(
                 "PSE EDGE autocomplete returned %s for %s",
-                resp.status_code, symbol,
+                resp.status_code,
+                symbol,
             )
             return None
 
@@ -197,12 +199,16 @@ def fetch_company_dividend_announcements(
         if resp.status_code != 200:
             logger.warning(
                 "PSE EDGE company dividends returned %s for %s (cmpy_id=%s)",
-                resp.status_code, symbol, cmpy_id,
+                resp.status_code,
+                symbol,
+                cmpy_id,
             )
             return []
     except requests.RequestException as exc:
         logger.warning(
-            "PSE EDGE company dividends fetch failed for %s: %s", symbol, exc,
+            "PSE EDGE company dividends fetch failed for %s: %s",
+            symbol,
+            exc,
         )
         return []
 
@@ -211,11 +217,13 @@ def fetch_company_dividend_announcements(
     if announcements:
         logger.info(
             "Found %d dividend announcement(s) for %s from company page",
-            len(announcements), symbol,
+            len(announcements),
+            symbol,
         )
     else:
         logger.debug(
-            "No dividend announcements found on company page for %s", symbol,
+            "No dividend announcements found on company page for %s",
+            symbol,
         )
 
     return announcements[:max_results]

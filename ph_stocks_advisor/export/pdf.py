@@ -8,13 +8,17 @@ styled A4 PDF document using *fpdf2*.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from fpdf import FPDF
 
-from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES, format_timestamp
+from ph_stocks_advisor.export.formatter import (
+    DATA_SOURCES,
+    DISCLAIMER,
+    OutputFormatter,
+    format_timestamp,
+    parse_sections,
+)
 from ph_stocks_advisor.infra.repository import ReportRecord
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -27,6 +31,7 @@ _BODY_W = _PAGE_W - 2 * _MARGIN
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 class _ReportPDF(FPDF):
     """Custom FPDF subclass with header/footer branding."""
@@ -64,15 +69,15 @@ class _ReportPDF(FPDF):
 
 # Characters outside latin-1 that appear in PH stock reports
 _UNICODE_SUBS: dict[str, str] = {
-    "\u20b1": "PHP ",   # ₱
-    "\u2022": "-",      # •
-    "\u2013": "-",      # –
-    "\u2014": "-",      # —
-    "\u2018": "'",      # '
-    "\u2019": "'",      # '
-    "\u201c": '"',      # "
-    "\u201d": '"',      # "
-    "\u2026": "...",    # …
+    "\u20b1": "PHP ",  # ₱
+    "\u2022": "-",  # •
+    "\u2013": "-",  # –
+    "\u2014": "-",  # —
+    "\u2018": "'",  # '
+    "\u2019": "'",  # '
+    "\u201c": '"',  # "
+    "\u201d": '"',  # "
+    "\u2026": "...",  # …
 }
 
 
@@ -127,6 +132,7 @@ def _write_section(pdf: _ReportPDF, title: str, body: str) -> None:
 # Formatter
 # ---------------------------------------------------------------------------
 
+
 class PdfFormatter(OutputFormatter):
     """Renders stock-analysis reports as styled A4 PDF documents."""
 
@@ -171,11 +177,9 @@ class PdfFormatter(OutputFormatter):
         badge_h = 10
         badge_x = pdf.get_x()
         badge_y = pdf.get_y()
-        pdf.rect(badge_x, badge_y, badge_w, badge_h,
-                 style="F", round_corners=True, corner_radius=badge_h / 2)
+        pdf.rect(badge_x, badge_y, badge_w, badge_h, style="F", round_corners=True, corner_radius=badge_h / 2)
         pdf.set_xy(badge_x, badge_y)
-        pdf.cell(badge_w, badge_h, badge_text, align="C",
-                 new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(badge_w, badge_h, badge_text, align="C", new_x="LMARGIN", new_y="NEXT")
 
         # Date
         pdf.set_font("Helvetica", "", 9)
@@ -191,12 +195,13 @@ class PdfFormatter(OutputFormatter):
                 continue
             _write_section(pdf, title, body)
 
-        return pdf.output()
+        return pdf.output()  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
 # Standalone CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """``ph-advisor-pdf`` CLI — delegates to the shared :func:`export_cli`."""

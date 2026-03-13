@@ -8,16 +8,14 @@ services required.
 
 from __future__ import annotations
 
-import os
-import tempfile
+from collections.abc import Generator
 
 import pytest
 
-from ph_stocks_advisor.infra.config import Settings, get_repository, _reset_repository
 from ph_stocks_advisor.data.models import FinalReport, Verdict
-from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord, UserRecord
+from ph_stocks_advisor.infra.config import Settings, _reset_repository, get_repository
+from ph_stocks_advisor.infra.repository import AbstractReportRepository, ReportRecord
 from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -48,7 +46,7 @@ def sample_report() -> FinalReport:
 
 
 @pytest.fixture
-def sqlite_repo(tmp_path) -> SQLiteReportRepository:
+def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository, None, None]:
     """Create a fresh SQLite repo in a temp directory."""
     db_path = str(tmp_path / "test_reports.db")
     repo = SQLiteReportRepository(db_path=db_path)
@@ -115,9 +113,7 @@ class TestSQLiteRepository:
 
     def test_list_by_symbol(self, sqlite_repo, sample_report):
         for i in range(5):
-            r = ReportRecord.from_final_report(
-                sample_report.model_copy(update={"summary": f"Report {i}"})
-            )
+            r = ReportRecord.from_final_report(sample_report.model_copy(update={"summary": f"Report {i}"}))
             sqlite_repo.save(r)
 
         results = sqlite_repo.list_by_symbol("TEL", limit=3)
@@ -170,17 +166,13 @@ class TestSQLiteRepository:
         sqlite_repo.add_user_symbol("alice@test.com", "TEL")
         sqlite_repo.add_user_symbol("alice@test.com", "TEL")  # no error
 
-    def test_list_user_symbols_returns_only_user_stocks(
-        self, sqlite_repo, sample_report
-    ):
+    def test_list_user_symbols_returns_only_user_stocks(self, sqlite_repo, sample_report):
         """Each user should only see the symbols they have analysed."""
         # Save two different stock reports.
         r1 = ReportRecord.from_final_report(sample_report)
         sqlite_repo.save(r1)
 
-        r2 = ReportRecord.from_final_report(
-            sample_report.model_copy(update={"symbol": "SM"})
-        )
+        r2 = ReportRecord.from_final_report(sample_report.model_copy(update={"symbol": "SM"}))
         sqlite_repo.save(r2)
 
         # Alice analysed TEL only; Bob analysed SM only.
@@ -201,16 +193,12 @@ class TestSQLiteRepository:
         sqlite_repo.save(record)
         assert sqlite_repo.list_user_symbols("nobody@test.com") == []
 
-    def test_list_user_symbols_returns_latest_report(
-        self, sqlite_repo, sample_report
-    ):
+    def test_list_user_symbols_returns_latest_report(self, sqlite_repo, sample_report):
         """When multiple reports exist for a symbol, the latest is returned."""
         r1 = ReportRecord.from_final_report(sample_report)
         sqlite_repo.save(r1)
 
-        r2 = ReportRecord.from_final_report(
-            sample_report.model_copy(update={"summary": "Updated TEL analysis."})
-        )
+        r2 = ReportRecord.from_final_report(sample_report.model_copy(update={"summary": "Updated TEL analysis."}))
         sqlite_repo.save(r2)
 
         sqlite_repo.add_user_symbol("alice@test.com", "TEL")
@@ -239,6 +227,3 @@ class TestGetRepository:
         from ph_stocks_advisor.infra.repository_postgres import PostgresReportRepository
 
         assert issubclass(PostgresReportRepository, AbstractReportRepository)
-
-
-

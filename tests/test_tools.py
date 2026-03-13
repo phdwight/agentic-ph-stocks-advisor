@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 
+from ph_stocks_advisor.data.models import TrendDirection
 from ph_stocks_advisor.data.tools import (
     SymbolNotFoundError,
     fetch_controversy_info,
@@ -21,7 +22,6 @@ from ph_stocks_advisor.data.tools import (
     fetch_stock_price,
     validate_symbol,
 )
-from ph_stocks_advisor.data.models import TrendDirection
 
 # Fixed end-date for bdate_range — must be a weekday so pandas 3.x
 # doesn't silently drop a non-business-day endpoint.
@@ -68,6 +68,7 @@ _DRAGONFI_VALUATION = {
 # Stock price
 # ---------------------------------------------------------------------------
 
+
 class TestFetchStockPrice:
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_profile")
     def test_returns_from_dragonfi(self, mock_profile):
@@ -89,6 +90,7 @@ class TestFetchStockPrice:
 # ---------------------------------------------------------------------------
 # Dividend info
 # ---------------------------------------------------------------------------
+
 
 class TestFetchDividendInfo:
     @patch("ph_stocks_advisor.data.services.dividend.fetch_company_dividend_announcements", return_value=[])
@@ -158,6 +160,7 @@ class TestFetchDividendInfo:
 # Price movement
 # ---------------------------------------------------------------------------
 
+
 class TestFetchPriceMovement:
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
@@ -206,11 +209,13 @@ class TestFetchPriceMovement:
         """Simulate a stock that rises then crashes mid-year and partly recovers."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         dates = pd.bdate_range(end=_BDATE_END, periods=200)
-        prices = np.concatenate([
-            np.linspace(10.0, 14.0, 80),   # rally to 14
-            np.linspace(14.0, 8.0, 40),    # crash to 8 (~43% drawdown)
-            np.linspace(8.0, 10.5, 80),    # partial recovery
-        ])
+        prices = np.concatenate(
+            [
+                np.linspace(10.0, 14.0, 80),  # rally to 14
+                np.linspace(14.0, 8.0, 40),  # crash to 8 (~43% drawdown)
+                np.linspace(8.0, 10.5, 80),  # partial recovery
+            ]
+        )
         hist = pd.DataFrame({"Close": prices}, index=dates)
         mock_pse.return_value = hist
         result = fetch_price_movement("DMC")
@@ -250,13 +255,16 @@ class TestFetchPriceMovement:
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         dates = pd.bdate_range(end=_BDATE_END, periods=100)
         prices = np.linspace(10.0, 12.0, 100)
-        hist = pd.DataFrame({
-            "Open": prices - 0.1,
-            "High": prices + 0.2,
-            "Low": prices - 0.2,
-            "Close": prices,
-            "Volume": [1_000_000] * 100,
-        }, index=dates)
+        hist = pd.DataFrame(
+            {
+                "Open": prices - 0.1,
+                "High": prices + 0.2,
+                "Low": prices - 0.2,
+                "Close": prices,
+                "Volume": [1_000_000] * 100,
+            },
+            index=dates,
+        )
         mock_pse.return_value = hist
         result = fetch_price_movement("DMC")
         assert result.trend == TrendDirection.UPTREND
@@ -267,6 +275,7 @@ class TestFetchPriceMovement:
 # ---------------------------------------------------------------------------
 # Fair value
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFairValue:
     @patch("ph_stocks_advisor.data.services.valuation.fetch_security_valuation")
@@ -298,6 +307,7 @@ class TestFetchFairValue:
 # ---------------------------------------------------------------------------
 # Controversy / risk
 # ---------------------------------------------------------------------------
+
 
 class TestFetchControversyInfo:
     @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news")
@@ -348,6 +358,7 @@ class TestFetchControversyInfo:
 # Validate symbol (now powered by DragonFi)
 # ---------------------------------------------------------------------------
 
+
 class TestValidateSymbol:
     @patch("ph_stocks_advisor.data.clients.dragonfi.validate_pse_symbol")
     def test_valid_symbol_returns_code(self, mock_validate):
@@ -376,6 +387,7 @@ class TestValidatePseSymbolDragonFi:
     def test_found_in_stock_list(self, mock_codes, mock_get):
         mock_codes.return_value = frozenset({"AREIT", "TEL", "SM"})
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
+
         result = validate_pse_symbol("AREIT")
         assert result == "AREIT"
 
@@ -385,6 +397,7 @@ class TestValidatePseSymbolDragonFi:
         mock_codes.return_value = frozenset()
         mock_get.return_value = {"stockCode": "AREIT"}
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
+
         result = validate_pse_symbol("AREIT")
         assert result == "AREIT"
 
@@ -394,6 +407,7 @@ class TestValidatePseSymbolDragonFi:
         mock_codes.return_value = frozenset()
         mock_get.return_value = None
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
+
         with pytest.raises(SymbolNotFoundError, match="not listed"):
             validate_pse_symbol("DOESNOTEXIST")
 
@@ -402,9 +416,11 @@ class TestValidatePseSymbolDragonFi:
 # Price catalyst detection
 # ---------------------------------------------------------------------------
 
+
 class TestDetectPriceCatalysts:
     def test_reit_dividend_catalyst(self):
         from ph_stocks_advisor.data.services.price import detect_price_catalysts
+
         profile = {
             "price": 43.5,
             "prevDayClosePrice": 43.05,
@@ -419,6 +435,7 @@ class TestDetectPriceCatalysts:
 
     def test_high_yield_non_reit(self):
         from ph_stocks_advisor.data.services.price import detect_price_catalysts
+
         profile = {
             "price": 1250.0,
             "prevDayClosePrice": 1240.0,
@@ -433,6 +450,7 @@ class TestDetectPriceCatalysts:
 
     def test_no_catalyst_for_low_yield(self):
         from ph_stocks_advisor.data.services.price import detect_price_catalysts
+
         profile = {
             "price": 50.0,
             "prevDayClosePrice": 49.5,
@@ -447,6 +465,7 @@ class TestDetectPriceCatalysts:
 
     def test_near_52_week_high(self):
         from ph_stocks_advisor.data.services.price import detect_price_catalysts
+
         profile = {
             "price": 59.0,
             "prevDayClosePrice": 58.5,
@@ -460,6 +479,7 @@ class TestDetectPriceCatalysts:
 
     def test_empty_profile(self):
         from ph_stocks_advisor.data.services.price import detect_price_catalysts
+
         assert detect_price_catalysts({}) == []
         assert detect_price_catalysts(None) == []
 
@@ -468,20 +488,32 @@ class TestDetectPriceCatalysts:
 # DragonFi financial trend helpers
 # ---------------------------------------------------------------------------
 
+
 class TestExtractAnnualValues:
-    @pytest.mark.parametrize("data,expected", [
-        (
-            {"Symbol": "AREIT", "Item": "Net Income",
-             "2022_YoY": "18.93 %", "2022": 2890000000.0,
-             "2023_YoY": "74.05 %", "2023": 5030000000.0,
-             "2024_YoY": "45.47 %", "2024": 7317064704.0},
-            {"2022": 2890000000.0, "2023": 5030000000.0, "2024": 7317064704.0},
-        ),
-        (None, {}),
-        ({"2022": 100.0, "2023": None, "2024": 200.0}, {"2022": 100.0, "2024": 200.0}),
-    ], ids=["full-data", "none-input", "skips-none-values"])
+    @pytest.mark.parametrize(
+        "data,expected",
+        [
+            (
+                {
+                    "Symbol": "AREIT",
+                    "Item": "Net Income",
+                    "2022_YoY": "18.93 %",
+                    "2022": 2890000000.0,
+                    "2023_YoY": "74.05 %",
+                    "2023": 5030000000.0,
+                    "2024_YoY": "45.47 %",
+                    "2024": 7317064704.0,
+                },
+                {"2022": 2890000000.0, "2023": 5030000000.0, "2024": 7317064704.0},
+            ),
+            (None, {}),
+            ({"2022": 100.0, "2023": None, "2024": 200.0}, {"2022": 100.0, "2024": 200.0}),
+        ],
+        ids=["full-data", "none-input", "skips-none-values"],
+    )
     def test_extract_annual_values(self, data, expected):
         from ph_stocks_advisor.data.clients.dragonfi import _extract_annual_values
+
         assert _extract_annual_values(data) == expected
 
 
@@ -496,6 +528,7 @@ class TestFetchAnnualIncomeTrends:
             }
         }
         from ph_stocks_advisor.data.clients.dragonfi import fetch_annual_income_trends
+
         result = fetch_annual_income_trends("X")
         assert result["revenue"] == {"2023": 7e9, "2024": 10e9}
         assert result["net_income"] == {"2023": 5e9, "2024": 7e9}
@@ -504,6 +537,7 @@ class TestFetchAnnualIncomeTrends:
     def test_returns_empty_on_no_data(self, mock_fin):
         mock_fin.return_value = {}
         from ph_stocks_advisor.data.clients.dragonfi import fetch_annual_income_trends
+
         result = fetch_annual_income_trends("X")
         assert result == {}
 
@@ -511,6 +545,7 @@ class TestFetchAnnualIncomeTrends:
 # ---------------------------------------------------------------------------
 # PSE EDGE OHLCV module
 # ---------------------------------------------------------------------------
+
 
 class TestPseEdge:
     """Tests for pse_edge.py data fetching."""
@@ -522,6 +557,7 @@ class TestPseEdge:
             json=lambda: [{"cmpyId": "188", "cmpyNm": "DMCI Holdings, Inc.", "symbol": "DMC"}],
         )
         from ph_stocks_advisor.data.clients.pse_edge import _resolve_cmpy_id
+
         assert _resolve_cmpy_id("DMC") == "188"
 
     @patch("ph_stocks_advisor.data.clients.pse_edge.requests.get")
@@ -531,16 +567,18 @@ class TestPseEdge:
             json=lambda: [{"cmpyId": "154", "cmpyNm": "San Miguel Corp", "symbol": "SMC"}],
         )
         from ph_stocks_advisor.data.clients.pse_edge import _resolve_cmpy_id
+
         assert _resolve_cmpy_id("SM") is None
 
     @patch("ph_stocks_advisor.data.clients.pse_edge.requests.get")
     def test_resolve_security_id(self, mock_get):
-        html = '''<select name="security_id" onchange="document.form1.submit();">
+        html = """<select name="security_id" onchange="document.form1.submit();">
 <option value="192" selected>DMC</option>
 <option value="261" >DMCP</option>
-</select>'''
+</select>"""
         mock_get.return_value = MagicMock(status_code=200, text=html)
         from ph_stocks_advisor.data.clients.pse_edge import _resolve_security_id
+
         assert _resolve_security_id("188") == "192"
 
     @patch("ph_stocks_advisor.data.clients.pse_edge.requests.post")
@@ -551,15 +589,28 @@ class TestPseEdge:
             status_code=200,
             json=lambda: {
                 "chartData": [
-                    {"OPEN": 11.48, "HIGH": 11.58, "LOW": 11.28, "CLOSE": 11.5,
-                     "VALUE": 4.867e7, "CHART_DATE": "Feb 26, 2025 00:00:00"},
-                    {"OPEN": 11.5, "HIGH": 11.54, "LOW": 11.38, "CLOSE": 11.5,
-                     "VALUE": 3.683e7, "CHART_DATE": "Feb 27, 2025 00:00:00"},
+                    {
+                        "OPEN": 11.48,
+                        "HIGH": 11.58,
+                        "LOW": 11.28,
+                        "CLOSE": 11.5,
+                        "VALUE": 4.867e7,
+                        "CHART_DATE": "Feb 26, 2025 00:00:00",
+                    },
+                    {
+                        "OPEN": 11.5,
+                        "HIGH": 11.54,
+                        "LOW": 11.38,
+                        "CLOSE": 11.5,
+                        "VALUE": 3.683e7,
+                        "CHART_DATE": "Feb 27, 2025 00:00:00",
+                    },
                 ],
                 "tableData": [],
             },
         )
         from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
+
         df = fetch_pse_edge_ohlcv("DMC")
         assert len(df) == 2
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
@@ -568,6 +619,7 @@ class TestPseEdge:
     @patch("ph_stocks_advisor.data.clients.pse_edge._resolve_ids", return_value=None)
     def test_fetch_ohlcv_unresolved_returns_empty(self, _ids):
         from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
+
         df = fetch_pse_edge_ohlcv("ZZZ")
         assert df.empty
 
@@ -576,13 +628,20 @@ class TestPseEdge:
     def test_fetch_ohlcv_deduplicates(self, mock_ids, mock_post):
         """PSE EDGE sometimes returns duplicate rows — verify deduplication."""
         mock_ids.return_value = ("188", "192")
-        row = {"OPEN": 11.0, "HIGH": 11.2, "LOW": 10.9, "CLOSE": 11.1,
-               "VALUE": 1e7, "CHART_DATE": "Mar 24, 2025 00:00:00"}
+        row = {
+            "OPEN": 11.0,
+            "HIGH": 11.2,
+            "LOW": 10.9,
+            "CLOSE": 11.1,
+            "VALUE": 1e7,
+            "CHART_DATE": "Mar 24, 2025 00:00:00",
+        }
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"chartData": [row, row], "tableData": []},
         )
         from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
+
         df = fetch_pse_edge_ohlcv("DMC")
         assert len(df) == 1
 
@@ -592,6 +651,7 @@ class TestPseEdge:
         mock_ids.return_value = ("188", "192")
         mock_post.return_value = MagicMock(status_code=500)
         from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
+
         df = fetch_pse_edge_ohlcv("DMC")
         assert df.empty
 
@@ -599,6 +659,7 @@ class TestPseEdge:
 # ---------------------------------------------------------------------------
 # TradingView scanner module
 # ---------------------------------------------------------------------------
+
 
 class TestTradingView:
     """Tests for tradingview.py data fetching."""
@@ -609,15 +670,33 @@ class TestTradingView:
             status_code=200,
             json=lambda: {
                 "totalCount": 1,
-                "data": [{"s": "PSE:DMC", "d": [
-                    9.88, 9.81, 9.93, 9.75, 2240900,
-                    13.69, -9.52, -5.73, -6.97, -13.94, -6.44,
-                    1.85, 3.14, 3.67,
-                    11.86, 8.07,
-                ]}],
+                "data": [
+                    {
+                        "s": "PSE:DMC",
+                        "d": [
+                            9.88,
+                            9.81,
+                            9.93,
+                            9.75,
+                            2240900,
+                            13.69,
+                            -9.52,
+                            -5.73,
+                            -6.97,
+                            -13.94,
+                            -6.44,
+                            1.85,
+                            3.14,
+                            3.67,
+                            11.86,
+                            8.07,
+                        ],
+                    }
+                ],
             },
         )
         from ph_stocks_advisor.data.clients.tradingview import fetch_tradingview_snapshot
+
         result = fetch_tradingview_snapshot("DMC")
         assert result["close"] == 9.88
         assert result["perf_year"] == -13.94
@@ -628,11 +707,13 @@ class TestTradingView:
     def test_fetch_snapshot_failure(self, mock_post):
         mock_post.return_value = MagicMock(status_code=500)
         from ph_stocks_advisor.data.clients.tradingview import fetch_tradingview_snapshot
+
         result = fetch_tradingview_snapshot("XYZ")
         assert result == {}
 
     def test_format_performance_summary(self):
         from ph_stocks_advisor.data.clients.tradingview import format_tv_performance_summary
+
         snap = {
             "perf_week": 13.69,
             "perf_1m": -9.52,
@@ -650,12 +731,14 @@ class TestTradingView:
 
     def test_format_empty_snapshot(self):
         from ph_stocks_advisor.data.clients.tradingview import format_tv_performance_summary
+
         assert format_tv_performance_summary({}) == ""
 
 
 # ---------------------------------------------------------------------------
 # Candlestick analysis module
 # ---------------------------------------------------------------------------
+
 
 class TestCandlestickAnalysis:
     """Tests for candlestick.py pattern detection."""
@@ -664,16 +747,20 @@ class TestCandlestickAnalysis:
         """Create a calm OHLCV DataFrame."""
         dates = pd.bdate_range(end=_BDATE_END, periods=n)
         closes = np.linspace(base, base * 1.05, n)
-        return pd.DataFrame({
-            "Open": closes * 0.999,
-            "High": closes * 1.005,
-            "Low": closes * 0.995,
-            "Close": closes,
-            "Volume": np.full(n, 1_000_000),
-        }, index=dates)
+        return pd.DataFrame(
+            {
+                "Open": closes * 0.999,
+                "High": closes * 1.005,
+                "Low": closes * 0.995,
+                "Close": closes,
+                "Volume": np.full(n, 1_000_000),
+            },
+            index=dates,
+        )
 
     def test_no_patterns_on_calm_data(self):
         from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
+
         df = self._make_ohlcv()
         summary = analyse_candlesticks(df)
         assert summary.notable_candles == []
@@ -685,6 +772,7 @@ class TestCandlestickAnalysis:
 
     def test_detects_large_bearish_candle(self):
         from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
+
         df = self._make_ohlcv(100)
         # Inject a -10% bearish candle at position 50
         df.iloc[50, df.columns.get_loc("Open")] = 12.0
@@ -697,6 +785,7 @@ class TestCandlestickAnalysis:
 
     def test_detects_gap_down(self):
         from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
+
         df = self._make_ohlcv(100)
         # Create gap-down: prev close 11, next open 10.5 (~4.5% gap)
         df.iloc[49, df.columns.get_loc("Close")] = 11.0
@@ -707,6 +796,7 @@ class TestCandlestickAnalysis:
 
     def test_detects_volume_spike(self):
         from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
+
         df = self._make_ohlcv(100)
         # Inject 5x volume spike at position 80
         df.iloc[80, df.columns.get_loc("Volume")] = 5_000_000
@@ -716,14 +806,19 @@ class TestCandlestickAnalysis:
 
     def test_detects_selling_pressure(self):
         from ph_stocks_advisor.data.analysis.candlestick import _detect_consecutive_pressure
+
         dates = pd.bdate_range(end=_BDATE_END, periods=10)
         # 5 consecutive bearish candles (close < open)
-        df = pd.DataFrame({
-            "Open":  [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
-            "High":  [11, 11, 11, 11, 11, 11, 11, 11, 11, 11],
-            "Low":   [9,  9,  9,  9,  9,  9,  9,  9,  9,  9],
-            "Close": [9.5, 9.3, 9.2, 9.1, 9.0, 10.5, 10.5, 10.5, 10.5, 10.5],
-        }, index=dates, dtype=float)
+        df = pd.DataFrame(
+            {
+                "Open": [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+                "High": [11, 11, 11, 11, 11, 11, 11, 11, 11, 11],
+                "Low": [9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+                "Close": [9.5, 9.3, 9.2, 9.1, 9.0, 10.5, 10.5, 10.5, 10.5, 10.5],
+            },
+            index=dates,
+            dtype=float,
+        )
         selling, buying = _detect_consecutive_pressure(df, min_streak=3)
         assert len(selling) >= 1
         assert "bearish" in selling[0].lower()
@@ -732,11 +827,13 @@ class TestCandlestickAnalysis:
 
     def test_empty_dataframe(self):
         from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
+
         summary = analyse_candlesticks(pd.DataFrame())
         assert summary.to_text() == "No notable candlestick patterns detected."
 
     def test_to_text_formatting(self):
         from ph_stocks_advisor.data.analysis.candlestick import CandlestickSummary
+
         s = CandlestickSummary(
             notable_candles=["2026-02-10: Large bearish candle"],
             volume_spikes=["2026-02-10: Volume spike 5.0x"],
@@ -751,24 +848,25 @@ class TestCandlestickAnalysis:
 # Tavily search module
 # ---------------------------------------------------------------------------
 
+
 class TestTavilySearch:
     """Tests for tavily_search.py helper functions."""
 
     @patch("ph_stocks_advisor.data.clients.tavily_search._get_client", return_value=None)
     def test_search_returns_empty_when_no_client(self, _mock_client):
         from ph_stocks_advisor.data.clients.tavily_search import _search
+
         assert _search("any query") == []
 
     @patch("ph_stocks_advisor.data.clients.tavily_search._get_client")
     def test_search_calls_tavily(self, mock_get_client):
         mock_client = MagicMock()
         mock_client.search.return_value = {
-            "results": [
-                {"title": "Test", "url": "https://example.com", "content": "body", "score": 0.9}
-            ]
+            "results": [{"title": "Test", "url": "https://example.com", "content": "body", "score": 0.9}]
         }
         mock_get_client.return_value = mock_client
         from ph_stocks_advisor.data.clients.tavily_search import _search
+
         results = _search("test query", max_results=3)
         assert len(results) == 1
         assert results[0]["title"] == "Test"
@@ -777,9 +875,15 @@ class TestTavilySearch:
     @patch("ph_stocks_advisor.data.clients.tavily_search._search")
     def test_search_dividend_news_formats_results(self, mock_search):
         mock_search.return_value = [
-            {"title": "AREIT declares dividend", "url": "https://example.com", "content": "PHP 0.56/share", "score": 0.8},
+            {
+                "title": "AREIT declares dividend",
+                "url": "https://example.com",
+                "content": "PHP 0.56/share",
+                "score": 0.8,
+            },
         ]
         from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news
+
         result = search_dividend_news("AREIT", company_name="AREIT Inc.")
         assert "AREIT declares dividend" in result
         assert "PHP 0.56/share" in result
@@ -790,12 +894,13 @@ class TestTavilySearch:
             {"title": "SEC inquiry", "url": "https://x.com", "content": "Probe ongoing", "score": 0.7},
         ]
         from ph_stocks_advisor.data.clients.tavily_search import search_stock_controversies
+
         result = search_stock_controversies("TEL", company_name="PLDT Inc.")
         assert "SEC inquiry" in result
 
     @patch("ph_stocks_advisor.data.clients.tavily_search._search", return_value=[])
     def test_empty_search_returns_fallback_message(self, _mock):
         from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news, search_stock_news
+
         assert "No recent dividend news" in search_dividend_news("XYZ")
         assert "No recent news" in search_stock_news("XYZ")
-

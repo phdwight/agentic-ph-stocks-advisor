@@ -7,9 +7,8 @@ fair-value calculation (Graham Number).
 
 from __future__ import annotations
 
-import math
 import logging
-from typing import Any
+import math
 
 from ph_stocks_advisor.data.clients.dragonfi import (
     fetch_security_valuation,
@@ -23,6 +22,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _graham_number(eps: float, book_value: float) -> float:
     """Calculate Graham Number: sqrt(22.5 × EPS × BVPS)."""
@@ -41,6 +41,7 @@ def _discount_pct(fair_value: float, current_price: float) -> float:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def fetch_fair_value(symbol: str) -> FairValueEstimate:
     """Compute a rough fair-value estimate using fundamental ratios.

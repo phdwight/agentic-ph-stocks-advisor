@@ -8,13 +8,14 @@ are mocked; logic under test stays real.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
+
 from ph_stocks_advisor.infra.repository import UserRecord
 from ph_stocks_advisor.web.app import create_app
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -59,7 +60,7 @@ def _google_env(monkeypatch):
 
 
 @pytest.fixture
-def app(_entra_env) -> Flask:
+def app(_entra_env) -> Generator[Flask, None, None]:
     """Create a Flask test app with Entra ID configured."""
     # Clear the lru_cache so env vars take effect.
     from ph_stocks_advisor.infra.config import get_settings
@@ -85,7 +86,7 @@ def client(app):
 
 
 @pytest.fixture
-def anon_app(_no_entra_env) -> Flask:
+def anon_app(_no_entra_env) -> Generator[Flask, None, None]:
     """Create a Flask test app *without* any auth provider (anonymous mode)."""
     from ph_stocks_advisor.infra.config import get_settings
 
@@ -109,7 +110,7 @@ def anon_client(anon_app):
 
 
 @pytest.fixture
-def google_app(_google_env) -> Flask:
+def google_app(_google_env) -> Generator[Flask, None, None]:
     """Create a Flask test app with Google OAuth2 configured."""
     from ph_stocks_advisor.infra.config import get_settings
 
@@ -171,15 +172,20 @@ class TestReportPageCurrentPrice:
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_price")
     @patch("ph_stocks_advisor.web.app.get_repository")
     def test_report_page_shows_current_price(self, mock_repo, mock_price, anon_client):
-        from ph_stocks_advisor.infra.repository import ReportRecord
+        from datetime import UTC, datetime
+
         from ph_stocks_advisor.data.models import StockPrice
-        from datetime import datetime, UTC
+        from ph_stocks_advisor.infra.repository import ReportRecord
 
         record = ReportRecord(
-            id=1, symbol="TEL", verdict="BUY",
+            id=1,
+            symbol="TEL",
+            verdict="BUY",
             summary="**Executive Summary:**\nTEL looks great.",
-            price_section="Good", dividend_section="Good",
-            movement_section="Up", valuation_section="Fair",
+            price_section="Good",
+            dividend_section="Good",
+            movement_section="Up",
+            valuation_section="Fair",
             controversy_section="None",
             created_at=datetime.now(tz=UTC),
         )
@@ -188,7 +194,9 @@ class TestReportPageCurrentPrice:
         mock_repo.return_value = repo_instance
 
         mock_price.return_value = StockPrice(
-            symbol="TEL", current_price=1250.00, currency="PHP",
+            symbol="TEL",
+            current_price=1250.00,
+            currency="PHP",
         )
 
         resp = anon_client.get("/report/TEL")
@@ -199,14 +207,19 @@ class TestReportPageCurrentPrice:
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_price")
     @patch("ph_stocks_advisor.web.app.get_repository")
     def test_report_page_works_without_price(self, mock_repo, mock_price, anon_client):
+        from datetime import UTC, datetime
+
         from ph_stocks_advisor.infra.repository import ReportRecord
-        from datetime import datetime, UTC
 
         record = ReportRecord(
-            id=1, symbol="TEL", verdict="BUY",
+            id=1,
+            symbol="TEL",
+            verdict="BUY",
             summary="**Executive Summary:**\nTEL looks great.",
-            price_section="Good", dividend_section="Good",
-            movement_section="Up", valuation_section="Fair",
+            price_section="Good",
+            dividend_section="Good",
+            movement_section="Up",
+            valuation_section="Fair",
             controversy_section="None",
             created_at=datetime.now(tz=UTC),
         )
@@ -406,9 +419,7 @@ class TestGoogleCallback:
     @patch("ph_stocks_advisor.web.auth.get_repository")
     @patch("ph_stocks_advisor.web.auth.http_requests.get")
     @patch("ph_stocks_advisor.web.auth.http_requests.post")
-    def test_google_callback_sets_session_and_persists_user(
-        self, mock_post, mock_get, mock_repo, google_client
-    ):
+    def test_google_callback_sets_session_and_persists_user(self, mock_post, mock_get, mock_repo, google_client):
         """Google callback sets session user and persists to DB."""
         mock_post.return_value = MagicMock(
             status_code=200,
@@ -435,9 +446,7 @@ class TestGoogleCallback:
         with google_client.session_transaction() as sess:
             sess["google_state"] = "test-google-state"
 
-        resp = google_client.get(
-            "/auth/google/callback?code=test-code&state=test-google-state"
-        )
+        resp = google_client.get("/auth/google/callback?code=test-code&state=test-google-state")
         assert resp.status_code == 302
 
         with google_client.session_transaction() as sess:
@@ -455,24 +464,18 @@ class TestGoogleCallback:
         with google_client.session_transaction() as sess:
             sess["google_state"] = "good-state"
 
-        resp = google_client.get(
-            "/auth/google/callback?code=test-code&state=bad-state"
-        )
+        resp = google_client.get("/auth/google/callback?code=test-code&state=bad-state")
         assert resp.status_code == 302
         assert "/auth/login" in resp.headers["Location"]
 
     @patch("ph_stocks_advisor.web.auth.http_requests.post")
     def test_google_callback_token_error(self, mock_post, google_client):
-        mock_post.return_value = MagicMock(
-            status_code=400, text="invalid_grant"
-        )
+        mock_post.return_value = MagicMock(status_code=400, text="invalid_grant")
 
         with google_client.session_transaction() as sess:
             sess["google_state"] = "test-state"
 
-        resp = google_client.get(
-            "/auth/google/callback?code=bad-code&state=test-state"
-        )
+        resp = google_client.get("/auth/google/callback?code=bad-code&state=test-state")
         assert resp.status_code == 200
         assert b"Could not exchange" in resp.data
 

@@ -13,16 +13,14 @@ enabling the worker to live in a separate container.
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 
-import json
-
 from flask import Flask, Response, abort, jsonify, render_template, request, session
-from werkzeug.middleware.proxy_fix import ProxyFix
-
 from markupsafe import Markup
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from ph_stocks_advisor.export.formatter import (
     DATA_SOURCES,
@@ -82,18 +80,18 @@ def create_app() -> Flask:
     # store the large MSAL token cache in the session).
     try:
         from ph_stocks_advisor.infra.config import get_redis_raw
+
         session_redis = get_redis_raw()
         session_redis.ping()
         app.config["SESSION_TYPE"] = "redis"
         app.config["SESSION_PERMANENT"] = False
         app.config["SESSION_REDIS"] = session_redis
         from flask_session import Session
+
         Session(app)
         logger.info("Server-side Redis sessions enabled.")
     except Exception:
-        logger.warning(
-            "Redis unavailable for sessions — using signed-cookie sessions."
-        )
+        logger.warning("Redis unavailable for sessions — using signed-cookie sessions.")
 
     # Trust reverse-proxy headers (Azure Container Apps, nginx, etc.)
     # so that request.url_root uses https:// when behind TLS termination.
@@ -108,15 +106,9 @@ def create_app() -> Flask:
 
     @app.after_request
     def _set_security_headers(response):
-        response.headers.setdefault(
-            "X-Content-Type-Options", "nosniff"
-        )
-        response.headers.setdefault(
-            "X-Frame-Options", "SAMEORIGIN"
-        )
-        response.headers.setdefault(
-            "Referrer-Policy", "strict-origin-when-cross-origin"
-        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         # CSP: allow inline styles/scripts needed by the UI but block
         # everything else.  Tighten further when moving to a build step.
         response.headers.setdefault(
@@ -174,11 +166,7 @@ def create_app() -> Flask:
         token = (
             request.headers.get("X-CSRFToken")
             or (request.form.get("csrf_token") if request.form else None)
-            or (
-                (request.get_json(silent=True) or {}).get("csrf_token")
-                if request.is_json
-                else None
-            )
+            or ((request.get_json(silent=True) or {}).get("csrf_token") if request.is_json else None)
         )
         if not token or token != session.get("_csrf_token"):
             logger.warning("CSRF validation failed for %s %s", request.method, request.path)
@@ -188,7 +176,7 @@ def create_app() -> Flask:
     @app.template_filter("md_to_html")
     def md_to_html_filter(text: str) -> Markup:
         """Convert light-markdown section body to formatted HTML."""
-        return Markup(_body_to_html(text))
+        return Markup(_body_to_html(text))  # noqa: S704
 
     @app.context_processor
     def inject_user():
@@ -255,9 +243,7 @@ def create_app() -> Flask:
         try:
             user = get_current_user()
             if user and user.get("email"):
-                recent = repo.list_user_symbols(
-                    user_id=user["email"], limit=50
-                )
+                recent = repo.list_user_symbols(user_id=user["email"], limit=50)
             else:
                 recent = repo.list_recent_symbols(limit=50)
         except Exception:
@@ -268,8 +254,8 @@ def create_app() -> Flask:
     @login_required
     def analyse():
         """Check for a fresh cached report; dispatch to Celery if stale/missing."""
-        from ph_stocks_advisor.web.tasks import analyse_stock
         from ph_stocks_advisor.infra.repository import UserType
+        from ph_stocks_advisor.web.tasks import analyse_stock
 
         symbol = (request.form.get("symbol") or "").strip().upper().replace(".PS", "")
         if not symbol:
@@ -295,23 +281,24 @@ def create_app() -> Flask:
                 today_utc = now.date()
                 if report_date == today_utc:
                     next_midnight = (now + timedelta(days=1)).replace(
-                        hour=0, minute=0, second=0, microsecond=0,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
                     )
                     logger.info(
-                        "Elevated cooldown: %s already analysed today, "
-                        "next window %s.",
+                        "Elevated cooldown: %s already analysed today, next window %s.",
                         symbol,
                         next_midnight.isoformat(),
                     )
-                    return jsonify({
-                        "error": (
-                            f"{symbol} was already analysed today. "
-                            "You can re-analyse after midnight UTC."
-                        ),
-                        "reset_at": next_midnight.isoformat(),
-                        "report_id": record.id,
-                        "symbol": symbol,
-                    }), 429
+                    return jsonify(
+                        {
+                            "error": (f"{symbol} was already analysed today. You can re-analyse after midnight UTC."),
+                            "reset_at": next_midnight.isoformat(),
+                            "report_id": record.id,
+                            "symbol": symbol,
+                        }
+                    ), 429
             else:
                 # Normal users: serve the cached report if still fresh.
                 if age <= timedelta(days=REPORT_MAX_AGE_DAYS):
@@ -327,11 +314,13 @@ def create_app() -> Flask:
                             repo2.add_user_symbol(user["email"], symbol)
                         except Exception:
                             logger.debug("Failed to record user-symbol link.")
-                    return jsonify({
-                        "status": "cached",
-                        "symbol": symbol,
-                        "report_id": record.id,
-                    })
+                    return jsonify(
+                        {
+                            "status": "cached",
+                            "symbol": symbol,
+                            "report_id": record.id,
+                        }
+                    )
 
         # No fresh report — check for an in-flight analysis (dedup)
         r = get_redis()
@@ -343,19 +332,19 @@ def create_app() -> Flask:
                 symbol,
                 existing_task_id,
             )
-            return jsonify({
-                "status": "joined",
-                "symbol": symbol,
-                "task_id": existing_task_id,
-            })
+            return jsonify(
+                {
+                    "status": "joined",
+                    "symbol": symbol,
+                    "task_id": existing_task_id,
+                }
+            )
 
         # --- Per-user daily rate limit (atomic reserve) ----------------
         # Elevated users are exempt from the daily analysis limit.
         user_id = (user or {}).get("email", "anonymous")
         if not is_elevated:
-            allowed, count = rl_reserve(
-                r, user_id, settings.daily_analysis_limit
-            )
+            allowed, count = rl_reserve(r, user_id, settings.daily_analysis_limit)
             if not allowed:
                 logger.warning(
                     "User %s exceeded daily analysis limit (%d/%d).",
@@ -363,16 +352,18 @@ def create_app() -> Flask:
                     count,
                     settings.daily_analysis_limit,
                 )
-                next_midnight = (
-                    datetime.now(tz=UTC) + timedelta(days=1)
-                ).replace(hour=0, minute=0, second=0, microsecond=0)
-                return jsonify({
-                    "error": (
-                        f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
-                        "Your quota resets at midnight UTC."
-                    ),
-                    "reset_at": next_midnight.isoformat(),
-                }), 429
+                next_midnight = (datetime.now(tz=UTC) + timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                return jsonify(
+                    {
+                        "error": (
+                            f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
+                            "Your quota resets at midnight UTC."
+                        ),
+                        "reset_at": next_midnight.isoformat(),
+                    }
+                ), 429
 
         # Dispatch analysis to the Celery worker.
         # The slot is already reserved.  If the analysis fails the worker
@@ -410,28 +401,34 @@ def create_app() -> Flask:
 
         if result.state == "SUCCESS":
             data = result.result or {}
-            return jsonify({
-                "state": "SUCCESS",
-                "done": True,
-                "symbol": data.get("symbol", ""),
-                "verdict": data.get("verdict", ""),
-                "report_id": data.get("report_id"),
-                "error": data.get("error"),
-            })
+            return jsonify(
+                {
+                    "state": "SUCCESS",
+                    "done": True,
+                    "symbol": data.get("symbol", ""),
+                    "verdict": data.get("verdict", ""),
+                    "report_id": data.get("report_id"),
+                    "error": data.get("error"),
+                }
+            )
 
         if result.state == "FAILURE":
-            return jsonify({
-                "state": "FAILURE",
-                "done": True,
-                "error": str(result.info),
-            })
+            return jsonify(
+                {
+                    "state": "FAILURE",
+                    "done": True,
+                    "error": str(result.info),
+                }
+            )
 
         if result.state == "REVOKED":
-            return jsonify({
-                "state": "REVOKED",
-                "done": True,
-                "error": "Analysis was cancelled.",
-            })
+            return jsonify(
+                {
+                    "state": "REVOKED",
+                    "done": True,
+                    "error": "Analysis was cancelled.",
+                }
+            )
 
         # RETRY, etc.
         return jsonify({"state": result.state, "done": False})
@@ -508,6 +505,7 @@ def create_app() -> Flask:
         current_price: float | None = None
         try:
             from ph_stocks_advisor.data.services.price import fetch_stock_price
+
             price_data = fetch_stock_price(symbol)
             if price_data and price_data.current_price > 0:
                 current_price = price_data.current_price
@@ -530,7 +528,10 @@ def create_app() -> Flask:
                 if portfolio_report and portfolio_report.created_at:
                     now_utc = datetime.now(tz=UTC)
                     today_midnight_utc = now_utc.replace(
-                        hour=0, minute=0, second=0, microsecond=0,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
                     )
                     portfolio_on_cooldown = portfolio_report.created_at >= today_midnight_utc
             except Exception:
@@ -616,13 +617,15 @@ def create_app() -> Flask:
         holding = repo.get_holding(user["email"], symbol)
         if holding is None:
             return jsonify({"holding": None})
-        return jsonify({
-            "holding": {
-                "symbol": holding.symbol,
-                "shares": holding.shares,
-                "avg_cost": holding.avg_cost,
+        return jsonify(
+            {
+                "holding": {
+                    "symbol": holding.symbol,
+                    "shares": holding.shares,
+                    "avg_cost": holding.avg_cost,
+                }
             }
-        })
+        )
 
     @app.route("/api/holdings/<symbol>", methods=["POST"])
     @login_required
@@ -678,8 +681,8 @@ def create_app() -> Flask:
     @login_required
     def portfolio_analyse(symbol: str):
         """Trigger a portfolio-aware analysis for the current user's holding."""
-        from ph_stocks_advisor.web.tasks import portfolio_analyse_stock
         from ph_stocks_advisor.infra.repository import UserType
+        from ph_stocks_advisor.web.tasks import portfolio_analyse_stock
 
         user = get_current_user()
         if not user or user.get("user_type", 0) != UserType.ELEVATED:
@@ -704,18 +707,23 @@ def create_app() -> Flask:
         if existing_pr and existing_pr.created_at:
             now_utc = datetime.now(tz=UTC)
             today_midnight_utc = now_utc.replace(
-                hour=0, minute=0, second=0, microsecond=0,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
             )
             if existing_pr.created_at >= today_midnight_utc:
                 next_reset = today_midnight_utc + timedelta(days=1)
-                return jsonify({
-                    "error": (
-                        f"Portfolio analysis for {symbol} was already run today. "
-                        "You can re-analyse after 8:00 AM PHT tomorrow."
-                    ),
-                    "reset_at": next_reset.isoformat(),
-                    "symbol": symbol,
-                }), 429
+                return jsonify(
+                    {
+                        "error": (
+                            f"Portfolio analysis for {symbol} was already run today. "
+                            "You can re-analyse after 8:00 AM PHT tomorrow."
+                        ),
+                        "reset_at": next_reset.isoformat(),
+                        "symbol": symbol,
+                    }
+                ), 429
 
         # Dispatch to Celery.
         task = portfolio_analyse_stock.delay(
@@ -742,17 +750,19 @@ def create_app() -> Flask:
         pr = repo.get_portfolio_report(user["email"], symbol)
         if pr is None:
             return jsonify({"report": None})
-        return jsonify({
-            "report": {
-                "id": pr.id,
-                "symbol": pr.symbol,
-                "shares": pr.shares,
-                "avg_cost": pr.avg_cost,
-                "analysis": pr.analysis,
-                "analysis_html": _body_to_html(pr.analysis) if pr.analysis else "",
-                "created_at": pr.created_at.isoformat() if pr.created_at else None,
+        return jsonify(
+            {
+                "report": {
+                    "id": pr.id,
+                    "symbol": pr.symbol,
+                    "shares": pr.shares,
+                    "avg_cost": pr.avg_cost,
+                    "analysis": pr.analysis,
+                    "analysis_html": _body_to_html(pr.analysis) if pr.analysis else "",
+                    "created_at": pr.created_at.isoformat() if pr.created_at else None,
+                }
             }
-        })
+        )
 
     return app
 
@@ -794,10 +804,7 @@ def main() -> None:
 
     if args.debug:
         # Development: use Flask's built-in server with auto-reload.
-        logger.warning(
-            "Running in DEBUG mode with Werkzeug interactive debugger. "
-            "Never use --debug in production."
-        )
+        logger.warning("Running in DEBUG mode with Werkzeug interactive debugger. Never use --debug in production.")
         app = create_app()
         app.run(host=args.host, port=args.port, debug=True)
     else:
@@ -815,13 +822,20 @@ def main() -> None:
 
         sys.argv = [
             "gunicorn",
-            "--bind", f"{args.host}:{args.port}",
-            "--workers", workers,
-            "--worker-class", worker_class,
-            "--timeout", timeout,
-            "--worker-connections", worker_connections,
-            "--access-logfile", "-",
-            "--error-logfile", "-",
+            "--bind",
+            f"{args.host}:{args.port}",
+            "--workers",
+            workers,
+            "--worker-class",
+            worker_class,
+            "--timeout",
+            timeout,
+            "--worker-connections",
+            worker_connections,
+            "--access-logfile",
+            "-",
+            "--error-logfile",
+            "-",
             "ph_stocks_advisor.web.app:create_app()",
         ]
 

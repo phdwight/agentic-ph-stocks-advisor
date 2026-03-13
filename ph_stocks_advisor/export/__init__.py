@@ -57,7 +57,5 @@ def get_formatter(name: str) -> OutputFormatter:
         cls = FORMATTER_REGISTRY[name]
     except KeyError:
         available = ", ".join(sorted(FORMATTER_REGISTRY))
-        raise KeyError(
-            f"Unknown output format {name!r}. Available: {available}"
-        ) from None
+        raise KeyError(f"Unknown output format {name!r}. Available: {available}") from None
     return cls()

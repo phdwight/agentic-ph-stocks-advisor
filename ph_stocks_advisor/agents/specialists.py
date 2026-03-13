@@ -21,15 +21,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
-from ph_stocks_advisor.data.models import (
-    ControversyAnalysis,
-    DividendAnalysis,
-    MovementAnalysis,
-    PriceAnalysis,
-    SentimentAnalysis,
-    ValuationAnalysis,
-)
-from ph_stocks_advisor.infra.config import get_today
 from ph_stocks_advisor.agents.prompts import (
     CONTROVERSY_ANALYSIS_PROMPT,
     DIVIDEND_ANALYSIS_PROMPT,
@@ -37,6 +28,14 @@ from ph_stocks_advisor.agents.prompts import (
     PRICE_ANALYSIS_PROMPT,
     SENTIMENT_ANALYSIS_PROMPT,
     VALUATION_ANALYSIS_PROMPT,
+)
+from ph_stocks_advisor.data.models import (
+    ControversyAnalysis,
+    DividendAnalysis,
+    MovementAnalysis,
+    PriceAnalysis,
+    SentimentAnalysis,
+    ValuationAnalysis,
 )
 from ph_stocks_advisor.data.tools import (
     fetch_controversy_info,
@@ -46,6 +45,7 @@ from ph_stocks_advisor.data.tools import (
     fetch_sentiment_info,
     fetch_stock_price,
 )
+from ph_stocks_advisor.infra.config import get_today
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +100,7 @@ def _run_with_tools(
                 except Exception as exc:
                     logger.warning("Tool %s failed: %s", tc["name"], exc)
                     result = f"Tool call failed: {exc}"
-            messages.append(
-                ToolMessage(content=result, tool_call_id=tc["id"])
-            )
+            messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
 
     return str(response.content)
 
@@ -116,7 +114,8 @@ class PriceAgent:
     def run(self, symbol: str) -> PriceAnalysis:
         data = fetch_stock_price(symbol)
         prompt = PRICE_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2),
+            symbol=symbol,
+            data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
         response = self._llm.invoke([HumanMessage(content=prompt)])
@@ -138,7 +137,8 @@ class DividendAgent:
 
         data = fetch_dividend_info(symbol)
         prompt = DIVIDEND_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2),
+            symbol=symbol,
+            data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
         analysis = _run_with_tools(self._llm, prompt, [search_dividend_news])
@@ -160,7 +160,8 @@ class MovementAgent:
 
         data = fetch_price_movement(symbol)
         prompt = MOVEMENT_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2),
+            symbol=symbol,
+            data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
         analysis = _run_with_tools(self._llm, prompt, [search_stock_news])
@@ -176,7 +177,8 @@ class ValuationAgent:
     def run(self, symbol: str) -> ValuationAnalysis:
         data = fetch_fair_value(symbol)
         prompt = VALUATION_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2),
+            symbol=symbol,
+            data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
         response = self._llm.invoke([HumanMessage(content=prompt)])
@@ -201,12 +203,11 @@ class ControversyAgent:
 
         data = fetch_controversy_info(symbol)
         prompt = CONTROVERSY_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2),
+            symbol=symbol,
+            data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        analysis = _run_with_tools(
-            self._llm, prompt, [search_stock_news, search_stock_controversies]
-        )
+        analysis = _run_with_tools(self._llm, prompt, [search_stock_news, search_stock_controversies])
         return ControversyAnalysis(data=data, analysis=analysis)
 
 
@@ -232,10 +233,9 @@ class SentimentAgent:
 
         data = fetch_sentiment_info(symbol)
         prompt = SENTIMENT_ANALYSIS_PROMPT.format(
-            symbol=symbol, data=data.model_dump_json(indent=2),
+            symbol=symbol,
+            data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        analysis = _run_with_tools(
-            self._llm, prompt, [search_global_events, search_stock_news]
-        )
+        analysis = _run_with_tools(self._llm, prompt, [search_global_events, search_stock_news])
         return SentimentAnalysis(data=data, analysis=analysis)

@@ -13,7 +13,6 @@ import pytest
 
 import ph_stocks_advisor.web.app as _app_mod
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -107,7 +106,7 @@ def _make_client(monkeypatch):
         )
         stack = None
         for cm in ctx:
-            entered = cm.__enter__()  # noqa: SIM117
+            cm.__enter__()  # noqa: SIM117
             if stack is None:
                 stack = [cm]
             else:
@@ -122,7 +121,7 @@ def _make_client(monkeypatch):
                 return getattr(client, name)
 
             def close(self):
-                for cm in reversed(stack):
+                for cm in reversed(stack):  # type: ignore[arg-type]
                     cm.__exit__(None, None, None)
                 get_settings.cache_clear()
 

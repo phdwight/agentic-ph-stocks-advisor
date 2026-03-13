@@ -10,9 +10,14 @@ from __future__ import annotations
 import html as _html
 import re
 
-from ph_stocks_advisor.export.formatter import OutputFormatter, parse_sections, DISCLAIMER, DATA_SOURCES, format_timestamp
+from ph_stocks_advisor.export.formatter import (
+    DATA_SOURCES,
+    DISCLAIMER,
+    OutputFormatter,
+    format_timestamp,
+    parse_sections,
+)
 from ph_stocks_advisor.infra.repository import ReportRecord
-
 
 # ---------------------------------------------------------------------------
 # CSS
@@ -64,6 +69,7 @@ footer .sources{font-style:italic;opacity:.7}
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _esc(text: str) -> str:
     """HTML-escape text."""
@@ -165,9 +171,7 @@ def _body_to_html(body: str) -> str:
             # This avoids clashing with the page-level <h1>/<h2>.
             tag_level = min(level + 2, 6)
             heading_text = heading_match.group(2).strip()
-            parts.append(
-                f"<h{tag_level}>{_md_bold_to_html(_esc(heading_text))}</h{tag_level}>"
-            )
+            parts.append(f"<h{tag_level}>{_md_bold_to_html(_esc(heading_text))}</h{tag_level}>")
             continue
 
         if line.startswith("- ") or line.startswith("* "):
@@ -191,6 +195,7 @@ def _body_to_html(body: str) -> str:
 # ---------------------------------------------------------------------------
 # Formatter
 # ---------------------------------------------------------------------------
+
 
 class HtmlFormatter(OutputFormatter):
     """Renders stock-analysis reports as self-contained HTML pages."""
@@ -218,9 +223,7 @@ class HtmlFormatter(OutputFormatter):
             body = body.strip()
             if not body or title.lower().startswith("verdict"):
                 continue
-            sections_html.append(
-                f'<section>\n<h2>{_esc(title)}</h2>\n{_body_to_html(body)}\n</section>'
-            )
+            sections_html.append(f"<section>\n<h2>{_esc(title)}</h2>\n{_body_to_html(body)}\n</section>")
 
         html_str = f"""\
 <!DOCTYPE html>
@@ -235,7 +238,8 @@ class HtmlFormatter(OutputFormatter):
 <div class="container">
 <header>
   <h1>{_esc(record.symbol)} Stock Analysis</h1>
-  <div class="verdict-row"><span class="verdict-label">Verdict:</span> <span class="badge {badge_cls}">{_esc(record.verdict)}</span></div>
+  <div class="verdict-row"><span class="verdict-label">Verdict:</span>\
+ <span class="badge {badge_cls}">{_esc(record.verdict)}</span></div>
   <div class="meta">Generated: {_esc(ts)}</div>
 </header>
 <main>
@@ -255,6 +259,7 @@ class HtmlFormatter(OutputFormatter):
 # ---------------------------------------------------------------------------
 # Standalone CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """``ph-advisor-html`` CLI — delegates to the shared :func:`export_cli`."""

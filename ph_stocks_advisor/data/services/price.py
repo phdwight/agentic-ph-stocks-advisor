@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 # Price catalyst detection
 # ---------------------------------------------------------------------------
 
-def detect_price_catalysts(profile: dict[str, Any]) -> list[str]:
+
+def detect_price_catalysts(profile: dict[str, Any] | None) -> list[str]:
     """Infer likely price catalysts from DragonFi profile data.
 
     Cross-references dividend yield, REIT status, and price position
@@ -49,7 +50,7 @@ def detect_price_catalysts(profile: dict[str, Any]) -> list[str]:
                 f"REIT with {div_yield:.1f}% dividend yield trading in the upper "
                 f"portion of its 52-week range — price is likely being driven by "
                 f"investors accumulating shares ahead of the next dividend payout "
-                f"(\"dividend play\"). Philippine REITs distribute dividends quarterly."
+                f'("dividend play"). Philippine REITs distribute dividends quarterly.'
             )
         else:
             catalysts.append(
@@ -82,6 +83,7 @@ def detect_price_catalysts(profile: dict[str, Any]) -> list[str]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def fetch_stock_price(symbol: str) -> StockPrice:
     """Fetch current price snapshot for a PSE-listed stock.

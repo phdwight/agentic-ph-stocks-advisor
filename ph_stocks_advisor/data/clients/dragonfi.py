@@ -24,17 +24,20 @@ logger = logging.getLogger(__name__)
 
 def _base_url() -> str:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().dragonfi_base_url
 
 
 def _timeout() -> int:
     from ph_stocks_advisor.infra.config import get_settings
+
     return get_settings().http_timeout
 
 
 # ---------------------------------------------------------------------------
 # Low-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any] | list | None:
     """Perform a GET request against the DragonFi API.
@@ -58,6 +61,7 @@ def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any] | li
 # Symbol validation
 # ---------------------------------------------------------------------------
 
+
 class SymbolNotFoundError(Exception):
     """Raised when a ticker cannot be found on PSE via DragonFi."""
 
@@ -71,11 +75,7 @@ def _fetch_all_stock_codes() -> frozenset[str]:
     """
     data = _get("Securities/GetStockProfileList", {"isPreferredStock": "false"})
     if data and isinstance(data, list):
-        codes = frozenset(
-            item["stockCode"].upper()
-            for item in data
-            if isinstance(item, dict) and "stockCode" in item
-        )
+        codes = frozenset(item["stockCode"].upper() for item in data if isinstance(item, dict) and "stockCode" in item)
         logger.info("Loaded %d PSE stock codes from DragonFi", len(codes))
         return codes
     return frozenset()
@@ -110,6 +110,7 @@ def validate_pse_symbol(symbol: str) -> str:
 # ---------------------------------------------------------------------------
 # Data-fetching functions
 # ---------------------------------------------------------------------------
+
 
 def fetch_stock_profile(symbol: str) -> dict[str, Any]:
     """Fetch the full stock profile from DragonFi.
@@ -176,6 +177,7 @@ def fetch_stock_news(symbol: str, page_size: int = 5) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Financial trend helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_annual_values(series_data: dict[str, Any] | None) -> dict[str, float]:
     """Extract {year: value} from a DragonFi annual series dict.

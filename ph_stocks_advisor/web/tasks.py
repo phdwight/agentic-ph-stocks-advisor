@@ -140,9 +140,7 @@ def portfolio_analyse_stock(
     from ph_stocks_advisor.infra.repository import PortfolioReportRecord
 
     task_id = self.request.id
-    logger.info(
-        "Portfolio analysis for %s (user=%s, task=%s)", symbol, user_id, task_id
-    )
+    logger.info("Portfolio analysis for %s (user=%s, task=%s)", symbol, user_id, task_id)
 
     try:
         repo = get_repository()
@@ -154,6 +152,7 @@ def portfolio_analyse_stock(
         current_price = 0.0
         try:
             from ph_stocks_advisor.data.services.price import fetch_stock_price
+
             price_data = fetch_stock_price(symbol)
             if price_data and price_data.current_price > 0:
                 current_price = price_data.current_price
@@ -188,7 +187,8 @@ def portfolio_analyse_stock(
         report_id = repo.save_portfolio_report(pr)
         logger.info(
             "Portfolio analysis for %s complete — report_id=%d",
-            symbol, report_id,
+            symbol,
+            report_id,
         )
         return {
             "symbol": symbol,
