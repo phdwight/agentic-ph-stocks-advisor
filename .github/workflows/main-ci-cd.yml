@@ -47,6 +47,7 @@ jobs:
         uses: jakebailey/pyright-action@v2
         with:
           python-path: .venv/bin/python
+        timeout-minutes: 5
 
   # ── Unit tests (no secrets, fully mocked) ────────────────────────────────
   unit-tests:
