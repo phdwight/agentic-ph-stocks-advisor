@@ -25,9 +25,9 @@ from ph_stocks_advisor.infra.repository import ReportRecord
 
 _CSS = """\
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-:root{--bg:#080828;--card:rgba(16,14,62,0.80);--text:#f0f1f5;--text-sec:#a0a6be;
-  --text-muted:#6b7088;--accent:#2B2B8F;--emerald:#72AAEE;--crimson:#C8A040;
-  --border:rgba(255,255,255,0.10);--radius:12px}
+:root{--bg:#F5F1ED;--card:rgba(255,255,255,0.70);--text:#2E4A56;--text-sec:#4A6470;
+  --text-muted:#7A8E98;--accent:#3D8A7E;--emerald:#3D8A7E;--crimson:#D85E52;
+  --border:rgba(46,74,86,0.08);--radius:12px}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);
   color:var(--text);line-height:1.65;letter-spacing:-0.01em;padding:2rem;

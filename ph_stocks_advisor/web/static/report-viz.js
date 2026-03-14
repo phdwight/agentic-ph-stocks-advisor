@@ -89,7 +89,7 @@ function create52WeekBar(low, high, current) {
   `;
   label.innerHTML = `
     <span>52-Week Range</span>
-    ${current ? `<span style="color:#e8e6e3;">Current: ₱${current.toLocaleString()}</span>` : ""}
+    ${current ? `<span style="color:#2E4A56;">Current: ₱${current.toLocaleString()}</span>` : ""}
   `;
 
   const track = document.createElement("div");
@@ -108,7 +108,7 @@ function create52WeekBar(low, high, current) {
   fill.style.cssText = `
     height: 100%;
     width: ${fillPct}%;
-    background: linear-gradient(90deg, #C8A040, #F0F078, #72AAEE);
+    background: linear-gradient(90deg, #D85E52, #C4A050, #3D8A7E);
     border-radius: 3px;
     transition: width 1s ease-out;
   `;
@@ -123,10 +123,10 @@ function create52WeekBar(low, high, current) {
       transform: translateX(-50%);
       width: 16px;
       height: 16px;
-      background: #e8e6e3;
-      border: 2px solid #080828;
+      background: #2E4A56;
+      border: 2px solid #F5F1ED;
       border-radius: 50%;
-      box-shadow: 0 0 8px rgba(43,43,143,0.4);
+      box-shadow: 0 0 8px rgba(61,138,126,0.3);
       z-index: 2;
     `;
     track.appendChild(marker);
@@ -211,15 +211,15 @@ function enhancePercentages(section) {
         }
 
         const color = sentiment === true
-          ? "#72AAEE"
+          ? "#3D8A7E"
           : sentiment === false
-          ? "#C8A040"
-          : "#a0a6be";
+          ? "#D85E52"
+          : "#7A8E98";
         const bgColor = sentiment === true
-          ? "rgba(114,170,238,0.12)"
+          ? "rgba(61,138,126,0.10)"
           : sentiment === false
-          ? "rgba(200,160,64,0.12)"
-          : "rgba(160,158,154,0.1)";
+          ? "rgba(216,94,82,0.10)"
+          : "rgba(122,142,152,0.08)";
         const arrow = sentiment === true ? "↑" : sentiment === false ? "↓" : "";
 
         return `<span class="pct-badge" style="
@@ -257,8 +257,8 @@ function enhanceRatioValues(section) {
         return `<strong>${label}</strong>: <span class="ratio-value" style="
           display:inline-block;
           padding:0.1rem 0.4rem;
-          background:rgba(80,144,208,0.12);
-          color:#5090D0;
+          background:rgba(74,128,160,0.10);
+          color:#4A80A0;
           border-radius:4px;
           font-weight:600;
           font-size:0.82rem;
@@ -290,7 +290,7 @@ function enhancePriceValues(section) {
       (match, prefix, price) => {
         return `${prefix}<span class="price-highlight" style="
           font-weight:700;
-          color:#e8e6e3;
+          color:#2E4A56;
           font-size:1.05em;
           font-variant-numeric:tabular-nums;
         ">${price}</span>`;
