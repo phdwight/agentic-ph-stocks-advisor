@@ -47,7 +47,7 @@ services:
 
   # ── Flask web UI ───────────────────────────────────────────────────────────
   web:
-    image: ${APP_IMAGE:-ghcr.io/OWNER/agentic-ph-stocks-advisor:latest}
+    image: ${APP_IMAGE:-ghcr.io/phdwight/agentic-ph-stocks-advisor:latest}
     depends_on:
       db:
         condition: service_healthy
@@ -104,7 +104,7 @@ services:
 
   # ── Celery worker ──────────────────────────────────────────────────────────
   worker:
-    image: ${APP_IMAGE:-ghcr.io/OWNER/agentic-ph-stocks-advisor:latest}
+    image: ${APP_IMAGE:-ghcr.io/phdwight/agentic-ph-stocks-advisor:latest}
     depends_on:
       db:
         condition: service_healthy
@@ -120,7 +120,7 @@ services:
 
   # ── SQLAdmin (database admin panel) ────────────────────────────────────────
   admin:
-    image: ${ADMIN_IMAGE:-ghcr.io/OWNER/agentic-ph-stocks-advisor-admin:latest}
+    image: ${ADMIN_IMAGE:-ghcr.io/phdwight/agentic-ph-stocks-advisor-admin:latest}
     depends_on:
       db:
         condition: service_healthy
