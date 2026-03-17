@@ -579,7 +579,7 @@ def create_app() -> Flask:
                 pf_key = f"{_PORTFOLIO_INFLIGHT_PREFIX}{user['email']}:{symbol}"
                 inflight_tid = r.get(pf_key)
                 if inflight_tid:
-                    portfolio_inflight_task_id = inflight_tid
+                    portfolio_inflight_task_id = str(inflight_tid)
             except Exception:
                 logger.debug("Could not check portfolio inflight for %s", symbol)
 
