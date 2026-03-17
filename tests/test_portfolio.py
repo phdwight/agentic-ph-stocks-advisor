@@ -847,3 +847,177 @@ class TestPortfolioAutoChain:
         _, apply_kwargs = mock_base_sig.apply_async.call_args
         linked_tasks = apply_kwargs["link"]
         assert linked_tasks == [mock_portfolio_sig]
+
+
+class TestPortfolioInflight:
+    """Portfolio inflight lock prevents stale report display on page refresh."""
+
+    def test_chained_dispatch_sets_portfolio_inflight_lock(self, client):
+        """When a chained base+portfolio analysis is dispatched, the portfolio
+        inflight lock is set in Redis so a page refresh shows a spinner."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 500, "avg_cost": 20.0})
+
+        mock_base_result = MagicMock()
+        mock_base_result.id = "base-task-chained"
+        mock_base_sig = MagicMock()
+        mock_base_sig.apply_async.return_value = mock_base_result
+
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.app.get_redis") as mock_redis,
+            patch("ph_stocks_advisor.web.tasks.analyse_stock") as mock_analyse,
+        ):
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_analyse.s.return_value = mock_base_sig
+
+            resp = client.post("/api/portfolio-analyse/TEL")
+
+        data = resp.get_json()
+        ptid = data["portfolio_task_id"]
+
+        # Verify portfolio inflight lock was set.
+        set_calls = mock_redis_inst.set.call_args_list
+        pf_inflight_call = [c for c in set_calls if c[0][0] == "portfolio:inflight:elevated@test.com:TEL"]
+        assert len(pf_inflight_call) == 1
+        assert pf_inflight_call[0][0][1] == ptid
+
+    def test_standalone_dispatch_sets_portfolio_inflight_lock(self, client):
+        """When a standalone portfolio analysis is dispatched (fresh base exists),
+        the portfolio inflight lock is set in Redis."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 500, "avg_cost": 20.0})
+
+        # Seed a fresh base report.
+        from ph_stocks_advisor.infra.config import get_repository
+
+        repo = get_repository()
+        report = FinalReport(
+            symbol="TEL",
+            verdict=Verdict.BUY,
+            summary="Fresh report.",
+            price_section="P",
+            dividend_section="D",
+            movement_section="M",
+            valuation_section="V",
+            controversy_section="C",
+        )
+        repo.save(ReportRecord.from_final_report(report))
+
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.app.get_redis") as mock_redis,
+            patch("ph_stocks_advisor.web.tasks.portfolio_analyse_stock") as mock_task,
+        ):
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_result = MagicMock()
+            mock_result.id = "pf-task-standalone"
+            mock_task.delay.return_value = mock_result
+
+            resp = client.post("/api/portfolio-analyse/TEL")
+
+        assert resp.status_code == 200
+
+        set_calls = mock_redis_inst.set.call_args_list
+        pf_inflight_call = [c for c in set_calls if c[0][0] == "portfolio:inflight:elevated@test.com:TEL"]
+        assert len(pf_inflight_call) == 1
+        assert pf_inflight_call[0][0][1] == "pf-task-standalone"
+
+    def test_report_page_shows_spinner_when_inflight(self, client):
+        """When a portfolio analysis is in-flight, the report page renders
+        the spinner instead of the stale report."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 500, "avg_cost": 20.0})
+
+        # Seed a base report so /report/TEL renders.
+        from ph_stocks_advisor.infra.config import get_repository
+
+        repo = get_repository()
+        report = FinalReport(
+            symbol="TEL",
+            verdict=Verdict.BUY,
+            summary="Good stock.",
+            price_section="P",
+            dividend_section="D",
+            movement_section="M",
+            valuation_section="V",
+            controversy_section="C",
+        )
+        repo.save(ReportRecord.from_final_report(report))
+
+        # Seed a stale portfolio report.
+        pr = PortfolioReportRecord(
+            id=None,
+            user_id="elevated@test.com",
+            symbol="TEL",
+            shares=500,
+            avg_cost=20.0,
+            analysis="Old stale analysis.",
+            base_report_id=1,
+        )
+        repo.save_portfolio_report(pr)
+
+        # Simulate an in-flight portfolio task via Redis.
+        with patch("ph_stocks_advisor.web.app.get_redis") as mock_redis:
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_redis_inst.get.return_value = "pf-task-inflight"
+
+            resp = client.get("/report/TEL")
+
+        html = resp.data.decode()
+        # The spinner should be present.
+        assert "portfolio-inline-progress" in html
+        assert "Running personalised analysis" in html
+        # The stale report content should NOT be present.
+        assert "Old stale analysis" not in html
+        # The inflight task ID should be exposed to JS.
+        assert "pf-task-inflight" in html
+
+    def test_report_page_shows_report_when_not_inflight(self, client):
+        """When no portfolio analysis is in-flight, the report page renders
+        the portfolio report normally."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 500, "avg_cost": 20.0})
+
+        from ph_stocks_advisor.infra.config import get_repository
+
+        repo = get_repository()
+        report = FinalReport(
+            symbol="TEL",
+            verdict=Verdict.BUY,
+            summary="Good stock.",
+            price_section="P",
+            dividend_section="D",
+            movement_section="M",
+            valuation_section="V",
+            controversy_section="C",
+        )
+        repo.save(ReportRecord.from_final_report(report))
+
+        pr = PortfolioReportRecord(
+            id=None,
+            user_id="elevated@test.com",
+            symbol="TEL",
+            shares=500,
+            avg_cost=20.0,
+            analysis="Fresh portfolio analysis content.",
+            base_report_id=1,
+        )
+        repo.save_portfolio_report(pr)
+
+        # Redis returns None (no inflight).
+        with patch("ph_stocks_advisor.web.app.get_redis") as mock_redis:
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_redis_inst.get.return_value = None
+
+            resp = client.get("/report/TEL")
+
+        html = resp.data.decode()
+        # The report content should be present.
+        assert "Fresh portfolio analysis content" in html
+        # The spinner should NOT be present.
+        assert "portfolio-inline-progress" not in html

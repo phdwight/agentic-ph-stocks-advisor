@@ -445,3 +445,35 @@ class TestElevatedDailyCooldown:
             resp2 = client.post("/analyse", data={"symbol": "SYM2"})
             assert resp2.status_code == 200
             assert resp2.get_json()["status"] == "started"
+
+
+class TestCutoffLabel:
+    """_cutoff_label returns 'tomorrow after …' when past cutoff, 'after …' otherwise."""
+
+    def test_label_says_tomorrow_when_past_cutoff(self):
+        with patch.object(_app_mod, "_is_past_cutoff", return_value=True):
+            label = _app_mod._cutoff_label()
+        assert label.startswith("tomorrow")
+        assert "3:00" in label
+
+    def test_label_says_after_when_before_cutoff(self):
+        with patch.object(_app_mod, "_is_past_cutoff", return_value=False):
+            label = _app_mod._cutoff_label()
+        assert not label.startswith("tomorrow")
+        assert "3:00" in label
+
+    def test_elevated_cooldown_message_contains_tomorrow_when_past_cutoff(self, elevated_client, fake_redis):
+        """The elevated cooldown error message says 'tomorrow' when past 3 PM PHT."""
+        client, mock_repo = elevated_client
+
+        cached_record = MagicMock()
+        cached_record.id = 42
+        cached_record.created_at = datetime.now(tz=UTC)
+        mock_repo.get_latest_by_symbol.return_value = cached_record
+
+        with patch.object(_app_mod, "_is_past_cutoff", return_value=True):
+            resp = client.post("/analyse", data={"symbol": "TEL"})
+
+        data = resp.get_json()
+        assert resp.status_code == 429
+        assert "tomorrow" in data["error"]

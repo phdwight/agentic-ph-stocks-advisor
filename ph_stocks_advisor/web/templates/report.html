@@ -73,7 +73,7 @@
 
 {% if is_elevated %}
 <!-- Portfolio Advisory Section (visible only to the elevated user) -->
-<div id="portfolio-section" class="portfolio-section" {% if not portfolio_report %}style="display:none;"{% endif %}>
+<div id="portfolio-section" class="portfolio-section" {% if not portfolio_report and not portfolio_inflight_task_id %}style="display:none;"{% endif %}>
   <section class="report-section portfolio-report-section">
     <h2>
       <span class="section-icon section-icon-portfolio">
@@ -83,13 +83,18 @@
       <span class="elevated-only-badge">Elevated Only</span>
     </h2>
     <div class="section-body" id="portfolio-analysis-body">
-      {% if portfolio_report %}
+      {% if portfolio_inflight_task_id %}
+        <div class="portfolio-inline-progress">
+          <div class="spinner"></div>
+          <p>Running personalised analysis…</p>
+        </div>
+      {% elif portfolio_report %}
         {{ portfolio_report.analysis | md_to_html }}
         <p class="portfolio-meta">
           Position: {{ "%.0f"|format(portfolio_report.shares) }} shares @ ₱{{ "%.4f"|format(portfolio_report.avg_cost) }}
           · Generated: {{ portfolio_report.created_at.strftime('%b %d, %Y %H:%M') if portfolio_report.created_at else 'N/A' }}
           {% if portfolio_on_cooldown %}
-          · <span class="cooldown-hint">Re-analysis available after 3:00 PM PHT</span>
+          · <span class="cooldown-hint">Re-analysis available {{ next_cutoff_label }}</span>
           {% endif %}
         </p>
       {% endif %}
@@ -127,7 +132,7 @@
         {% endif %}
         <button type="submit" id="holding-save-btn" class="btn btn-secondary btn-sm" data-action="save">Save</button>
         <button type="submit" id="holding-analyse-btn" class="btn btn-primary btn-sm" data-action="analyse"
-          {% if portfolio_on_cooldown %}disabled title="Re-analysis available after 3:00 PM PHT"
+          {% if portfolio_on_cooldown %}disabled title="Re-analysis available {{ next_cutoff_label }}"
           {% elif portfolio_before_cutoff %}disabled title="Portfolio analysis available after 3:00 PM PHT"{% endif %}
         >{% if portfolio_on_cooldown %}Cooldown{% elif portfolio_before_cutoff %}Available after 3 PM{% else %}Save &amp; Analyse{% endif %}</button>
       </div>
@@ -146,6 +151,7 @@
 {% if is_elevated %}
 <script>
   window.__portfolioCooldown = {{ portfolio_on_cooldown | tojson }};
+  window.__portfolioInflightTaskId = {{ portfolio_inflight_task_id | tojson }};
 </script>
 <script src="{{ url_for('static', filename='portfolio.js') }}"></script>
 {% endif %}

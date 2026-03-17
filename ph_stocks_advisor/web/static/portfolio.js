@@ -30,6 +30,17 @@ document.addEventListener("DOMContentLoaded", () => {
     : "";
 
   /* ================================================================ */
+  /*  Resume polling for an in-flight portfolio analysis              */
+  /* ================================================================ */
+
+  const inflightTaskId = window.__portfolioInflightTaskId || null;
+  if (inflightTaskId) {
+    // The server detected a portfolio analysis still running — poll it
+    // so the spinner is replaced with the result once it finishes.
+    pollTask(inflightTaskId, 0, 0, null);
+  }
+
+  /* ================================================================ */
   /*  Modal open / close                                              */
   /* ================================================================ */
 
@@ -230,10 +241,15 @@ document.addEventListener("DOMContentLoaded", () => {
   function displayPortfolioReport(report, shares, avgCost) {
     if (!portfolioSection || !portfolioBody) return;
 
+    // Prefer the report's own position data (always present from the API)
+    // over the caller-supplied values which may be zero on auto-resume.
+    const displayShares = (shares > 0 ? shares : report.shares) || 0;
+    const displayCost = (avgCost > 0 ? avgCost : report.avg_cost) || 0;
+
     // Use the server-rendered HTML (same converter as the main report).
     const html = report.analysis_html || report.analysis || "";
     const meta = `<p class="portfolio-meta">
-      Position: ${Number(shares).toLocaleString()} shares @ ₱${Number(avgCost).toFixed(4)}
+      Position: ${Number(displayShares).toLocaleString()} shares @ ₱${Number(displayCost).toFixed(4)}
       · Generated: ${report.created_at ? new Date(report.created_at).toLocaleString() : "just now"}
     </p>`;
     portfolioBody.innerHTML = html + meta;

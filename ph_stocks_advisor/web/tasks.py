@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Redis key prefixes — must match the ones in app.py.
 _INFLIGHT_PREFIX = "analysis:inflight:"
 _INFLIGHT_TASK_PREFIX = "analysis:task:"
+_PORTFOLIO_INFLIGHT_PREFIX = "portfolio:inflight:"
 
 
 def _clear_inflight_lock(symbol: str, task_id: str | None = None) -> None:
@@ -216,3 +217,14 @@ def portfolio_analyse_stock(
     except Exception as exc:
         logger.error("Portfolio analysis failed for %s: %s", symbol, exc)
         return {"symbol": symbol, "error": str(exc)}
+    finally:
+        # Clear the portfolio in-flight lock so the page shows the
+        # result instead of the spinner on the next load.
+        try:
+            from ph_stocks_advisor.infra.config import get_redis
+
+            r = get_redis()
+            pf_key = f"{_PORTFOLIO_INFLIGHT_PREFIX}{user_id}:{symbol}"
+            r.delete(pf_key)
+        except Exception:
+            logger.debug("Could not clear portfolio inflight lock for %s", symbol)
