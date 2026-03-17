@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html as _html
 import re
+from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
 from ph_stocks_advisor.export.formatter import (
@@ -19,6 +20,14 @@ from ph_stocks_advisor.export.formatter import (
     parse_sections,
 )
 from ph_stocks_advisor.infra.repository import ReportRecord
+
+
+def _get_version() -> str:
+    try:
+        return _pkg_version("ph-stocks-advisor")
+    except PackageNotFoundError:
+        return "dev"
+
 
 # ---------------------------------------------------------------------------
 # CSS
@@ -250,7 +259,7 @@ class HtmlFormatter(OutputFormatter):
 <footer>
   <div class="disclaimer">{_esc(DISCLAIMER)}</div>
   <div class="sources">{_esc(DATA_SOURCES)}</div>
-  <div class="version">v{_esc(_pkg_version("ph-stocks-advisor"))}</div>
+  <div class="version">v{_esc(_get_version())}</div>
 </footer>
 </div>
 </body>

@@ -17,6 +17,7 @@ import json
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta, timezone
+from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
 from flask import Flask, Response, abort, jsonify, render_template, request, session
@@ -35,6 +36,14 @@ from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
 from ph_stocks_advisor.web.rate_limit import reserve as rl_reserve
 
 logger = logging.getLogger(__name__)
+
+
+def _app_version() -> str:
+    try:
+        return _pkg_version("ph-stocks-advisor")
+    except PackageNotFoundError:
+        return "dev"
+
 
 # Philippine Stock Exchange timezone (UTC+8).
 _PHT = timezone(timedelta(hours=8))
@@ -212,7 +221,7 @@ def create_app() -> Flask:
             "current_user": get_current_user(),
             "auth_enabled": get_settings().auth_enabled,
             "csrf_token": _generate_csrf_token,
-            "app_version": _pkg_version("ph-stocks-advisor"),
+            "app_version": _app_version(),
         }
 
     # ------------------------------------------------------------------
