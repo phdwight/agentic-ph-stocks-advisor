@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -764,12 +765,18 @@ def create_app() -> Flask:
             # ``chain(...)`` ensures ``result.id`` is the *base* task's
             # ID, so the inflight dedup lock and SSE/polling streams
             # work correctly when another request joins mid-flight.
+            #
+            # Pre-assign a task ID for the portfolio callback so the
+            # frontend can poll it independently and avoid displaying
+            # a stale portfolio report while the callback is still
+            # running.
+            portfolio_task_id = str(uuid.uuid4())
             base_task = analyse_stock.s(symbol, user_id=user["email"])
             portfolio_task = portfolio_analyse_stock.s(
                 user_id=user["email"],
                 shares=holding.shares,
                 avg_cost=holding.avg_cost,
-            )
+            ).set(task_id=portfolio_task_id)
             result = base_task.apply_async(link=[portfolio_task])
 
             # Store inflight lock for the base analysis dedup.
@@ -782,6 +789,7 @@ def create_app() -> Flask:
                 {
                     "status": "started",
                     "task_id": result.id,
+                    "portfolio_task_id": portfolio_task_id,
                     "symbol": symbol,
                     "chained": True,
                 }

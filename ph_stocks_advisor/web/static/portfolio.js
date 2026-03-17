@@ -161,13 +161,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const analyseData = await analyseResp.json();
       const taskId = analyseData.task_id;
+      const portfolioTaskId = analyseData.portfolio_task_id || null;
 
       // 3. Close the modal and show inline progress on the page.
       modal.style.display = "none";
       showInlineProgress();
 
       // 4. Poll for completion.
-      pollTask(taskId, shares, avgCost);
+      pollTask(taskId, shares, avgCost, portfolioTaskId);
     } catch (err) {
       showError("Network error. Please try again.");
     } finally {
@@ -181,7 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /*  Poll the Celery task until done                                 */
   /* ================================================================ */
 
-  function pollTask(taskId, shares, avgCost) {
+  function pollTask(taskId, shares, avgCost, portfolioTaskId) {
     const iv = setInterval(async () => {
       try {
         const resp = await fetch(`/status/${taskId}`);
@@ -193,6 +194,14 @@ document.addEventListener("DOMContentLoaded", () => {
           if (data.state === "FAILURE" || data.error) {
             hideInlineProgress();
             showInlineError(data.error || "Analysis failed. Please try again.");
+            return;
+          }
+
+          // When chained, the base task finishes before the portfolio
+          // callback.  Switch to polling the portfolio task so we only
+          // fetch the report once the new analysis is actually saved.
+          if (portfolioTaskId) {
+            pollTask(portfolioTaskId, shares, avgCost, null);
             return;
           }
 

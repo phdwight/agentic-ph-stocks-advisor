@@ -700,6 +700,10 @@ class TestPortfolioAutoChain:
         assert data["status"] == "started"
         assert data["chained"] is True
         assert data["task_id"] == "base-task-001"
+        # A pre-assigned portfolio task ID must be included so the
+        # frontend can poll it after the base task finishes.
+        assert "portfolio_task_id" in data
+        assert data["portfolio_task_id"]  # non-empty string
         # Verify apply_async was called with link kwarg
         mock_base_sig.apply_async.assert_called_once()
         _, kwargs = mock_base_sig.apply_async.call_args
@@ -799,3 +803,47 @@ class TestPortfolioAutoChain:
         # The reverse mapping must also use the base task ID.
         reverse_call = [c for c in calls if c[0][0] == "analysis:task:base-task-mbt"]
         assert len(reverse_call) == 1
+
+    def test_portfolio_task_id_set_on_linked_signature(self, client):
+        """The portfolio callback signature must have a pre-assigned task ID
+        so the frontend can poll it independently after the base task
+        completes, preventing display of a stale portfolio report."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/GLO", json={"shares": 200, "avg_cost": 30.0})
+
+        mock_base_result = MagicMock()
+        mock_base_result.id = "base-task-glo"
+
+        mock_base_sig = MagicMock()
+        mock_base_sig.apply_async.return_value = mock_base_result
+
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.app.get_redis") as mock_redis,
+            patch("ph_stocks_advisor.web.tasks.analyse_stock") as mock_analyse,
+            patch("ph_stocks_advisor.web.tasks.portfolio_analyse_stock") as mock_portfolio,
+        ):
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_analyse.s.return_value = mock_base_sig
+
+            mock_portfolio_sig = MagicMock()
+            mock_portfolio.s.return_value = mock_portfolio_sig
+            mock_portfolio_sig.set.return_value = mock_portfolio_sig
+
+            resp = client.post("/api/portfolio-analyse/GLO")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+
+        # The response must include a portfolio_task_id.
+        ptid = data["portfolio_task_id"]
+        assert ptid
+
+        # The portfolio signature must have been configured with .set(task_id=...).
+        mock_portfolio_sig.set.assert_called_once_with(task_id=ptid)
+
+        # The linked task passed to apply_async must be the set()-configured sig.
+        _, apply_kwargs = mock_base_sig.apply_async.call_args
+        linked_tasks = apply_kwargs["link"]
+        assert linked_tasks == [mock_portfolio_sig]
