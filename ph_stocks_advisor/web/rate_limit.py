@@ -12,7 +12,7 @@ rather than importing concrete settings directly.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import redis as redis_lib
 

@@ -314,8 +314,7 @@ def create_app() -> Flask:
                     return jsonify(
                         {
                             "error": (
-                                f"{symbol} was already analysed today. "
-                                "You can re-analyse after 3:00\u202fPM PHT."
+                                f"{symbol} was already analysed today. You can re-analyse after 3:00\u202fPM PHT."
                             ),
                             "reset_at": reset_at.isoformat(),
                             "report_id": record.id,
@@ -713,15 +712,10 @@ def create_app() -> Flask:
 
         # Only allow after 3:00 PM PHT.
         if not _is_past_cutoff():
-            cutoff_pht = datetime.now(tz=_PHT).replace(
-                hour=_CUTOFF_HOUR_PHT, minute=0, second=0, microsecond=0
-            )
+            cutoff_pht = datetime.now(tz=_PHT).replace(hour=_CUTOFF_HOUR_PHT, minute=0, second=0, microsecond=0)
             return jsonify(
                 {
-                    "error": (
-                        "Portfolio analysis is available after 3:00\u202fPM PHT "
-                        "(after market close)."
-                    ),
+                    "error": ("Portfolio analysis is available after 3:00\u202fPM PHT (after market close)."),
                     "available_at": cutoff_pht.astimezone(UTC).isoformat(),
                     "symbol": symbol.upper().replace(".PS", ""),
                 }
@@ -738,19 +732,18 @@ def create_app() -> Flask:
         # Daily cooldown: one portfolio analysis per stock per day.
         # Resets at 3:00 PM PHT (UTC+8).
         existing_pr = repo.get_portfolio_report(user["email"], symbol)
-        if existing_pr and existing_pr.created_at:
-            if existing_pr.created_at >= _last_cutoff():
-                next_reset = _next_cutoff()
-                return jsonify(
-                    {
-                        "error": (
-                            f"Portfolio analysis for {symbol} was already run today. "
-                            "You can re-analyse after 3:00\u202fPM PHT."
-                        ),
-                        "reset_at": next_reset.isoformat(),
-                        "symbol": symbol,
-                    }
-                ), 429
+        if existing_pr and existing_pr.created_at and existing_pr.created_at >= _last_cutoff():
+            next_reset = _next_cutoff()
+            return jsonify(
+                {
+                    "error": (
+                        f"Portfolio analysis for {symbol} was already run today. "
+                        "You can re-analyse after 3:00\u202fPM PHT."
+                    ),
+                    "reset_at": next_reset.isoformat(),
+                    "symbol": symbol,
+                }
+            ), 429
 
         # Check for a fresh base report; if missing, dispatch one first.
         record = repo.get_latest_by_symbol(symbol)
