@@ -379,6 +379,9 @@ Using all of the above, write a **personalised portfolio advisory note**
 End with a **one-line summary** in this exact format:
 **Recommendation: [HOLD / ACCUMULATE / TRIM]** — [one-sentence justification]
 
+Begin the note with a header line:
+**Portfolio Advisory for {symbol} — {today}**
+
 Use plain, jargon-free English that any Filipino retail investor can
 understand. Reference specific numbers (prices, shares, P/L) throughout.
 """

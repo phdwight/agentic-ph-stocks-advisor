@@ -16,7 +16,8 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
+from importlib.metadata import version as _pkg_version
 
 from flask import Flask, Response, abort, jsonify, render_template, request, session
 from markupsafe import Markup
@@ -35,8 +36,10 @@ from ph_stocks_advisor.web.rate_limit import reserve as rl_reserve
 
 logger = logging.getLogger(__name__)
 
-# Reports older than this are considered stale and re-analysed.
-REPORT_MAX_AGE_DAYS = 5
+# Philippine Stock Exchange timezone (UTC+8).
+_PHT = timezone(timedelta(hours=8))
+# Daily cutoff hour in PHT — reports generated before this are stale.
+_CUTOFF_HOUR_PHT = 15  # 3:00 PM
 
 # Redis key prefix for in-flight analysis dedup locks.
 _INFLIGHT_PREFIX = "analysis:inflight:"
@@ -44,6 +47,29 @@ _INFLIGHT_PREFIX = "analysis:inflight:"
 _INFLIGHT_TASK_PREFIX = "analysis:task:"
 # How long the lock lives before auto-expiring (seconds).
 _INFLIGHT_TTL = 10 * 60  # 10 minutes
+
+
+def _last_cutoff() -> datetime:
+    """Return the most recent 3:00 PM PHT boundary as a UTC datetime.
+
+    If PHT now is at or past ``_CUTOFF_HOUR_PHT``, the cutoff is today
+    at that hour; otherwise it is yesterday at that hour.
+    """
+    now_pht = datetime.now(tz=_PHT)
+    cutoff_pht = now_pht.replace(hour=_CUTOFF_HOUR_PHT, minute=0, second=0, microsecond=0)
+    if now_pht < cutoff_pht:
+        cutoff_pht -= timedelta(days=1)
+    return cutoff_pht.astimezone(UTC)
+
+
+def _next_cutoff() -> datetime:
+    """Return the next 3:00 PM PHT boundary as a UTC datetime."""
+    return _last_cutoff() + timedelta(days=1)
+
+
+def _is_past_cutoff() -> bool:
+    """Return True if the current PHT time is at or past the cutoff hour."""
+    return datetime.now(tz=_PHT).hour >= _CUTOFF_HOUR_PHT
 
 
 def create_app() -> Flask:
@@ -180,12 +206,13 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_user():
-        """Make ``current_user``, ``auth_enabled``, and ``csrf_token``
-        available in every template."""
+        """Make ``current_user``, ``auth_enabled``, ``csrf_token``, and
+        ``app_version`` available in every template."""
         return {
             "current_user": get_current_user(),
             "auth_enabled": get_settings().auth_enabled,
             "csrf_token": _generate_csrf_token,
+            "app_version": _pkg_version("ph-stocks-advisor"),
         }
 
     # ------------------------------------------------------------------
@@ -265,47 +292,44 @@ def create_app() -> Flask:
         user = get_current_user()
         is_elevated = (user or {}).get("user_type", 0) == UserType.ELEVATED
 
-        # Check for a recent report (within REPORT_MAX_AGE_DAYS).
+        # Check for a recent report (generated after last 3 PM PHT cutoff).
         # Elevated users bypass the multi-day cache but are still subject
-        # to a per-stock daily cooldown (one analysis per UTC day).
+        # to a per-stock daily cooldown (one analysis per trading day).
         repo = get_repository()
         record = repo.get_latest_by_symbol(symbol)
 
         if record and record.created_at:
-            now = datetime.now(tz=UTC)
-            age = now - record.created_at
+            cutoff = _last_cutoff()
 
             if is_elevated:
-                # Elevated cooldown: same UTC calendar day → blocked.
-                report_date = record.created_at.date()
-                today_utc = now.date()
-                if report_date == today_utc:
-                    next_midnight = (now + timedelta(days=1)).replace(
-                        hour=0,
-                        minute=0,
-                        second=0,
-                        microsecond=0,
-                    )
+                # Elevated cooldown: already analysed since last 3 PM PHT.
+                if record.created_at >= cutoff:
+                    reset_at = _next_cutoff()
                     logger.info(
-                        "Elevated cooldown: %s already analysed today, next window %s.",
+                        "Elevated cooldown: %s already analysed since %s, next window %s.",
                         symbol,
-                        next_midnight.isoformat(),
+                        cutoff.isoformat(),
+                        reset_at.isoformat(),
                     )
                     return jsonify(
                         {
-                            "error": (f"{symbol} was already analysed today. You can re-analyse after midnight UTC."),
-                            "reset_at": next_midnight.isoformat(),
+                            "error": (
+                                f"{symbol} was already analysed today. "
+                                "You can re-analyse after 3:00\u202fPM PHT."
+                            ),
+                            "reset_at": reset_at.isoformat(),
                             "report_id": record.id,
                             "symbol": symbol,
                         }
                     ), 429
             else:
-                # Normal users: serve the cached report if still fresh.
-                if age <= timedelta(days=REPORT_MAX_AGE_DAYS):
+                # Normal users: serve the cached report if generated
+                # after the most recent 3:00 PM PHT cutoff.
+                if record.created_at >= cutoff:
                     logger.info(
-                        "Fresh report found for %s (age=%s), serving cached.",
+                        "Fresh report found for %s (since %s), serving cached.",
                         symbol,
-                        age,
+                        cutoff.isoformat(),
                     )
                     # Track symbol for the current user.
                     if user and user.get("email"):
@@ -352,16 +376,14 @@ def create_app() -> Flask:
                     count,
                     settings.daily_analysis_limit,
                 )
-                next_midnight = (datetime.now(tz=UTC) + timedelta(days=1)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
+                next_reset = _next_cutoff()
                 return jsonify(
                     {
                         "error": (
                             f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
-                            "Your quota resets at midnight UTC."
+                            "Your quota resets at 3:00\u202fPM PHT."
                         ),
-                        "reset_at": next_midnight.isoformat(),
+                        "reset_at": next_reset.isoformat(),
                     }
                 ), 429
 
@@ -498,8 +520,7 @@ def create_app() -> Flask:
         # Determine if the report is a cached result
         is_cached = False
         if record.created_at:
-            age = datetime.now(tz=UTC) - record.created_at
-            is_cached = age <= timedelta(days=REPORT_MAX_AGE_DAYS)
+            is_cached = record.created_at >= _last_cutoff()
 
         # Fetch live current price for the header display.
         current_price: float | None = None
@@ -524,18 +545,14 @@ def create_app() -> Flask:
             try:
                 user_holding = repo.get_holding(user["email"], symbol)
                 portfolio_report = repo.get_portfolio_report(user["email"], symbol)
-                # Check if portfolio analysis is on cooldown (already run today).
+                # Check if portfolio analysis is on cooldown (already run since last cutoff).
                 if portfolio_report and portfolio_report.created_at:
-                    now_utc = datetime.now(tz=UTC)
-                    today_midnight_utc = now_utc.replace(
-                        hour=0,
-                        minute=0,
-                        second=0,
-                        microsecond=0,
-                    )
-                    portfolio_on_cooldown = portfolio_report.created_at >= today_midnight_utc
+                    portfolio_on_cooldown = portfolio_report.created_at >= _last_cutoff()
             except Exception:
                 logger.debug("Could not load holding/portfolio for %s", symbol)
+
+        # Is portfolio analysis gated (before 3 PM PHT)?
+        portfolio_before_cutoff = is_elevated and not _is_past_cutoff()
 
         return render_template(
             "report.html",
@@ -551,6 +568,7 @@ def create_app() -> Flask:
             user_holding=user_holding,
             portfolio_report=portfolio_report,
             portfolio_on_cooldown=portfolio_on_cooldown,
+            portfolio_before_cutoff=portfolio_before_cutoff,
         )
 
     @app.route("/history/<symbol>")
@@ -680,13 +698,34 @@ def create_app() -> Flask:
     @app.route("/api/portfolio-analyse/<symbol>", methods=["POST"])
     @login_required
     def portfolio_analyse(symbol: str):
-        """Trigger a portfolio-aware analysis for the current user's holding."""
+        """Trigger a portfolio-aware analysis for the current user's holding.
+
+        Gate: only allowed after 3:00 PM PHT (market close).
+        If no base report exists yet, one is dispatched first and the
+        portfolio analysis is chained automatically.
+        """
         from ph_stocks_advisor.infra.repository import UserType
-        from ph_stocks_advisor.web.tasks import portfolio_analyse_stock
+        from ph_stocks_advisor.web.tasks import analyse_stock, portfolio_analyse_stock
 
         user = get_current_user()
         if not user or user.get("user_type", 0) != UserType.ELEVATED:
             return jsonify({"error": "Elevated access required"}), 403
+
+        # Only allow after 3:00 PM PHT.
+        if not _is_past_cutoff():
+            cutoff_pht = datetime.now(tz=_PHT).replace(
+                hour=_CUTOFF_HOUR_PHT, minute=0, second=0, microsecond=0
+            )
+            return jsonify(
+                {
+                    "error": (
+                        "Portfolio analysis is available after 3:00\u202fPM PHT "
+                        "(after market close)."
+                    ),
+                    "available_at": cutoff_pht.astimezone(UTC).isoformat(),
+                    "symbol": symbol.upper().replace(".PS", ""),
+                }
+            ), 425  # 425 Too Early
 
         symbol = symbol.upper().replace(".PS", "")
         repo = get_repository()
@@ -696,38 +735,60 @@ def create_app() -> Flask:
         if holding is None:
             return jsonify({"error": "No holding found for this symbol. Save your position first."}), 400
 
-        # Require a base report to exist.
-        record = repo.get_latest_by_symbol(symbol)
-        if record is None:
-            return jsonify({"error": "No analysis report found. Analyse the stock first."}), 400
-
         # Daily cooldown: one portfolio analysis per stock per day.
-        # Resets at 8:00 AM GMT+8 (= 00:00 UTC).
+        # Resets at 3:00 PM PHT (UTC+8).
         existing_pr = repo.get_portfolio_report(user["email"], symbol)
         if existing_pr and existing_pr.created_at:
-            now_utc = datetime.now(tz=UTC)
-            today_midnight_utc = now_utc.replace(
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0,
-            )
-            if existing_pr.created_at >= today_midnight_utc:
-                next_reset = today_midnight_utc + timedelta(days=1)
+            if existing_pr.created_at >= _last_cutoff():
+                next_reset = _next_cutoff()
                 return jsonify(
                     {
                         "error": (
                             f"Portfolio analysis for {symbol} was already run today. "
-                            "You can re-analyse after 8:00 AM PHT tomorrow."
+                            "You can re-analyse after 3:00\u202fPM PHT."
                         ),
                         "reset_at": next_reset.isoformat(),
                         "symbol": symbol,
                     }
                 ), 429
 
-        # Dispatch to Celery.
+        # Check for a fresh base report; if missing, dispatch one first.
+        record = repo.get_latest_by_symbol(symbol)
+        needs_base = record is None or record.created_at is None or record.created_at < _last_cutoff()
+
+        if needs_base:
+            # Dispatch base analysis with portfolio analysis linked as a
+            # callback.  Using ``apply_async(link=...)`` instead of
+            # ``chain(...)`` ensures ``result.id`` is the *base* task's
+            # ID, so the inflight dedup lock and SSE/polling streams
+            # work correctly when another request joins mid-flight.
+            base_task = analyse_stock.s(symbol, user_id=user["email"])
+            portfolio_task = portfolio_analyse_stock.s(
+                user_id=user["email"],
+                shares=holding.shares,
+                avg_cost=holding.avg_cost,
+            )
+            result = base_task.apply_async(link=[portfolio_task])
+
+            # Store inflight lock for the base analysis dedup.
+            r = get_redis()
+            inflight_key = f"{_INFLIGHT_PREFIX}{symbol}"
+            r.set(inflight_key, result.id, ex=_INFLIGHT_TTL)
+            r.set(f"{_INFLIGHT_TASK_PREFIX}{result.id}", symbol, ex=_INFLIGHT_TTL)
+
+            return jsonify(
+                {
+                    "status": "started",
+                    "task_id": result.id,
+                    "symbol": symbol,
+                    "chained": True,
+                }
+            )
+
+        # Base report exists and is fresh — dispatch portfolio analysis only.
         task = portfolio_analyse_stock.delay(
-            symbol,
+            {},  # empty preceding-result placeholder
+            symbol=symbol,
             user_id=user["email"],
             shares=holding.shares,
             avg_cost=holding.avg_cost,

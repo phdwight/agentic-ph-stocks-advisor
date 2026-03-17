@@ -383,7 +383,7 @@ class TestElevatedBypassesRateLimit:
 
 
 class TestElevatedDailyCooldown:
-    """Elevated users cannot re-analyse the same stock on the same UTC day."""
+    """Elevated users cannot re-analyse the same stock within the same 3 PM PHT window."""
 
     def test_elevated_blocked_when_analysed_today(self, elevated_client, fake_redis):
         """Elevated user gets 429 with report link when the stock was analysed today."""
@@ -402,8 +402,8 @@ class TestElevatedDailyCooldown:
         assert data["report_id"] == 42
         assert data["symbol"] == "TEL"
 
-    def test_elevated_cooldown_reset_at_is_next_midnight(self, elevated_client, fake_redis):
-        """The reset_at timestamp in the cooldown response is next UTC midnight."""
+    def test_elevated_cooldown_reset_at_is_next_cutoff(self, elevated_client, fake_redis):
+        """The reset_at timestamp in the cooldown response is the next 3 PM PHT (7 AM UTC)."""
         client, mock_repo = elevated_client
 
         cached_record = MagicMock()
@@ -415,7 +415,8 @@ class TestElevatedDailyCooldown:
         data = resp.get_json()
 
         reset_at = datetime.fromisoformat(data["reset_at"])
-        assert reset_at.hour == 0
+        # 3:00 PM PHT = 7:00 AM UTC
+        assert reset_at.hour == 7
         assert reset_at.minute == 0
         assert reset_at.second == 0
 

@@ -122,22 +122,40 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
 @celery_app.task(bind=True, name="portfolio_analyse_stock")
 def portfolio_analyse_stock(
     self,
-    symbol: str,
+    preceding_result: dict | None = None,
     *,
+    symbol: str | None = None,
     user_id: str,
     shares: float,
     avg_cost: float,
-    base_report_id: int,
+    base_report_id: int | None = None,
 ) -> dict:
     """Run a portfolio-aware analysis for an elevated user's holding.
 
-    Reads the existing stock report, invokes the PortfolioAgent with
-    the user's position data, and saves the resulting personalised
-    advisory note.
+    When chained after ``analyse_stock``, *preceding_result* carries the
+    base analysis output (with ``report_id`` and ``symbol``).  When
+    called standalone, ``symbol`` and ``base_report_id`` must be
+    provided explicitly.
     """
     from ph_stocks_advisor.agents.portfolio import PortfolioAgent
     from ph_stocks_advisor.infra.config import get_llm, get_repository
     from ph_stocks_advisor.infra.repository import PortfolioReportRecord
+
+    # Resolve symbol / base_report_id from the preceding chain result
+    # if they weren't given explicitly.
+    if preceding_result and isinstance(preceding_result, dict):
+        if preceding_result.get("error"):
+            return {
+                "symbol": preceding_result.get("symbol", symbol),
+                "error": f"Base analysis failed: {preceding_result['error']}",
+            }
+        symbol = symbol or preceding_result.get("symbol")
+        base_report_id = base_report_id or preceding_result.get("report_id")
+
+    if not symbol:
+        return {"error": "Symbol is required."}
+    if not base_report_id:
+        return {"symbol": symbol, "error": "Base report ID is required."}
 
     task_id = self.request.id
     logger.info("Portfolio analysis for %s (user=%s, task=%s)", symbol, user_id, task_id)

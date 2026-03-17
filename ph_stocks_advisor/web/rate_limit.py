@@ -3,7 +3,7 @@ Per-user daily analysis rate limiting.
 
 Single Responsibility: this module only manages the daily counter
 for analysis requests per user.  It uses Redis for atomic counting
-with automatic expiry at the next UTC midnight.
+with automatic expiry at the next 3:00 PM PHT cutoff.
 
 Dependency Inversion: callers pass in a Redis client and limit value
 rather than importing concrete settings directly.
@@ -12,11 +12,16 @@ rather than importing concrete settings directly.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import redis as redis_lib
 
 logger = logging.getLogger(__name__)
+
+# Philippine Stock Exchange timezone (UTC+8).
+_PHT = timezone(timedelta(hours=8))
+# Daily cutoff hour in PHT — counters reset at this hour.
+_CUTOFF_HOUR_PHT = 15  # 3:00 PM
 
 # Redis key prefix for daily analysis counters.
 _RATE_LIMIT_PREFIX = "ratelimit:analyse:"
@@ -43,17 +48,27 @@ return {1, new}
 """
 
 
-def _seconds_until_utc_midnight() -> int:
-    """Return the number of seconds from now until the next 00:00 UTC."""
-    now = datetime.now(tz=UTC)
-    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    return int((tomorrow - now).total_seconds())
+def _seconds_until_next_cutoff() -> int:
+    """Seconds from now until the next 3:00 PM PHT (UTC+8)."""
+    now_pht = datetime.now(tz=_PHT)
+    cutoff_pht = now_pht.replace(hour=_CUTOFF_HOUR_PHT, minute=0, second=0, microsecond=0)
+    if now_pht >= cutoff_pht:
+        cutoff_pht += timedelta(days=1)
+    return int((cutoff_pht - now_pht).total_seconds())
 
 
 def _daily_key(user_id: str) -> str:
-    """Build the Redis key for today's counter (UTC date)."""
-    today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
-    return f"{_RATE_LIMIT_PREFIX}{user_id}:{today}"
+    """Build the Redis key for the current trading-day counter.
+
+    The trading day rolls over at 3:00 PM PHT, so before that hour
+    the key still belongs to the previous calendar date.
+    """
+    now_pht = datetime.now(tz=_PHT)
+    if now_pht.hour < _CUTOFF_HOUR_PHT:
+        day = (now_pht - timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        day = now_pht.strftime("%Y-%m-%d")
+    return f"{_RATE_LIMIT_PREFIX}{user_id}:{day}"
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +95,7 @@ def reserve(
         when the limit has been reached.
     """
     key = _daily_key(user_id)
-    ttl = _seconds_until_utc_midnight()
+    ttl = _seconds_until_next_cutoff()
 
     allowed_int, count = r.eval(_RESERVE_LUA, 1, key, limit, ttl)  # type: ignore[misc]
     allowed = bool(int(allowed_int))  # type: ignore[arg-type]
@@ -149,7 +164,7 @@ def increment(
     new_count = r.incr(key)
 
     if new_count == 1:
-        ttl = _seconds_until_utc_midnight()
+        ttl = _seconds_until_next_cutoff()
         r.expire(key, ttl)
 
     return new_count  # type: ignore[return-value]

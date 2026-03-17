@@ -368,7 +368,7 @@ class TestAnalyseRateLimit:
         assert remaining == 3
 
     def test_error_message_mentions_reset(self, client, fake_redis):
-        """The 429 response includes reset_at ISO timestamp."""
+        """The 429 response includes reset_at ISO timestamp at next 3 PM PHT (7 AM UTC)."""
         _seed_counter(fake_redis, "dev@localhost", 3)
 
         resp = client.post("/analyse", data={"symbol": "OVER"})
@@ -379,7 +379,8 @@ class TestAnalyseRateLimit:
         from datetime import datetime
 
         reset_dt = datetime.fromisoformat(data["reset_at"])
-        assert reset_dt.hour == 0 and reset_dt.minute == 0
+        # 3:00 PM PHT = 7:00 AM UTC
+        assert reset_dt.hour == 7 and reset_dt.minute == 0
 
     def test_user_id_passed_to_celery_task(self, client, fake_redis):
         """The /analyse endpoint sends user_id to the Celery task."""
