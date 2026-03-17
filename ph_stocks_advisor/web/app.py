@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -54,6 +55,8 @@ _CUTOFF_HOUR_PHT = 15  # 3:00 PM
 _INFLIGHT_PREFIX = "analysis:inflight:"
 # Reverse mapping: task_id -> symbol, for O(1) cancel lookup.
 _INFLIGHT_TASK_PREFIX = "analysis:task:"
+# Portfolio in-flight lock: portfolio:inflight:{user}:{symbol} -> task_id
+_PORTFOLIO_INFLIGHT_PREFIX = "portfolio:inflight:"
 # How long the lock lives before auto-expiring (seconds).
 _INFLIGHT_TTL = 10 * 60  # 10 minutes
 
@@ -79,6 +82,17 @@ def _next_cutoff() -> datetime:
 def _is_past_cutoff() -> bool:
     """Return True if the current PHT time is at or past the cutoff hour."""
     return datetime.now(tz=_PHT).hour >= _CUTOFF_HOUR_PHT
+
+
+def _cutoff_label() -> str:
+    """Human-friendly label for the next cutoff window.
+
+    Returns ``'tomorrow after 3:00\u202fPM PHT'`` when today's cutoff
+    has already passed, or ``'after 3:00\u202fPM PHT'`` when it hasn't.
+    """
+    if _is_past_cutoff():
+        return "tomorrow after 3:00\u202fPM PHT"
+    return "after 3:00\u202fPM PHT"
 
 
 def create_app() -> Flask:
@@ -322,9 +336,7 @@ def create_app() -> Flask:
                     )
                     return jsonify(
                         {
-                            "error": (
-                                f"{symbol} was already analysed today. You can re-analyse after 3:00\u202fPM PHT."
-                            ),
+                            "error": (f"{symbol} was already analysed today. You can re-analyse {_cutoff_label()}."),
                             "reset_at": reset_at.isoformat(),
                             "report_id": record.id,
                             "symbol": symbol,
@@ -389,7 +401,7 @@ def create_app() -> Flask:
                     {
                         "error": (
                             f"Daily analysis limit reached ({settings.daily_analysis_limit} per day). "
-                            "Your quota resets at 3:00\u202fPM PHT."
+                            f"Your quota resets {_cutoff_label()}."
                         ),
                         "reset_at": next_reset.isoformat(),
                     }
@@ -549,6 +561,7 @@ def create_app() -> Flask:
         user_holding = None
         portfolio_report = None
         portfolio_on_cooldown = False
+        portfolio_inflight_task_id: str | None = None
         if is_elevated and user and user.get("email"):
             try:
                 user_holding = repo.get_holding(user["email"], symbol)
@@ -558,6 +571,17 @@ def create_app() -> Flask:
                     portfolio_on_cooldown = portfolio_report.created_at >= _last_cutoff()
             except Exception:
                 logger.debug("Could not load holding/portfolio for %s", symbol)
+
+            # Check for an in-flight portfolio analysis so the page shows
+            # a spinner instead of a stale report on refresh.
+            try:
+                r = get_redis()
+                pf_key = f"{_PORTFOLIO_INFLIGHT_PREFIX}{user['email']}:{symbol}"
+                inflight_tid = r.get(pf_key)
+                if inflight_tid:
+                    portfolio_inflight_task_id = str(inflight_tid)
+            except Exception:
+                logger.debug("Could not check portfolio inflight for %s", symbol)
 
         # Is portfolio analysis gated (before 3 PM PHT)?
         portfolio_before_cutoff = is_elevated and not _is_past_cutoff()
@@ -577,6 +601,8 @@ def create_app() -> Flask:
             portfolio_report=portfolio_report,
             portfolio_on_cooldown=portfolio_on_cooldown,
             portfolio_before_cutoff=portfolio_before_cutoff,
+            portfolio_inflight_task_id=portfolio_inflight_task_id,
+            next_cutoff_label=_cutoff_label(),
         )
 
     @app.route("/history/<symbol>")
@@ -724,7 +750,7 @@ def create_app() -> Flask:
             cutoff_pht = datetime.now(tz=_PHT).replace(hour=_CUTOFF_HOUR_PHT, minute=0, second=0, microsecond=0)
             return jsonify(
                 {
-                    "error": ("Portfolio analysis is available after 3:00\u202fPM PHT (after market close)."),
+                    "error": f"Portfolio analysis is available {_cutoff_label()} (after market close).",
                     "available_at": cutoff_pht.astimezone(UTC).isoformat(),
                     "symbol": symbol.upper().replace(".PS", ""),
                 }
@@ -746,8 +772,7 @@ def create_app() -> Flask:
             return jsonify(
                 {
                     "error": (
-                        f"Portfolio analysis for {symbol} was already run today. "
-                        "You can re-analyse after 3:00\u202fPM PHT."
+                        f"Portfolio analysis for {symbol} was already run today. You can re-analyse {_cutoff_label()}."
                     ),
                     "reset_at": next_reset.isoformat(),
                     "symbol": symbol,
@@ -764,12 +789,18 @@ def create_app() -> Flask:
             # ``chain(...)`` ensures ``result.id`` is the *base* task's
             # ID, so the inflight dedup lock and SSE/polling streams
             # work correctly when another request joins mid-flight.
+            #
+            # Pre-assign a task ID for the portfolio callback so the
+            # frontend can poll it independently and avoid displaying
+            # a stale portfolio report while the callback is still
+            # running.
+            portfolio_task_id = str(uuid.uuid4())
             base_task = analyse_stock.s(symbol, user_id=user["email"])
             portfolio_task = portfolio_analyse_stock.s(
                 user_id=user["email"],
                 shares=holding.shares,
                 avg_cost=holding.avg_cost,
-            )
+            ).set(task_id=portfolio_task_id)
             result = base_task.apply_async(link=[portfolio_task])
 
             # Store inflight lock for the base analysis dedup.
@@ -778,10 +809,16 @@ def create_app() -> Flask:
             r.set(inflight_key, result.id, ex=_INFLIGHT_TTL)
             r.set(f"{_INFLIGHT_TASK_PREFIX}{result.id}", symbol, ex=_INFLIGHT_TTL)
 
+            # Track portfolio analysis in-flight so a page refresh shows
+            # the spinner instead of a stale report.
+            pf_key = f"{_PORTFOLIO_INFLIGHT_PREFIX}{user['email']}:{symbol}"
+            r.set(pf_key, portfolio_task_id, ex=_INFLIGHT_TTL)
+
             return jsonify(
                 {
                     "status": "started",
                     "task_id": result.id,
+                    "portfolio_task_id": portfolio_task_id,
                     "symbol": symbol,
                     "chained": True,
                 }
@@ -797,6 +834,12 @@ def create_app() -> Flask:
             avg_cost=holding.avg_cost,
             base_report_id=record.id,
         )
+
+        # Track portfolio analysis in-flight.
+        r = get_redis()
+        pf_key = f"{_PORTFOLIO_INFLIGHT_PREFIX}{user['email']}:{symbol}"
+        r.set(pf_key, task.id, ex=_INFLIGHT_TTL)
+
         return jsonify({"status": "started", "task_id": task.id, "symbol": symbol})
 
     @app.route("/api/portfolio-report/<symbol>")

@@ -364,14 +364,16 @@ document.addEventListener("DOMContentLoaded", () => {
             timeZoneName: "short",
           });
           // Localize any "3:00 PM PHT" reset tail.
+          // The server may say "after 3:00 PM PHT" or
+          // "tomorrow after 3:00 PM PHT".
           msg = msg
             .replace(
-              /Your quota resets at .+$/,
+              /Your quota resets .+$/,
               `Your quota resets at ${localTime}.`
             )
             .replace(
-              /after 3:00\u202fPM PHT\.?$/,
-              `after ${localTime}.`
+              /(tomorrow )?after 3:00\u202fPM PHT\.?$/,
+              (_, tom) => `${tom || ""}after ${localTime}.`
             );
         }
         flashError(msg, data.symbol);
