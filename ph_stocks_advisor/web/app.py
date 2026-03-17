@@ -788,6 +788,7 @@ def create_app() -> Flask:
             )
 
         # Base report exists and is fresh — dispatch portfolio analysis only.
+        assert record is not None  # guaranteed: needs_base was False
         task = portfolio_analyse_stock.delay(
             {},  # empty preceding-result placeholder
             symbol=symbol,
