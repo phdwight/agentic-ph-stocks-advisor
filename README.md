@@ -185,14 +185,18 @@ Returns **200** when all dependencies are healthy, **503** otherwise. This endpo
 
 Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis. Reports are **shared** — they are not tied to any user — but each authenticated user only sees the stocks they have personally requested to analyse. A `user_symbols` table tracks which symbols each user has analysed; anonymous users (auth disabled) see all reports. Authenticated user profiles (name, email, provider, login timestamps) are saved to a `users` table on every sign-in (upserted by `oid`).
 
+### Analysis Cadence
+
+Each stock can only be analysed **once per trading day**. The trading day resets at **3:00 PM PHT** (07:00 UTC). A report generated after 3:00 PM PHT is considered fresh until the next 3:00 PM PHT boundary. If a fresh report already exists, subsequent requests for the same stock receive the cached version instead of triggering a new analysis.
+
 ### User Types
 
 Every user is assigned a **user type** that controls access privileges:
 
 | Type | Value | Rate Limit | Cache Bypass | Per-Stock Cooldown |
 |------|-------|------------|--------------|-------------------|
-| **Normal** | `0` | 5 analyses/day (configurable via `DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served | N/A (cache rules apply) |
-| **Elevated** | `1` | Unlimited | Yes — can re-analyse stocks | 1 per UTC day per stock — re-analysis available after 00:00 UTC |
+| **Normal** | `0` | 5 analyses/day (configurable via `DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served | Once per stock per trading day (resets at 3:00 PM PHT) |
+| **Elevated** | `1` | Unlimited | Yes — can re-analyse stocks | Once per stock per trading day (resets at 3:00 PM PHT) |
 
 All new users start as **Normal**. An administrator can promote a user to **Elevated** via the SQLAdmin panel (Admin → Users → edit `user_type`). The user type is stored in the `users` table and read from the database on each login — it cannot be changed by the user themselves. Login upserts intentionally do **not** overwrite the `user_type` column.
 
@@ -203,12 +207,13 @@ Elevated users can record their stock positions and receive **personalised portf
 1. **My Position** button appears on any report page for elevated users
 2. A modal asks for **number of shares** and **average cost per share**
 3. Holdings are saved per user per symbol and persist across sessions
-4. Clicking **Save & Analyse** triggers a dedicated **Portfolio Agent** that considers:
+4. Clicking **Save & Analyse** triggers a dedicated **Portfolio Agent** (only available **after 3:00 PM PHT**) that considers:
    - The user's cost basis and unrealised P/L
    - The latest stock analysis report
    - Current market price
-5. The agent produces a **Hold / Accumulate / Trim** recommendation with key price levels and risk considerations
-6. The portfolio advisory is **private** — only visible to the elevated user who created it
+5. If no fresh base analysis exists for the stock, one is **automatically dispatched first** (visible to all users in history), then the portfolio analysis runs
+6. The agent produces a **Hold / Accumulate / Trim** recommendation with key price levels and risk considerations
+7. The portfolio advisory is **private** — only visible to the elevated user who created it
 
 | API Endpoint | Method | Description |
 |-------------|--------|-------------|
@@ -595,7 +600,7 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth2 client secret |
 | `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
 | `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
-| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per UTC day (failed queries are not counted; resets at 00:00 UTC) |
+| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per trading day (failed queries are not counted; resets at 3:00 PM PHT / 07:00 UTC) |
 | `WEB_WORKERS` | No | `4` | Gunicorn worker processes |
 | `WEB_WORKER_CLASS` | No | `gevent` | Gunicorn worker class (`gevent`, `gthread`, `sync`, etc.) |
 | `WEB_WORKER_CONNECTIONS` | No | `1000` | Max simultaneous connections per gevent worker |

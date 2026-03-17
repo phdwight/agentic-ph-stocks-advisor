@@ -418,7 +418,8 @@ class TestHoldingsAPI:
 
     def test_portfolio_analyse_requires_holding(self, client):
         _set_elevated_user(client)
-        resp = client.post("/api/portfolio-analyse/TEL")
+        with patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True):
+            resp = client.post("/api/portfolio-analyse/TEL")
         assert resp.status_code == 400
         assert "No holding found" in resp.get_json()["error"]
 
@@ -429,7 +430,7 @@ class TestHoldingsAPI:
 
 
 class TestPortfolioCooldown:
-    """Portfolio analysis can only run once per stock per day (resets at 8 AM PHT / midnight UTC)."""
+    """Portfolio analysis can only run once per stock per day (resets at 3:00 PM PHT)."""
 
     def test_portfolio_analyse_blocked_when_already_run_today(self, client):
         """Second portfolio analysis on the same day returns 429."""
@@ -472,7 +473,8 @@ class TestPortfolioCooldown:
         repo.save_portfolio_report(pr)
 
         # Try to analyse again — should be blocked.
-        resp = client.post("/api/portfolio-analyse/TEL")
+        with patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True):
+            resp = client.post("/api/portfolio-analyse/TEL")
         assert resp.status_code == 429
         data = resp.get_json()
         assert "already run today" in data["error"]
@@ -531,7 +533,10 @@ class TestPortfolioCooldown:
         conn.close()
 
         # Now the cooldown should have passed — the endpoint should accept (needs Celery mock).
-        with patch("ph_stocks_advisor.web.tasks.portfolio_analyse_stock") as mock_task:
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.tasks.portfolio_analyse_stock") as mock_task,
+        ):
             mock_result = MagicMock()
             mock_result.id = "task-123"
             mock_task.delay.return_value = mock_result
@@ -584,11 +589,15 @@ class TestPortfolioCooldown:
         repo.save_portfolio_report(pr)
 
         # TEL should be blocked.
-        resp = client.post("/api/portfolio-analyse/TEL")
+        with patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True):
+            resp = client.post("/api/portfolio-analyse/TEL")
         assert resp.status_code == 429
 
         # SM should be allowed.
-        with patch("ph_stocks_advisor.web.tasks.portfolio_analyse_stock") as mock_task:
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.tasks.portfolio_analyse_stock") as mock_task,
+        ):
             mock_result = MagicMock()
             mock_result.id = "task-sm"
             mock_task.delay.return_value = mock_result
@@ -596,3 +605,197 @@ class TestPortfolioCooldown:
             resp = client.post("/api/portfolio-analyse/SM")
             assert resp.status_code == 200
             assert resp.get_json()["status"] == "started"
+
+
+# ---------------------------------------------------------------------------
+# Portfolio analysis 3 PM PHT gate
+# ---------------------------------------------------------------------------
+
+
+class TestPortfolioTimingGate:
+    """Portfolio analysis is only available after 3:00 PM PHT."""
+
+    def test_portfolio_analyse_blocked_before_3pm_pht(self, client):
+        """Before 3 PM PHT the endpoint returns 425 Too Early."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 1000, "avg_cost": 25.0})
+
+        with patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=False):
+            resp = client.post("/api/portfolio-analyse/TEL")
+
+        assert resp.status_code == 425
+        data = resp.get_json()
+        assert "3:00" in data["error"]
+        assert "available_at" in data
+
+    def test_portfolio_analyse_allowed_after_3pm_pht(self, client):
+        """After 3 PM PHT the endpoint proceeds normally."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 1000, "avg_cost": 25.0})
+
+        # Seed a fresh base report.
+        from ph_stocks_advisor.data.models import FinalReport, Verdict
+        from ph_stocks_advisor.infra.config import get_repository
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        repo = get_repository()
+        report = FinalReport(
+            symbol="TEL",
+            verdict=Verdict.BUY,
+            summary="Good stock.",
+            price_section="P",
+            dividend_section="D",
+            movement_section="M",
+            valuation_section="V",
+            controversy_section="C",
+        )
+        repo.save(ReportRecord.from_final_report(report))
+
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.tasks.portfolio_analyse_stock") as mock_task,
+        ):
+            mock_result = MagicMock()
+            mock_result.id = "task-123"
+            mock_task.delay.return_value = mock_result
+
+            resp = client.post("/api/portfolio-analyse/TEL")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "started"
+
+
+# ---------------------------------------------------------------------------
+# Auto-chain: base analysis dispatched when no fresh report exists
+# ---------------------------------------------------------------------------
+
+
+class TestPortfolioAutoChain:
+    """When no fresh base report exists, portfolio-analyse auto-triggers base analysis first."""
+
+    def test_chains_base_analysis_when_no_report(self, client):
+        """If no report exists at all, a linked base+portfolio analysis is dispatched."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 1000, "avg_cost": 25.0})
+
+        mock_base_result = MagicMock()
+        mock_base_result.id = "base-task-001"
+
+        mock_base_sig = MagicMock()
+        mock_base_sig.apply_async.return_value = mock_base_result
+
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.app.get_redis") as mock_redis,
+            patch("ph_stocks_advisor.web.tasks.analyse_stock") as mock_analyse,
+        ):
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_analyse.s.return_value = mock_base_sig
+
+            resp = client.post("/api/portfolio-analyse/TEL")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "started"
+        assert data["chained"] is True
+        assert data["task_id"] == "base-task-001"
+        # Verify apply_async was called with link kwarg
+        mock_base_sig.apply_async.assert_called_once()
+        _, kwargs = mock_base_sig.apply_async.call_args
+        assert "link" in kwargs
+
+    def test_chains_base_analysis_when_report_stale(self, client):
+        """If the latest report is older than the cutoff, chains base+portfolio."""
+        _set_elevated_user(client)
+        client.post("/api/holdings/TEL", json={"shares": 1000, "avg_cost": 25.0})
+
+        # Seed a stale base report (backdate past the cutoff).
+        from datetime import timedelta
+
+        from ph_stocks_advisor.data.models import FinalReport, Verdict
+        from ph_stocks_advisor.infra.config import get_repository
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        repo = get_repository()
+        report = FinalReport(
+            symbol="TEL",
+            verdict=Verdict.BUY,
+            summary="Old report.",
+            price_section="P",
+            dividend_section="D",
+            movement_section="M",
+            valuation_section="V",
+            controversy_section="C",
+        )
+        repo.save(ReportRecord.from_final_report(report))
+
+        import sqlite3
+
+        conn = sqlite3.connect(repo._db_path)  # type: ignore[attr-defined]
+        old_ts = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+        conn.execute("UPDATE reports SET created_at = ? WHERE symbol = ?", (old_ts, "TEL"))
+        conn.commit()
+        conn.close()
+
+        mock_base_result = MagicMock()
+        mock_base_result.id = "base-task-002"
+
+        mock_base_sig = MagicMock()
+        mock_base_sig.apply_async.return_value = mock_base_result
+
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.app.get_redis") as mock_redis,
+            patch("ph_stocks_advisor.web.tasks.analyse_stock") as mock_analyse,
+        ):
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_analyse.s.return_value = mock_base_sig
+
+            resp = client.post("/api/portfolio-analyse/TEL")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["chained"] is True
+
+    def test_inflight_lock_uses_base_task_id(self, client):
+        """The inflight dedup lock should store the base task's ID, not the chain's.
+
+        Regression: previously the chain result ID (portfolio task) was stored,
+        so a second /analyse request would join a task whose SSE events never
+        arrive, causing the UI to hang at "Queued...".
+        """
+        _set_elevated_user(client)
+        client.post("/api/holdings/MBT", json={"shares": 500, "avg_cost": 50.0})
+
+        mock_base_result = MagicMock()
+        mock_base_result.id = "base-task-mbt"
+
+        mock_base_sig = MagicMock()
+        mock_base_sig.apply_async.return_value = mock_base_result
+
+        with (
+            patch("ph_stocks_advisor.web.app._is_past_cutoff", return_value=True),
+            patch("ph_stocks_advisor.web.app.get_redis") as mock_redis,
+            patch("ph_stocks_advisor.web.tasks.analyse_stock") as mock_analyse,
+        ):
+            mock_redis_inst = MagicMock()
+            mock_redis.return_value = mock_redis_inst
+            mock_analyse.s.return_value = mock_base_sig
+
+            resp = client.post("/api/portfolio-analyse/MBT")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["task_id"] == "base-task-mbt"
+
+        # The inflight lock must have been set with the base task's ID.
+        calls = mock_redis_inst.set.call_args_list
+        inflight_call = [c for c in calls if c[0][0] == "analysis:inflight:MBT"]
+        assert len(inflight_call) == 1
+        assert inflight_call[0][0][1] == "base-task-mbt"
+
+        # The reverse mapping must also use the base task ID.
+        reverse_call = [c for c in calls if c[0][0] == "analysis:task:base-task-mbt"]
+        assert len(reverse_call) == 1

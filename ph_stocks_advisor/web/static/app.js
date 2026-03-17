@@ -363,14 +363,14 @@ document.addEventListener("DOMContentLoaded", () => {
             hour12: true,
             timeZoneName: "short",
           });
-          // Localize any "midnight UTC" or "resets at midnight UTC" tail.
+          // Localize any "3:00 PM PHT" reset tail.
           msg = msg
             .replace(
               /Your quota resets at .+$/,
               `Your quota resets at ${localTime}.`
             )
             .replace(
-              /after midnight UTC\.?$/,
+              /after 3:00\u202fPM PHT\.?$/,
               `after ${localTime}.`
             );
         }

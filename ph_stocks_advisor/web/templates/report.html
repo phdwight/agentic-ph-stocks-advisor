@@ -89,7 +89,7 @@
           Position: {{ "%.0f"|format(portfolio_report.shares) }} shares @ ₱{{ "%.4f"|format(portfolio_report.avg_cost) }}
           · Generated: {{ portfolio_report.created_at.strftime('%b %d, %Y %H:%M') if portfolio_report.created_at else 'N/A' }}
           {% if portfolio_on_cooldown %}
-          · <span class="cooldown-hint">Re-analysis available after 8:00 AM PHT tomorrow</span>
+          · <span class="cooldown-hint">Re-analysis available after 3:00 PM PHT</span>
           {% endif %}
         </p>
       {% endif %}
@@ -127,8 +127,9 @@
         {% endif %}
         <button type="submit" id="holding-save-btn" class="btn btn-secondary btn-sm" data-action="save">Save</button>
         <button type="submit" id="holding-analyse-btn" class="btn btn-primary btn-sm" data-action="analyse"
-          {% if portfolio_on_cooldown %}disabled title="Re-analysis available after 8:00 AM PHT tomorrow"{% endif %}
-        >{% if portfolio_on_cooldown %}Cooldown{% else %}Save &amp; Analyse{% endif %}</button>
+          {% if portfolio_on_cooldown %}disabled title="Re-analysis available after 3:00 PM PHT"
+          {% elif portfolio_before_cutoff %}disabled title="Portfolio analysis available after 3:00 PM PHT"{% endif %}
+        >{% if portfolio_on_cooldown %}Cooldown{% elif portfolio_before_cutoff %}Available after 3 PM{% else %}Save &amp; Analyse{% endif %}</button>
       </div>
     </form>
     <div id="modal-progress" class="modal-progress" style="display:none;">
