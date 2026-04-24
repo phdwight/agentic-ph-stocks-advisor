@@ -7,6 +7,7 @@ Used as the default backend for local development.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import UTC, datetime
 
 from ph_stocks_advisor.infra.repository import (
@@ -89,13 +90,24 @@ class SQLiteReportRepository(AbstractReportRepository):
 
     def __init__(self, db_path: str = "reports.db") -> None:
         self._db_path = db_path
-        self._conn: sqlite3.Connection | None = None
+        self._local = threading.local()
 
     def _get_conn(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = sqlite3.connect(self._db_path)
-            self._conn.row_factory = sqlite3.Row
-        return self._conn
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            # For ":memory:" databases each connection would otherwise see
+            # its own private DB. Use the shared-cache URI so all threads
+            # see the same in-memory schema and data.
+            if self._db_path == ":memory:":
+                conn = sqlite3.connect(
+                    "file::memory:?cache=shared",
+                    uri=True,
+                )
+            else:
+                conn = sqlite3.connect(self._db_path)
+            conn.row_factory = sqlite3.Row
+            self._local.conn = conn
+        return conn
 
     def initialize(self) -> None:
         conn = self._get_conn()
@@ -206,9 +218,10 @@ class SQLiteReportRepository(AbstractReportRepository):
         return [self._row_to_record(r) for r in rows]
 
     def close(self) -> None:
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
 
     # ------------------------------------------------------------------
     # User persistence
