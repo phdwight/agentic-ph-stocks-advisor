@@ -12,3 +12,5 @@ output/
 .python-version
 .langgraph_api/
 flask_session/
+.$langgraph-flow.drawio.bkp
+.DS_Store
