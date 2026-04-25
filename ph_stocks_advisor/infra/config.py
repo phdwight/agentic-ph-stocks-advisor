@@ -54,11 +54,10 @@ class Settings:
     # -- Redis / Celery --------------------------------------------------------
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # -- MCP server (optional) -------------------------------------------------
-    # When set, all data-fetching tools dispatch through the PH Stocks Advisor
-    # MCP server instead of executing in-process. Leave empty for the default
-    # in-process behaviour (used by tests, the standalone CLI and any local
-    # development run without Docker).
+    # -- MCP server (required) -------------------------------------------------
+    # All data-fetching tools dispatch through the PH Stocks Advisor MCP
+    # server. There is no in-process fallback — a missing value is a
+    # hard configuration error raised by ``mcp_client.get_client()``.
     mcp_server_url: str = os.getenv("MCP_SERVER_URL", "")
 
     # -- API base URLs ---------------------------------------------------------

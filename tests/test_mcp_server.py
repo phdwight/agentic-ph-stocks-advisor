@@ -157,12 +157,8 @@ def _clear_settings_cache() -> None:
     config.get_settings.cache_clear()  # type: ignore[attr-defined]
 
 
-def test_facade_uses_local_impl_when_mcp_disabled(monkeypatch):
-    """With no MCP_SERVER_URL the façade must call the in-process service."""
-    monkeypatch.setenv("MCP_SERVER_URL", "")
-    reset_client()
-    _clear_settings_cache()
-
+def test_facade_uses_local_impl_via_mcp_stub():
+    """The conftest MCP stub routes the façade call to the in-process service."""
     sample = StockPrice(symbol="TEL", current_price=999.0)
     with patch(
         "ph_stocks_advisor.data.services.price.fetch_stock_price",
@@ -175,11 +171,7 @@ def test_facade_uses_local_impl_when_mcp_disabled(monkeypatch):
 
 
 def test_facade_dispatches_through_mcp_client(monkeypatch):
-    """When MCP_SERVER_URL is set the façade must use the MCP client."""
-    monkeypatch.setenv("MCP_SERVER_URL", "http://stub.local/mcp/")
-    reset_client()
-    _clear_settings_cache()
-
+    """The façade must call ``get_client().call(tool_name, args)``."""
     fake_payload = {"symbol": "TEL", "current_price": 1234.5}
 
     class _FakeClient:
@@ -194,16 +186,8 @@ def test_facade_dispatches_through_mcp_client(monkeypatch):
     assert isinstance(result, StockPrice)
     assert result.current_price == 1234.5
 
-    monkeypatch.delenv("MCP_SERVER_URL", raising=False)
-    reset_client()
-    _clear_settings_cache()
 
-
-def test_facade_translates_mcp_error_to_symbol_not_found(monkeypatch):
-    monkeypatch.setenv("MCP_SERVER_URL", "http://stub.local/mcp/")
-    reset_client()
-    _clear_settings_cache()
-
+def test_facade_translates_mcp_error_to_symbol_not_found():
     class _FakeClient:
         def call(self, tool_name, args):
             raise SymbolNotFoundError("Symbol 'ZZZZZ' is not listed.")
@@ -215,6 +199,34 @@ def test_facade_translates_mcp_error_to_symbol_not_found(monkeypatch):
     ):
         tools.validate_symbol("ZZZZZ")
 
-    monkeypatch.delenv("MCP_SERVER_URL", raising=False)
+
+@pytest.mark.no_mcp_stub
+def test_get_client_raises_when_url_missing(monkeypatch):
+    """An unset MCP_SERVER_URL must fail loudly with a clear message."""
+    from ph_stocks_advisor.data.mcp_client import MCPNotConfiguredError, get_client
+    from ph_stocks_advisor.infra.config import Settings
+
+    monkeypatch.setattr(Settings, "mcp_server_url", "")
     reset_client()
+    _clear_settings_cache()
+
+    with pytest.raises(MCPNotConfiguredError, match="MCP_SERVER_URL is not set"):
+        get_client()
+
+    _clear_settings_cache()
+
+
+@pytest.mark.no_mcp_stub
+def test_facade_propagates_mcp_not_configured_error(monkeypatch):
+    """The data façade must surface MCPNotConfiguredError to callers."""
+    from ph_stocks_advisor.data.mcp_client import MCPNotConfiguredError
+    from ph_stocks_advisor.infra.config import Settings
+
+    monkeypatch.setattr(Settings, "mcp_server_url", "")
+    reset_client()
+    _clear_settings_cache()
+
+    with pytest.raises(MCPNotConfiguredError):
+        tools.fetch_stock_price("TEL")
+
     _clear_settings_cache()

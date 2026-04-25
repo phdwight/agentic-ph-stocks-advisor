@@ -86,7 +86,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_MINI_MODEL: ${OPENAI_MINI_MODEL:-gpt-4o-mini}
       OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.0}
-      # ── MCP server ────────────────────────────────────────────────────────
+      # ── MCP server (required — the advisor has no in-process fallback) ──
       MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8000/mcp/}
       # ── Web search (optional) ─────────────────────────────────────────────
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
