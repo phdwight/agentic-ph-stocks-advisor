@@ -189,12 +189,22 @@ _client: _SyncMCPClient | None = None
 _client_lock = threading.Lock()
 
 
-def get_client(url: str | None = None) -> _SyncMCPClient | None:
-    """Return the shared MCP client, or ``None`` when MCP is disabled.
+class MCPNotConfiguredError(RuntimeError):
+    """Raised when ``MCP_SERVER_URL`` is not configured.
 
-    The URL is read from ``settings.mcp_server_url`` when not supplied. If
-    that value is empty the function returns ``None`` so callers can fall
-    back to in-process execution.
+    The advisor depends entirely on the MCP server for market data — there
+    is no in-process fallback. A missing ``MCP_SERVER_URL`` is therefore a
+    hard configuration error, not a recoverable condition.
+    """
+
+
+def get_client(url: str | None = None) -> _SyncMCPClient:
+    """Return the shared MCP client.
+
+    The URL is read from ``settings.mcp_server_url`` when not supplied.
+    Raises :class:`MCPNotConfiguredError` when the URL is empty so callers
+    fail fast with a clear, actionable message instead of silently doing
+    the wrong thing.
     """
     if url is None:
         from ph_stocks_advisor.infra.config import get_settings
@@ -202,7 +212,12 @@ def get_client(url: str | None = None) -> _SyncMCPClient | None:
         url = get_settings().mcp_server_url
 
     if not url:
-        return None
+        raise MCPNotConfiguredError(
+            "MCP_SERVER_URL is not set. The advisor requires the PH Stocks "
+            "Advisor MCP server for all market-data calls. Start the MCP "
+            "service (e.g. via docker compose) and set "
+            "MCP_SERVER_URL=http://mcp:8000/mcp/ (or the appropriate URL)."
+        )
 
     global _client
     with _client_lock:

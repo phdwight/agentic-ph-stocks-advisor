@@ -96,6 +96,75 @@ def make_structured_mock_llm(structured_response: Any) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
+# In-process MCP stub
+#
+# Production code requires a real MCP server (no in-process fallback). Tests
+# must not spin one up, so this autouse fixture replaces ``get_client`` in
+# both ``mcp_client`` and ``tools`` with a stub that dispatches each tool
+# name to the corresponding in-process service. Tests that patch
+# ``ph_stocks_advisor.data.services.*`` therefore keep working unchanged.
+#
+# Tests that need to verify the *real* MCP-required behaviour (i.e. that
+# ``get_client()`` raises when the URL is missing) should mark themselves
+# with ``@pytest.mark.no_mcp_stub`` to opt out.
+# ---------------------------------------------------------------------------
+
+
+class _InProcessStubClient:
+    """Test stub that runs the same in-process services the MCP server uses."""
+
+    @staticmethod
+    def call(tool_name: str, arguments: dict[str, Any]) -> Any:
+        from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
+        from ph_stocks_advisor.data.services import (
+            controversy as _controversy,
+            dividend as _dividend,
+            movement as _movement,
+            price as _price,
+            sentiment as _sentiment,
+            valuation as _valuation,
+        )
+
+        symbol = arguments["symbol"]
+        if tool_name == "validate_symbol":
+            return validate_pse_symbol(symbol)
+        if tool_name == "get_stock_price":
+            return _price.fetch_stock_price(symbol).model_dump()
+        if tool_name == "get_dividend_info":
+            return _dividend.fetch_dividend_info(symbol).model_dump()
+        if tool_name == "get_price_movement":
+            return _movement.fetch_price_movement(symbol).model_dump()
+        if tool_name == "get_fair_value":
+            return _valuation.fetch_fair_value(symbol).model_dump()
+        if tool_name == "get_controversy_info":
+            return _controversy.fetch_controversy_info(symbol).model_dump()
+        if tool_name == "get_sentiment_info":
+            return _sentiment.fetch_sentiment_info(symbol).model_dump()
+        raise KeyError(f"Unknown MCP tool: {tool_name!r}")
+
+
+@pytest.fixture(autouse=True)
+def _stub_mcp_client(request, monkeypatch):
+    """Auto-replace ``get_client`` with the in-process stub for every test."""
+    if request.node.get_closest_marker("no_mcp_stub"):
+        return
+
+    from ph_stocks_advisor.data import mcp_client as _mcp
+    from ph_stocks_advisor.data import tools as _tools
+
+    stub = _InProcessStubClient()
+    monkeypatch.setattr(_mcp, "get_client", lambda url=None: stub)
+    monkeypatch.setattr(_tools, "get_client", lambda url=None: stub)
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "no_mcp_stub: do not auto-stub the MCP client (use the real get_client).",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Sample domain data fixtures
 # ---------------------------------------------------------------------------
 
