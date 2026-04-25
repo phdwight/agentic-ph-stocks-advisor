@@ -54,6 +54,13 @@ class Settings:
     # -- Redis / Celery --------------------------------------------------------
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+    # -- MCP server (optional) -------------------------------------------------
+    # When set, all data-fetching tools dispatch through the PH Stocks Advisor
+    # MCP server instead of executing in-process. Leave empty for the default
+    # in-process behaviour (used by tests, the standalone CLI and any local
+    # development run without Docker).
+    mcp_server_url: str = os.getenv("MCP_SERVER_URL", "")
+
     # -- API base URLs ---------------------------------------------------------
     dragonfi_base_url: str = os.getenv("DRAGONFI_BASE_URL", "https://api.dragonfi.ph/api/v2")
     pse_edge_base_url: str = os.getenv("PSE_EDGE_BASE_URL", "https://edge.pse.com.ph")

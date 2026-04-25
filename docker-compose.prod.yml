@@ -45,6 +45,20 @@ services:
       timeout: 3s
       retries: 5
 
+  # ── MCP server (PSE data tools) ────────────────────────────────────────────
+  mcp:
+    image: ${APP_IMAGE:-ghcr.io/phdwight/agentic-ph-stocks-advisor:latest}
+    restart: unless-stopped
+    environment:
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8000"
+      DRAGONFI_BASE_URL: ${DRAGONFI_BASE_URL:-https://api.dragonfi.ph/api/v2}
+      PSE_EDGE_BASE_URL: ${PSE_EDGE_BASE_URL:-https://edge.pse.com.ph}
+      TRADINGVIEW_SCANNER_URL: ${TRADINGVIEW_SCANNER_URL:-https://scanner.tradingview.com/philippines/scan}
+      HTTP_TIMEOUT: ${HTTP_TIMEOUT:-15}
+      TIMEZONE: ${TIMEZONE:-Asia/Manila}
+    entrypoint: ["ph-advisor-mcp"]
+
   # ── Flask web UI ───────────────────────────────────────────────────────────
   web:
     image: ${APP_IMAGE:-ghcr.io/phdwight/agentic-ph-stocks-advisor:latest}
@@ -53,13 +67,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mcp:
+        condition: service_started
     ports:
-      - "${WEB_PORT:-5000}:5000"
+      - "${WEB_PORT:-5180}:5000"
     environment: &shared-env
       OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_MINI_MODEL: ${OPENAI_MINI_MODEL:-gpt-4o-mini}
       OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.0}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8000/mcp/}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       TAVILY_MAX_RESULTS: ${TAVILY_MAX_RESULTS:-5}
       TAVILY_SEARCH_DEPTH: ${TAVILY_SEARCH_DEPTH:-basic}
@@ -102,7 +119,7 @@ services:
     entrypoint: ["ph-advisor-web"]
     command: ["--host", "0.0.0.0", "--port", "5000"]
 
-  # ── Celery worker ──────────────────────────────────────────────────────────
+  # ── Celery worker ─────────────────────────────────────────────────────────
   worker:
     image: ${APP_IMAGE:-ghcr.io/phdwight/agentic-ph-stocks-advisor:latest}
     depends_on:
@@ -110,6 +127,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mcp:
+        condition: service_started
     environment:
       <<: *shared-env
     volumes:
@@ -125,7 +144,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "${ADMIN_PORT:-8085}:8085"
+      - "${ADMIN_PORT:-5181}:8085"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ph_advisor}
       ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-sqladmin-dev-secret-change-me}

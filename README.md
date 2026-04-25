@@ -17,6 +17,8 @@ START → Validate ──────►├── Valuation Agent ────�
                         └── Sentiment Agent ────────┘
 ```
 
+A detailed diagram of the LangGraph flow — including MCP tool calls, web-search tools, and the per-node `GraphState` updates — is in [langgraph-flow.drawio](langgraph-flow.drawio) (open with [draw.io](https://app.diagrams.net/) or the VS Code Draw.io extension).
+
 | Agent | Responsibility |
 |-------|---------------|
 | **Price Agent** | Current price vs 52-week range, price catalysts |
@@ -45,7 +47,7 @@ The data layer cascades through multiple sources for resilience:
 - **O**pen/Closed – new agents are added via `AGENT_REGISTRY` in `workflow.py`; new export formats are added by subclassing `OutputFormatter` and registering in `FORMATTER_REGISTRY`; existing code needs no changes
 - **L**iskov Substitution – `get_llm()` returns `BaseChatModel`; any LangChain-compatible LLM provider works. `PdfFormatter` and `HtmlFormatter` are drop-in replacements for `OutputFormatter`
 - **I**nterface Segregation – tool functions return narrow, typed Pydantic models; `OutputFormatter` exposes only `render()`, `write()`, and metadata properties
-- **D**ependency Inversion – LLM is injected into `build_graph(llm=...)` and closed over in nodes; repository layer uses an ABC with SQLite/Postgres implementations; export uses `OutputFormatter` ABC
+- **D**ependency Inversion – LLM is injected into `build_graph(llm=...)` and closed over in nodes; repository layer uses an ABC with SQLite/Postgres implementations; export uses `OutputFormatter` ABC; data tools depend on the `data/tools.py` façade which transparently swaps the in-process service for a remote MCP client based on configuration
 
 ## Setup
 
@@ -71,12 +73,13 @@ pip install -e ".[postgres]"
 
 ### Docker (recommended for deployment)
 
-The project ships with a multi-stage `Dockerfile` and a Compose v2 file with four services:
+The project ships with a multi-stage `Dockerfile` and a Compose v2 file with five services:
 
 | Container | Role |
 |-----------|------|
 | **db** | PostgreSQL 16 — persistent report storage |
 | **redis** | Redis 7 — Celery message broker & result backend |
+| **mcp** | PH Stocks Advisor MCP server — PSE data tools over Streamable HTTP (port 8000) |
 | **web** | Flask web UI via Gunicorn + gevent (port 5000) |
 | **worker** | Celery worker — runs stock analyses in the background |
 | **advisor** | One-shot CLI analysis (optional) |
@@ -90,7 +93,7 @@ cp .env.example .env
 docker compose up --build -d web worker
 
 # 3. Open the web UI
-open http://localhost:5000
+open http://localhost:5180
 
 # 4. Or run a one-shot CLI analysis
 docker compose run --rm advisor TEL
@@ -230,7 +233,7 @@ The web UI supports **Microsoft Entra ID** and **Google** login with **passkey (
 #### Microsoft Entra ID
 
 1. **Register an app** in the [Azure portal](https://portal.azure.com) → Microsoft Entra ID → App registrations:
-   - **Redirect URI** → `http://localhost:5000/auth/callback` (Web platform)
+   - **Redirect URI** → `http://localhost:5180/auth/callback` (Web platform)
    - Note the **Application (client) ID** and create a **Client secret**
 2. **Enable FIDO2 passkeys** in your Entra ID tenant (Security → Authentication methods → FIDO2 security key)
 3. Set the environment variables:
@@ -246,7 +249,7 @@ FLASK_SECRET_KEY=<random-secret>
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
 2. Create an **OAuth 2.0 Client ID** (Web application type):
-   - **Authorized redirect URI** → `http://localhost:5000/auth/google/callback`
+   - **Authorized redirect URI** → `http://localhost:5180/auth/google/callback`
    - For Azure deployment also add: `https://<your-app>.azurecontainerapps.io/auth/google/callback`
 3. Set the environment variables:
 
@@ -369,6 +372,7 @@ Dockerfile                         # Multi-stage container image
 docker-compose.yml                 # Compose v2 — local dev (builds from source)
 docker-compose.prod.yml            # Compose v2 — production (pulls pre-built GHCR images)
 .dockerignore                      # Files excluded from Docker build context
+langgraph-flow.drawio              # Draw.io diagram of the LangGraph flow, MCP tools & state updates
 .github/
 └── workflows/
     ├── develop-ci.yml             # CI — lint, type-check, test (develop branch)
@@ -421,7 +425,8 @@ ph_stocks_advisor/
 ├── data/
 │   ├── __init__.py
 │   ├── models.py              # Pydantic data models & graph state
-│   ├── tools.py               # Re-export façade (backward compat)
+│   ├── tools.py               # Façade — dispatches to MCP server or in-process services
+│   ├── mcp_client.py          # Synchronous client for the PH Stocks Advisor MCP server
 │   ├── clients/               # External API clients
 │   │   ├── dragonfi.py        #   DragonFi API (price, dividends, valuation, news)
 │   │   ├── pse_edge.py        #   PSE EDGE daily OHLCV history
@@ -447,10 +452,15 @@ ph_stocks_advisor/
     ├── repository.py          # Abstract repository interface
     ├── repository_sqlite.py   # SQLite implementation (default)
     └── repository_postgres.py # PostgreSQL implementation
+ph_stocks_mcp/                     # MCP server exposing the data tools
+├── __init__.py
+├── __main__.py                #   Entry point (ph-advisor-mcp)
+└── server.py                  #   FastMCP server wiring
 
 tests/
 ├── conftest.py                # Shared fixtures, mock helpers & trajectory tracker
 ├── test_tools.py
+├── test_mcp_server.py         # MCP server tools + façade dispatch behaviour
 ├── test_agents.py
 ├── test_auth.py               # Entra ID auth blueprint tests
 ├── test_company_dividends.py  # DividendAnnouncement model & company page scraper tests
@@ -589,8 +599,10 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `CATALYST_NEAR_HIGH_PCT` | No | `5` | % gap to 52-week high for "near high" catalyst |
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection URL (broker + result backend for Celery) |
 | `REDIS_PORT` | No | `6379` | Host port for Redis (Docker Compose only) |
-| `WEB_PORT` | No | `5000` | Host port for the Flask web UI (Docker Compose only) |
-| `ADMIN_PORT` | No | `8085` | Host port for the SQLAdmin panel (Docker Compose only) |
+| `MCP_SERVER_URL` | No | _(empty)_ | When set, all data tools dispatch through the PH Stocks Advisor MCP server (e.g. `http://mcp:8000/mcp/`). Leave empty for in-process execution (CLI / local dev / tests). |
+| `MCP_PORT` | No | `8000` | Host port for the MCP server (Docker Compose only) |
+| `WEB_PORT` | No | `5180` | Host port for the Flask web UI (Docker Compose only) |
+| `ADMIN_PORT` | No | `5181` | Host port for the SQLAdmin panel (Docker Compose only) |
 | `ADMIN_SECRET_KEY` | No | `sqladmin-dev-…` | Flask secret key for the admin panel |
 | `ENTRA_CLIENT_ID` | No | — | Microsoft Entra ID application (client) ID (enables login) |
 | `ENTRA_CLIENT_SECRET` | No | — | Entra ID client secret |
