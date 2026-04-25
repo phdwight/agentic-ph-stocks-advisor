@@ -118,10 +118,20 @@ class _InProcessStubClient:
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
         from ph_stocks_advisor.data.services import (
             controversy as _controversy,
+        )
+        from ph_stocks_advisor.data.services import (
             dividend as _dividend,
+        )
+        from ph_stocks_advisor.data.services import (
             movement as _movement,
+        )
+        from ph_stocks_advisor.data.services import (
             price as _price,
+        )
+        from ph_stocks_advisor.data.services import (
             sentiment as _sentiment,
+        )
+        from ph_stocks_advisor.data.services import (
             valuation as _valuation,
         )
 
