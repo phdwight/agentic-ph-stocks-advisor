@@ -1,6 +1,6 @@
 [project]
 name = "ph-stocks-advisor"
-version = "1.0.5"
+version = "2.0.0"
 description = "Agentic AI Philippine Stock Market Advisor"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,6 +22,7 @@ dependencies = [
     "flask-session>=0.5",
     "gunicorn>=22.0",
     "gevent>=24.0",
+    "mcp>=1.2",
 ]
 
 [project.optional-dependencies]
@@ -40,9 +41,10 @@ ph-advisor = "ph_stocks_advisor.main:main"
 ph-advisor-pdf = "ph_stocks_advisor.export.pdf:main"
 ph-advisor-html = "ph_stocks_advisor.export.html:main"
 ph-advisor-web = "ph_stocks_advisor.web.app:main"
+ph-advisor-mcp = "ph_stocks_mcp.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["ph_stocks_advisor*"]
+include = ["ph_stocks_advisor*", "ph_stocks_mcp*"]
 
 [tool.setuptools.package-data]
 ph_stocks_advisor = [
@@ -89,5 +91,5 @@ pythonVersion = "3.11"
 typeCheckingMode = "basic"
 reportMissingImports = true
 reportMissingTypeStubs = false
-include = ["ph_stocks_advisor/", "tests/"]
+include = ["ph_stocks_advisor/", "ph_stocks_mcp/", "tests/"]
 exclude = ["admin/"]

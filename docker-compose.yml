@@ -10,7 +10,7 @@ services:
     # Port is NOT exposed to the host by default (security best practice).
     # Uncomment the next two lines for local development debugging:
     # ports:
-    #   - "${POSTGRES_PORT:-5432}:5432"
+    #   - "${POSTGRES_PORT:-5182}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -26,12 +26,45 @@ services:
     # Port is NOT exposed to the host by default (security best practice).
     # Uncomment the next two lines for local development debugging:
     # ports:
-    #   - "${REDIS_PORT:-6379}:6379"
+    #   - "${REDIS_PORT:-5183}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # ── MCP server (PSE data tools) ────────────────────────────────────────────
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8000"
+      DRAGONFI_BASE_URL: ${DRAGONFI_BASE_URL:-https://api.dragonfi.ph/api/v2}
+      PSE_EDGE_BASE_URL: ${PSE_EDGE_BASE_URL:-https://edge.pse.com.ph}
+      TRADINGVIEW_SCANNER_URL: ${TRADINGVIEW_SCANNER_URL:-https://scanner.tradingview.com/philippines/scan}
+      HTTP_TIMEOUT: ${HTTP_TIMEOUT:-15}
+      TIMEZONE: ${TIMEZONE:-Asia/Manila}
+      # ── Analysis thresholds (mirrored so the in-server services use the
+      #    same configuration as the rest of the stack) ──────────────────────
+      TREND_UP_THRESHOLD: ${TREND_UP_THRESHOLD:-5}
+      TREND_DOWN_THRESHOLD: ${TREND_DOWN_THRESHOLD:--5}
+      SPIKE_STD_MULTIPLIER: ${SPIKE_STD_MULTIPLIER:-3}
+      SPIKE_MIN_ABS_RETURN: ${SPIKE_MIN_ABS_RETURN:-0.05}
+      HIGH_VOLATILITY_THRESHOLD: ${HIGH_VOLATILITY_THRESHOLD:-0.03}
+      OVERVALUATION_MULTIPLIER: ${OVERVALUATION_MULTIPLIER:-1.3}
+      DISTRESS_MULTIPLIER: ${DISTRESS_MULTIPLIER:-0.7}
+      CATALYST_YIELD_THRESHOLD: ${CATALYST_YIELD_THRESHOLD:-3.0}
+      CATALYST_RANGE_PCT: ${CATALYST_RANGE_PCT:-65}
+      CATALYST_DAY_CHANGE_PCT: ${CATALYST_DAY_CHANGE_PCT:-0.5}
+      CATALYST_NEAR_HIGH_PCT: ${CATALYST_NEAR_HIGH_PCT:-5}
+    # Port is NOT exposed to the host by default — only sibling services
+    # need to reach it. Uncomment for local debugging.
+    ports:
+      - "${MCP_HOST_PORT:-5184}:8000"
+    entrypoint: ["ph-advisor-mcp"]
 
   # ── Flask web UI ───────────────────────────────────────────────────────────
   web:
@@ -43,14 +76,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mcp:
+        condition: service_started
     ports:
-      - "${WEB_PORT:-5000}:5000"
+      - "${WEB_PORT:-5180}:5000"
     environment: &shared-env
       # ── LLM (required) ────────────────────────────────────────────────────
       OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_MINI_MODEL: ${OPENAI_MINI_MODEL:-gpt-4o-mini}
       OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.0}
+      # ── MCP server ────────────────────────────────────────────────────────
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8000/mcp/}
       # ── Web search (optional) ─────────────────────────────────────────────
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       TAVILY_MAX_RESULTS: ${TAVILY_MAX_RESULTS:-5}
@@ -114,6 +151,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mcp:
+        condition: service_started
     environment:
       <<: *shared-env
     volumes:
@@ -129,6 +168,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      mcp:
+        condition: service_started
     environment:
       <<: *shared-env
     volumes:
@@ -146,7 +187,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "${ADMIN_PORT:-8085}:8085"
+      - "${ADMIN_PORT:-5181}:8085"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ph_advisor}
       ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-sqladmin-dev-secret-change-me}

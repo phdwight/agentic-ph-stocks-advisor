@@ -372,7 +372,7 @@ class TestValidateSymbol:
         result = validate_symbol("SM.PS")
         assert result == "SM"
 
-    @patch("ph_stocks_advisor.data.tools.validate_pse_symbol")
+    @patch("ph_stocks_advisor.data.clients.dragonfi.validate_pse_symbol")
     def test_invalid_symbol_raises(self, mock_validate):
         mock_validate.side_effect = SymbolNotFoundError("not found")
         with pytest.raises(SymbolNotFoundError, match="not found"):
