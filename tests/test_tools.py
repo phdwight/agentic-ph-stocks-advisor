@@ -873,34 +873,23 @@ class TestTavilySearch:
         mock_client.search.assert_called_once()
 
     @patch("ph_stocks_advisor.data.clients.tavily_search._search")
-    def test_search_dividend_news_formats_results(self, mock_search):
+    def test_search_global_events_formats_results(self, mock_search):
         mock_search.return_value = [
             {
-                "title": "AREIT declares dividend",
+                "title": "Major typhoon hits Luzon",
                 "url": "https://example.com",
-                "content": "PHP 0.56/share",
-                "score": 0.8,
+                "content": "Severe weather disrupts power grid",
+                "score": 0.9,
             },
         ]
-        from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news
+        from ph_stocks_advisor.data.clients.tavily_search import search_global_events
 
-        result = search_dividend_news("AREIT", company_name="AREIT Inc.")
-        assert "AREIT declares dividend" in result
-        assert "PHP 0.56/share" in result
-
-    @patch("ph_stocks_advisor.data.clients.tavily_search._search")
-    def test_search_stock_controversies(self, mock_search):
-        mock_search.return_value = [
-            {"title": "SEC inquiry", "url": "https://x.com", "content": "Probe ongoing", "score": 0.7},
-        ]
-        from ph_stocks_advisor.data.clients.tavily_search import search_stock_controversies
-
-        result = search_stock_controversies("TEL", company_name="PLDT Inc.")
-        assert "SEC inquiry" in result
+        result = search_global_events("TEL")
+        assert "Major typhoon hits Luzon" in result
+        assert "Severe weather disrupts power grid" in result
 
     @patch("ph_stocks_advisor.data.clients.tavily_search._search", return_value=[])
     def test_empty_search_returns_fallback_message(self, _mock):
-        from ph_stocks_advisor.data.clients.tavily_search import search_dividend_news, search_stock_news
+        from ph_stocks_advisor.data.clients.tavily_search import search_global_events
 
-        assert "No recent dividend news" in search_dividend_news("XYZ")
-        assert "No recent news" in search_stock_news("XYZ")
+        assert "No significant global events" in search_global_events("XYZ")

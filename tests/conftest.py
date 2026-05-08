@@ -2,7 +2,7 @@
 Shared test fixtures and helpers.
 
 Provides:
-- LangSmith tracing suppression for test sessions
+- Langfuse tracing suppression for test sessions
 - Mock LLM factories (plain & structured-output)
 - Trajectory-tracking mock LLM for verifying agent step sequences
 - Sample domain data fixtures
@@ -18,17 +18,16 @@ import pytest
 from langchain_core.messages import AIMessage
 
 # ---------------------------------------------------------------------------
-# Disable LangSmith tracing for the entire test session so mocked
+# Disable Langfuse tracing for the entire test session so mocked
 # LangGraph runs don't show up as real traces in the dashboard.
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True, scope="session")
-def _disable_langsmith_tracing():
-    """Turn off LangSmith / LangChain tracing during tests."""
+def _disable_langfuse_tracing():
+    """Turn off Langfuse tracing during tests."""
     env_overrides = {
-        "LANGCHAIN_TRACING_V2": "false",
-        "LANGSMITH_TRACING": "false",
+        "LANGFUSE_TRACING_ENABLED": "false",
     }
     old_values = {k: os.environ.get(k) for k in env_overrides}
     os.environ.update(env_overrides)

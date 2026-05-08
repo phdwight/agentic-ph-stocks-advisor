@@ -70,8 +70,7 @@ jobs:
       - name: Run unit tests
         run: uv run pytest tests/ -v -m "not integration" --tb=short
         env:
-          LANGCHAIN_TRACING_V2: "false"
-          LANGSMITH_TRACING: "false"
+          LANGFUSE_TRACING_ENABLED: "false"
 
   # ── Integration tests (real LLM calls, requires secrets) ─────────────────
   integration-tests:
@@ -97,9 +96,11 @@ jobs:
           uv run pytest tests/ -v -m "integration" --tb=short || code=$?; if [ "${code:-0}" -eq 5 ]; then echo "No integration tests found — skipping."; exit 0; else exit "${code:-0}"; fi
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
-          LANGCHAIN_TRACING_V2: "true"
-          LANGCHAIN_PROJECT: "ph-stocks-advisor-ci"
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+          LANGFUSE_TRACING_ENABLED: "true"
+          LANGFUSE_TRACING_ENVIRONMENT: "ci"
 
   # ── Build & push Docker images to GHCR ────────────────────────────────────
   build-images:

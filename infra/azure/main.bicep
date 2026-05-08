@@ -45,11 +45,18 @@ param tavilyApiKey string = ''
 param openaiModel string = 'gpt-4o-mini'
 
 @secure()
-@description('LangSmith API key (optional — for tracing).')
-param langsmithApiKey string = ''
+@description('Langfuse public key (optional — for tracing).')
+param langfusePublicKey string = ''
 
-@description('LangSmith project name.')
-param langsmithProject string = 'ph-stocks-advisor'
+@secure()
+@description('Langfuse secret key (optional — for tracing).')
+param langfuseSecretKey string = ''
+
+@description('Langfuse host (e.g. https://cloud.langfuse.com).')
+param langfuseHost string = 'https://cloud.langfuse.com'
+
+@description('Langfuse tracing environment label.')
+param langfuseEnvironment string = 'production'
 
 @secure()
 @description('Microsoft Entra ID application (client) ID (optional — leave empty to disable auth).')
@@ -286,9 +293,11 @@ var sharedEnv = [
   { name: 'HTTP_TIMEOUT', value: '15' }
   { name: 'TIMEZONE', value: 'Asia/Manila' }
   { name: 'OUTPUT_DIR', value: '/app/output' }
-  { name: 'LANGSMITH_API_KEY', secretRef: 'langsmith-api-key' }
-  { name: 'LANGSMITH_TRACING', value: 'true' }
-  { name: 'LANGSMITH_PROJECT', value: langsmithProject }
+  { name: 'LANGFUSE_PUBLIC_KEY', secretRef: 'langfuse-public-key' }
+  { name: 'LANGFUSE_SECRET_KEY', secretRef: 'langfuse-secret-key' }
+  { name: 'LANGFUSE_HOST', value: langfuseHost }
+  { name: 'LANGFUSE_TRACING_ENABLED', value: 'true' }
+  { name: 'LANGFUSE_TRACING_ENVIRONMENT', value: langfuseEnvironment }
   { name: 'ENTRA_CLIENT_ID', secretRef: 'entra-client-id' }
   { name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }
   { name: 'ENTRA_TENANT_ID', value: entraTenantId }
@@ -314,7 +323,8 @@ var secrets = [
   { name: 'tavily-api-key', value: empty(tavilyApiKey) ? 'NOTSET' : tavilyApiKey }
   { name: 'postgres-dsn', value: 'postgresql://${pgAdminUser}:${pgAdminPassword}@${pgServer.properties.fullyQualifiedDomainName}:5432/${pgDatabaseName}?sslmode=require' }
   { name: 'redis-url', value: redisInternalUrl }
-  { name: 'langsmith-api-key', value: empty(langsmithApiKey) ? 'NOTSET' : langsmithApiKey }
+  { name: 'langfuse-public-key', value: empty(langfusePublicKey) ? 'NOTSET' : langfusePublicKey }
+  { name: 'langfuse-secret-key', value: empty(langfuseSecretKey) ? 'NOTSET' : langfuseSecretKey }
   { name: 'entra-client-id', value: empty(entraClientId) ? 'NOTSET' : entraClientId }
   { name: 'entra-client-secret', value: empty(entraClientSecret) ? 'NOTSET' : entraClientSecret }
   { name: 'flask-secret-key', value: flaskSecretKey }

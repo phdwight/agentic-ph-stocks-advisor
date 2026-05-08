@@ -85,45 +85,6 @@ def _search(
 # ---------------------------------------------------------------------------
 
 
-def search_dividend_news(symbol: str, company_name: str = "") -> str:
-    """Search the web for recent dividend announcements for a PSE stock.
-
-    Returns a formatted string of search results (or a fallback message
-    if no results are found / Tavily is not configured).
-    """
-    logger.info("Tavily search_dividend_news invoked — symbol=%s, company=%s", symbol, company_name)
-    name_part = f" ({company_name})" if company_name else ""
-    year = get_today().year
-    query = f"{symbol}{name_part} Philippine stock dividend announcement declaration ex-date {year - 1} OR {year}"
-    results = _search(query)
-    return _format_results(results, fallback="No recent dividend news found via web search.")
-
-
-def search_stock_news(symbol: str, company_name: str = "") -> str:
-    """Search the web for recent news, analyst coverage, and events.
-
-    Returns a formatted string of search results.
-    """
-    logger.info("Tavily search_stock_news invoked — symbol=%s, company=%s", symbol, company_name)
-    name_part = f" ({company_name})" if company_name else ""
-    year = get_today().year
-    query = f"{symbol}{name_part} Philippine stock PSE latest news {year - 1} OR {year}"
-    results = _search(query)
-    return _format_results(results, fallback="No recent news found via web search.")
-
-
-def search_stock_controversies(symbol: str, company_name: str = "") -> str:
-    """Search the web for controversies, regulatory issues, or negative events.
-
-    Returns a formatted string of search results.
-    """
-    logger.info("Tavily search_stock_controversies invoked — symbol=%s, company=%s", symbol, company_name)
-    name_part = f" ({company_name})" if company_name else ""
-    query = f"{symbol}{name_part} Philippine stock controversy risk issue SEC regulatory concern"
-    results = _search(query, max_results=3, search_depth="basic")
-    return _format_results(results, fallback="No controversies found via web search.")
-
-
 def search_global_events(symbol: str, company_name: str = "") -> str:
     """Search the web for global events that may impact the Philippine market.
 

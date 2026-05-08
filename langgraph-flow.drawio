@@ -57,11 +57,11 @@
           <mxGeometry x="40" y="450" width="220" height="90" as="geometry" />
         </mxCell>
 
-        <mxCell id="dividend_agent" value="&lt;b&gt;dividend_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm + tools&lt;br&gt;Yield &amp;amp; sustainability&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: dividend_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
+        <mxCell id="dividend_agent" value="&lt;b&gt;dividend_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm&lt;br&gt;Yield &amp;amp; sustainability&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: dividend_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
           <mxGeometry x="290" y="450" width="220" height="90" as="geometry" />
         </mxCell>
 
-        <mxCell id="movement_agent" value="&lt;b&gt;movement_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm + tools&lt;br&gt;Trend, volatility, patterns&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: movement_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
+        <mxCell id="movement_agent" value="&lt;b&gt;movement_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm&lt;br&gt;Trend, volatility, patterns&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: movement_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
           <mxGeometry x="540" y="450" width="220" height="90" as="geometry" />
         </mxCell>
 
@@ -69,11 +69,11 @@
           <mxGeometry x="790" y="450" width="220" height="90" as="geometry" />
         </mxCell>
 
-        <mxCell id="controversy_agent" value="&lt;b&gt;controversy_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm + tools&lt;br&gt;Risks, anomalies, controversies&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: controversy_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
+        <mxCell id="controversy_agent" value="&lt;b&gt;controversy_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm&lt;br&gt;Risks, anomalies, controversies&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: controversy_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
           <mxGeometry x="1040" y="450" width="220" height="90" as="geometry" />
         </mxCell>
 
-        <mxCell id="sentiment_agent" value="&lt;b&gt;sentiment_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm + tools&lt;br&gt;Macro / geopolitical sentiment&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: sentiment_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
+        <mxCell id="sentiment_agent" value="&lt;b&gt;sentiment_agent&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;⚡ mini_llm&lt;br&gt;Macro / geopolitical sentiment&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: sentiment_analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=15;" vertex="1" parent="1">
           <mxGeometry x="1290" y="450" width="220" height="90" as="geometry" />
         </mxCell>
 
@@ -180,45 +180,6 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="web_cluster" value="&lt;b&gt;Web Search Tools (Tavily)&lt;/b&gt;  &lt;font style=&quot;font-size:10px;&quot;&gt;LangChain @tool — bound to specialist LLMs via .bind_tools(); LLM autonomously decides when to invoke.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0ff;strokeColor=#3366cc;fontSize=12;fontStyle=1;arcSize=10;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
-          <mxGeometry x="40" y="800" width="1470" height="100" as="geometry" />
-        </mxCell>
-
-        <mxCell id="tool_div_news" value="🔧 search_dividend_news" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe0ff;strokeColor=#3366cc;fontSize=11;arcSize=15;" vertex="1" parent="1">
-          <mxGeometry x="290" y="840" width="220" height="40" as="geometry" />
-        </mxCell>
-
-        <mxCell id="tool_stock_news" value="🔧 search_stock_news" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe0ff;strokeColor=#3366cc;fontSize=11;arcSize=15;" vertex="1" parent="1">
-          <mxGeometry x="540" y="840" width="220" height="40" as="geometry" />
-        </mxCell>
-
-        <mxCell id="tool_controv" value="🔧 search_stock_controversies" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe0ff;strokeColor=#3366cc;fontSize=11;arcSize=15;" vertex="1" parent="1">
-          <mxGeometry x="1040" y="840" width="220" height="40" as="geometry" />
-        </mxCell>
-
-        <mxCell id="tool_global" value="🔧 search_global_events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe0ff;strokeColor=#3366cc;fontSize=11;arcSize=15;" vertex="1" parent="1">
-          <mxGeometry x="1290" y="840" width="220" height="40" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e_div_search" style="endArrow=open;dashed=1;strokeColor=#3366cc;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="dividend_agent" target="tool_div_news">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_mov_search" style="endArrow=open;dashed=1;strokeColor=#3366cc;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="movement_agent" target="tool_stock_news">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_contr_search1" style="endArrow=open;dashed=1;strokeColor=#3366cc;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="controversy_agent" target="tool_stock_news">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_contr_search2" style="endArrow=open;dashed=1;strokeColor=#3366cc;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="controversy_agent" target="tool_controv">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_sent_search1" style="endArrow=open;dashed=1;strokeColor=#3366cc;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="sentiment_agent" target="tool_global">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_sent_search2" style="endArrow=open;dashed=1;strokeColor=#3366cc;strokeWidth=1.5;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="sentiment_agent" target="tool_stock_news">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
         <mxCell id="consolidator" value="&lt;b&gt;consolidator&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;publish STEP_CONSOLIDATING&lt;br&gt;🧠 primary llm&lt;br&gt;Synthesises all 6 analyses into a&lt;br&gt;FinalReport (BUY / NOT BUY)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#0066cc&quot; style=&quot;font-size:9px;&quot;&gt;writes: final_report&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;arcSize=15;" vertex="1" parent="1">
           <mxGeometry x="660" y="950" width="240" height="120" as="geometry" />
         </mxCell>
@@ -322,20 +283,14 @@
         <mxCell id="leg5_t" value="MCP tool (FastMCP — ph_stocks_mcp.server)" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="100" y="1085" width="290" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="leg6" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe0ff;strokeColor=#3366cc;arcSize=15;" vertex="1" parent="1">
+        <mxCell id="leg6" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5d6e8;strokeColor=#a64d79;arcSize=15;" vertex="1" parent="1">
           <mxGeometry x="60" y="1110" width="30" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="leg6_t" value="LangChain @tool — Tavily web search (LLM-invoked)" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="100" y="1110" width="300" height="20" as="geometry" />
+        <mxCell id="leg6_t" value="Post-graph portfolio agent (elevated users)" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1110" width="290" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="leg7" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5d6e8;strokeColor=#a64d79;arcSize=15;" vertex="1" parent="1">
-          <mxGeometry x="60" y="1135" width="30" height="20" as="geometry" />
-        </mxCell>
-        <mxCell id="leg7_t" value="Post-graph portfolio agent (elevated users)" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="100" y="1135" width="290" height="20" as="geometry" />
-        </mxCell>
-        <mxCell id="leg8_t" value="⚡ mini_llm  •  🧠 primary llm  •  🔧 LLM-invoked tool  •  &lt;font color=&quot;#0066cc&quot;&gt;{key}&lt;/font&gt; = state update" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="60" y="1160" width="370" height="20" as="geometry" />
+        <mxCell id="leg8_t" value="⚡ mini_llm  •  🧠 primary llm  •  &lt;font color=&quot;#0066cc&quot;&gt;{key}&lt;/font&gt; = state update" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1135" width="370" height="20" as="geometry" />
         </mxCell>
 
       </root>

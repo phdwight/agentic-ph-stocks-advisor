@@ -2,15 +2,16 @@
 Specialist analysis agents.
 
 Each agent follows the Single Responsibility Principle: it fetches the data
-it needs, sends it to the LLM with its specialist prompt, and returns a
-typed analysis model.
+it needs (via the MCP data tools), sends it to the LLM with its specialist
+prompt, and returns a typed analysis model.
 
 Dependency Inversion: agents depend on the abstract `BaseChatModel` interface,
 not on a concrete OpenAI class.
 
-The Dividend, Movement, and Controversy agents have LangChain tools bound
-so the LLM can autonomously decide whether to invoke a web search (Tavily)
-for additional context.
+Agents do NOT bind any non-MCP LangChain tools to the LLM. All external
+data flows through the PH Stocks Advisor MCP server (see
+``ph_stocks_advisor.data.tools``); the LLM only receives that pre-fetched
+data in its prompt.
 """
 
 from __future__ import annotations
@@ -18,8 +19,7 @@ from __future__ import annotations
 import logging
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, ToolMessage
-from langchain_core.tools import BaseTool
+from langchain_core.messages import HumanMessage
 
 from ph_stocks_advisor.agents.prompts import (
     CONTROVERSY_ANALYSIS_PROMPT,
@@ -49,59 +49,10 @@ from ph_stocks_advisor.infra.config import get_today
 
 logger = logging.getLogger(__name__)
 
-# Maximum number of tool-calling rounds before returning a final answer.
-_MAX_TOOL_ROUNDS = 2
 
-
-def _run_with_tools(
-    llm: BaseChatModel,
-    prompt: str,
-    tools: list[BaseTool],
-    max_rounds: int = _MAX_TOOL_ROUNDS,
-) -> str:
-    """Invoke the LLM with optional tool calling.
-
-    If the LLM supports tool calling, the tools are bound and the LLM
-    can decide to call them zero or more times.  After *max_rounds*
-    tool-calling iterations (or when the LLM stops calling tools),
-    the final text response is returned.
-
-    Falls back to a plain invocation when ``bind_tools`` is not supported.
-    """
-    if not tools:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        return str(response.content)
-
-    try:
-        llm_with_tools = llm.bind_tools(tools)
-    except (NotImplementedError, AttributeError):
-        # LLM does not support tool calling — fall back to plain invoke.
-        response = llm.invoke([HumanMessage(content=prompt)])
-        return str(response.content)
-
-    tools_map = {t.name: t for t in tools}
-    messages: list = [HumanMessage(content=prompt)]
-
-    for _ in range(max_rounds + 1):  # +1 for the final response
-        response = llm_with_tools.invoke(messages)
-        messages.append(response)
-
-        tool_calls = getattr(response, "tool_calls", None)
-        if not tool_calls:
-            break
-
-        for tc in tool_calls:
-            tool_fn = tools_map.get(tc["name"])
-            if tool_fn is None:
-                result = f"Unknown tool: {tc['name']}"
-            else:
-                try:
-                    result = str(tool_fn.invoke(tc["args"]))
-                except Exception as exc:
-                    logger.warning("Tool %s failed: %s", tc["name"], exc)
-                    result = f"Tool call failed: {exc}"
-            messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
-
+def _invoke_llm(llm: BaseChatModel, prompt: str) -> str:
+    """Invoke the LLM with a single human message and return its text."""
+    response = llm.invoke([HumanMessage(content=prompt)])
     return str(response.content)
 
 
@@ -118,54 +69,39 @@ class PriceAgent:
             data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        response = self._llm.invoke([HumanMessage(content=prompt)])
-        return PriceAnalysis(data=data, analysis=str(response.content))
+        return PriceAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
 
 
 class DividendAgent:
-    """Analyses dividend yield and sustainability.
-
-    Has access to a web search tool so the LLM can look up recent
-    dividend announcements if the data is insufficient.
-    """
+    """Analyses dividend yield and sustainability."""
 
     def __init__(self, llm: BaseChatModel) -> None:
         self._llm = llm
 
     def run(self, symbol: str) -> DividendAnalysis:
-        from ph_stocks_advisor.agents.web_search_tools import search_dividend_news
-
         data = fetch_dividend_info(symbol)
         prompt = DIVIDEND_ANALYSIS_PROMPT.format(
             symbol=symbol,
             data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        analysis = _run_with_tools(self._llm, prompt, [search_dividend_news])
-        return DividendAnalysis(data=data, analysis=analysis)
+        return DividendAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
 
 
 class MovementAgent:
-    """Analyses 1-year price trend, volatility, and patterns.
-
-    Has access to a web search tool so the LLM can look up recent
-    news to explain significant price movements.
-    """
+    """Analyses 1-year price trend, volatility, and patterns."""
 
     def __init__(self, llm: BaseChatModel) -> None:
         self._llm = llm
 
     def run(self, symbol: str) -> MovementAnalysis:
-        from ph_stocks_advisor.agents.web_search_tools import search_stock_news
-
         data = fetch_price_movement(symbol)
         prompt = MOVEMENT_ANALYSIS_PROMPT.format(
             symbol=symbol,
             data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        analysis = _run_with_tools(self._llm, prompt, [search_stock_news])
-        return MovementAnalysis(data=data, analysis=analysis)
+        return MovementAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
 
 
 class ValuationAgent:
@@ -181,34 +117,23 @@ class ValuationAgent:
             data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        response = self._llm.invoke([HumanMessage(content=prompt)])
-        return ValuationAnalysis(data=data, analysis=str(response.content))
+        return ValuationAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
 
 
 class ControversyAgent:
-    """Detects price anomalies and flags risk factors.
-
-    Has access to web search tools so the LLM can look up recent
-    news and controversies for additional risk context.
-    """
+    """Detects price anomalies and flags risk factors."""
 
     def __init__(self, llm: BaseChatModel) -> None:
         self._llm = llm
 
     def run(self, symbol: str) -> ControversyAnalysis:
-        from ph_stocks_advisor.agents.web_search_tools import (
-            search_stock_controversies,
-            search_stock_news,
-        )
-
         data = fetch_controversy_info(symbol)
         prompt = CONTROVERSY_ANALYSIS_PROMPT.format(
             symbol=symbol,
             data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        analysis = _run_with_tools(self._llm, prompt, [search_stock_news, search_stock_controversies])
-        return ControversyAnalysis(data=data, analysis=analysis)
+        return ControversyAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
 
 
 class SentimentAgent:
@@ -217,25 +142,16 @@ class SentimentAgent:
     Evaluates geopolitical risks, pandemics, global economic shifts,
     and climate events that may impact the Philippine market and the
     specific stock under analysis.
-
-    Has access to web search tools so the LLM can look up current
-    global events and stock-specific news.
     """
 
     def __init__(self, llm: BaseChatModel) -> None:
         self._llm = llm
 
     def run(self, symbol: str) -> SentimentAnalysis:
-        from ph_stocks_advisor.agents.web_search_tools import (
-            search_global_events,
-            search_stock_news,
-        )
-
         data = fetch_sentiment_info(symbol)
         prompt = SENTIMENT_ANALYSIS_PROMPT.format(
             symbol=symbol,
             data=data.model_dump_json(indent=2),
             today=get_today().isoformat(),
         )
-        analysis = _run_with_tools(self._llm, prompt, [search_global_events, search_stock_news])
-        return SentimentAnalysis(data=data, analysis=analysis)
+        return SentimentAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))

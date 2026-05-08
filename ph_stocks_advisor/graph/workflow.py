@@ -41,6 +41,7 @@ from ph_stocks_advisor.data.models import (
     ValuationAnalysis,
 )
 from ph_stocks_advisor.data.tools import SymbolNotFoundError, validate_symbol
+from ph_stocks_advisor.infra.tracing import build_langfuse_config, flush_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +286,7 @@ def run_analysis(
     llm: BaseChatModel | None = None,
     mini_llm: BaseChatModel | None = None,
     task_id: str | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Run the full multi-agent analysis for a PSE stock symbol.
@@ -301,13 +303,29 @@ def run_analysis(
         Uses the default ``get_mini_llm()`` when ``None``.
     task_id : str | None
         Optional Celery task ID.  When provided, progress events are
-        published to Redis Pub/Sub for the SSE stream.
+        published to Redis Pub/Sub for the SSE stream and the ID is
+        used as the Langfuse ``session_id`` so all spans for one job
+        group together.
+    user_id : str | None
+        Authenticated user identifier; attached to the Langfuse trace
+        as ``user_id`` for per-user filtering and cost attribution.
 
     Returns
     -------
     dict
         The final state dict containing all analyses and the final report.
     """
+    normalized_symbol = symbol.upper().replace(".PS", "")
     graph = _build_graph_impl(llm=llm, mini_llm=mini_llm, task_id=task_id)
-    initial_state: GraphState = {"symbol": symbol.upper().replace(".PS", "")}
-    return graph.invoke(initial_state)
+    initial_state: GraphState = {"symbol": normalized_symbol}
+    invoke_config: RunnableConfig = build_langfuse_config(  # type: ignore[assignment]
+        run_name="stock-analysis",
+        user_id=user_id,
+        session_id=task_id,
+        tags=["stock-analysis", "ph-stocks-advisor"],
+        metadata={"symbol": normalized_symbol},
+    )
+    try:
+        return graph.invoke(initial_state, config=invoke_config)
+    finally:
+        flush_langfuse()

@@ -117,10 +117,12 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_PATH: ${GOOGLE_REDIRECT_PATH:-/auth/google/callback}
-      # ── LangSmith (optional) ──────────────────────────────────────────────
-      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
-      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
-      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-ph-stocks-advisor}
+      # ── Langfuse (optional) ───────────────────────────────────────────────
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      LANGFUSE_TRACING_ENABLED: ${LANGFUSE_TRACING_ENABLED:-true}
+      LANGFUSE_TRACING_ENVIRONMENT: ${LANGFUSE_TRACING_ENVIRONMENT:-development}
       # ── Gunicorn tuning ───────────────────────────────────────────────────
       WEB_WORKERS: ${WEB_WORKERS:-4}
       WEB_WORKER_CLASS: ${WEB_WORKER_CLASS:-ph_stocks_advisor.web.worker.GeventWorkerNoSSL}

@@ -69,10 +69,14 @@ def build_server() -> FastMCP:
         Raises an MCP tool error prefixed with ``SymbolNotFoundError:`` when
         the ticker is not listed on the PSE.
         """
+        logger.info("MCP tool called: validate_symbol(symbol=%r)", symbol)
         try:
-            return validate_pse_symbol(symbol)
+            result = validate_pse_symbol(symbol)
         except SymbolNotFoundError as exc:
+            logger.info("MCP tool validate_symbol rejected symbol=%r: %s", symbol, exc)
             raise ValueError(f"{_SYMBOL_NOT_FOUND_PREFIX}{exc}") from exc
+        logger.info("MCP tool validate_symbol resolved symbol=%r -> %s", symbol, result)
+        return result
 
     # ------------------------------------------------------------------
     # Data tools — each returns a Pydantic model
@@ -80,31 +84,37 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def get_stock_price(symbol: str) -> StockPrice:
         """Return current price snapshot vs. 52-week range for a PSE stock."""
+        logger.info("MCP tool called: get_stock_price(symbol=%r)", symbol)
         return fetch_stock_price(symbol)
 
     @mcp.tool()
     def get_dividend_info(symbol: str) -> DividendInfo:
         """Return dividend yield, payout ratio, sustainability and announcements."""
+        logger.info("MCP tool called: get_dividend_info(symbol=%r)", symbol)
         return fetch_dividend_info(symbol)
 
     @mcp.tool()
     def get_price_movement(symbol: str) -> PriceMovement:
         """Return 1-year price movement, candlestick patterns and TV performance."""
+        logger.info("MCP tool called: get_price_movement(symbol=%r)", symbol)
         return fetch_price_movement(symbol)
 
     @mcp.tool()
     def get_fair_value(symbol: str) -> FairValueEstimate:
         """Return Graham-number fair-value estimate plus PE/PB ratios."""
+        logger.info("MCP tool called: get_fair_value(symbol=%r)", symbol)
         return fetch_fair_value(symbol)
 
     @mcp.tool()
     def get_controversy_info(symbol: str) -> ControversyInfo:
         """Return detected price spikes, risk factors and recent news headlines."""
+        logger.info("MCP tool called: get_controversy_info(symbol=%r)", symbol)
         return fetch_controversy_info(symbol)
 
     @mcp.tool()
     def get_sentiment_info(symbol: str) -> SentimentInfo:
         """Return macro / global-events sentiment context for a PSE stock."""
+        logger.info("MCP tool called: get_sentiment_info(symbol=%r)", symbol)
         return fetch_sentiment_info(symbol)
 
     return mcp
