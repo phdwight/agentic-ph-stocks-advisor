@@ -52,8 +52,10 @@ if [[ "$UPDATE_ONLY" == false ]]; then
   : "${AZURE_PG_PASSWORD:?❌ AZURE_PG_PASSWORD is required. Export it before running this script.}"
 fi
 TAVILY_API_KEY="${TAVILY_API_KEY:-}"
-LANGSMITH_API_KEY="${LANGSMITH_API_KEY:-}"
-LANGSMITH_PROJECT="${LANGSMITH_PROJECT:-ph-stocks-advisor}"
+LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}"
+LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}"
+LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}"
+LANGFUSE_ENVIRONMENT="${LANGFUSE_TRACING_ENVIRONMENT:-production}"
 ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
 ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET:-}"
 ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-common}"
@@ -91,8 +93,10 @@ if [[ "$UPDATE_ONLY" == false ]]; then
       openaiApiKey="$OPENAI_API_KEY" \
       tavilyApiKey="$TAVILY_API_KEY" \
       openaiModel="${OPENAI_MODEL:-gpt-4o-mini}" \
-      langsmithApiKey="$LANGSMITH_API_KEY" \
-      langsmithProject="$LANGSMITH_PROJECT" \
+      langfusePublicKey="$LANGFUSE_PUBLIC_KEY" \
+      langfuseSecretKey="$LANGFUSE_SECRET_KEY" \
+      langfuseHost="$LANGFUSE_HOST" \
+      langfuseEnvironment="$LANGFUSE_ENVIRONMENT" \
       entraClientId="$ENTRA_CLIENT_ID" \
       entraClientSecret="$ENTRA_CLIENT_SECRET" \
       entraTenantId="$ENTRA_TENANT_ID" \

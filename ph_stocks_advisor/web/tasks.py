@@ -63,7 +63,7 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
     publish_progress(task_id, STEP_FETCHING)
 
     try:
-        result = run_analysis(symbol, task_id=task_id)
+        result = run_analysis(symbol, task_id=task_id, user_id=user_id)
         report: FinalReport | None = result.get("final_report")
 
         if report is None:
@@ -191,6 +191,8 @@ def portfolio_analyse_stock(
             current_price=current_price,
             base_report=record.summary or "",
             sentiment_context=getattr(record, "sentiment_section", "") or "",
+            user_id=user_id,
+            session_id=task_id,
         )
 
         # Persist the portfolio report.

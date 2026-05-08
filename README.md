@@ -17,16 +17,16 @@ START → Validate ──────►├── Valuation Agent ────�
                         └── Sentiment Agent ────────┘
 ```
 
-A detailed diagram of the LangGraph flow — including MCP tool calls, web-search tools, and the per-node `GraphState` updates — is in [langgraph-flow.drawio](langgraph-flow.drawio) (open with [draw.io](https://app.diagrams.net/) or the VS Code Draw.io extension).
+A detailed diagram of the LangGraph flow — including MCP tool calls and the per-node `GraphState` updates — is in [langgraph-flow.drawio](langgraph-flow.drawio) (open with [draw.io](https://app.diagrams.net/) or the VS Code Draw.io extension).
 
 | Agent | Responsibility |
 |-------|---------------|
 | **Price Agent** | Current price vs 52-week range, price catalysts |
 | **Dividend Agent** | Yield, payout ratio, sustainability, REIT rules (RA 9856), income/revenue/FCF trends, structured dividend announcements (ex-date, rate, payment date) |
-| **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance; LLM-driven web search via tool calling |
+| **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance |
 | **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
-| **Controversy Agent** | Price spike detection, risk factors; LLM-driven web search for news & controversies via tool calling |
-| **Sentiment Agent** | Global events impact (wars, pandemics, economic shifts, climate); LLM-driven web search for geopolitical & macro risks via tool calling |
+| **Controversy Agent** | Price spike detection, risk factors, news headlines surfaced via the MCP data tool |
+| **Sentiment Agent** | Global events impact (wars, pandemics, economic shifts, climate); macro context surfaced via the MCP data tool |
 | **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict (via structured output; regex fallback) |
 | **Portfolio Agent** | Personalised hold / accumulate / trim advisory for elevated users based on their stock holdings (on-demand, not part of the main graph) |
 
@@ -39,7 +39,7 @@ The data layer cascades through multiple sources for resilience:
 | **DragonFi** (`api.dragonfi.ph`) | Not required | Primary — price, dividends, valuation, financials, news, symbol validation |
 | **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history, spike detection, declared dividend disclosures (SEC Form 6-1), and company dividend announcements page (ex-date, rate, payment date) |
 | **TradingView Scanner** | Not required | Multi-period performance & volatility |
-| **Tavily** | Optional | Web search for dividend news, general news, and controversies — invoked by the LLM via tool calling (not called automatically) |
+| **Tavily** | Optional | Server-side web-search enrichment for the sentiment data tool (not exposed as an LLM tool) |
 
 ## SOLID Principles Applied
 
@@ -105,6 +105,47 @@ docker compose down -v         # removes volumes too
 ```
 
 Exported files (PDF / HTML) are written to the `./output` directory on the host via a bind mount.
+
+#### Optional: OpenTelemetry observability stack
+
+Layer the OTel overlay on top of either compose file to add an OTLP collector, Jaeger (traces), Prometheus (metrics) and Grafana (dashboards). The application services are auto-instrumented at container start.
+
+```bash
+# Dev
+docker compose -f docker-compose.yml -f docker-compose.otel.yml up -d
+
+# Prod
+docker compose -f docker-compose.prod.yml -f docker-compose.otel.yml up -d
+
+# UIs
+open http://localhost:6184    # Jaeger
+open http://localhost:6185    # Prometheus
+open http://localhost:6186    # Grafana (admin / admin)
+```
+
+For production, bake the OTel packages into the image (add `opentelemetry-distro[otlp]` and the relevant `opentelemetry-instrumentation-*` packages to `pyproject.toml`) and set `OTEL_BOOTSTRAP=0` to skip the runtime install.
+
+#### Optional: Langfuse LLM tracing
+
+LLM traces (every agent call, tool invocation, token usage and cost) are sent to [Langfuse](https://langfuse.com) when API keys are present. Set the keys in `.env`:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com   # or https://us.cloud.langfuse.com / self-hosted URL
+```
+
+Each trace is enriched with:
+
+| Attribute | Value |
+|-----------|-------|
+| `run_name` | `stock-analysis` or `portfolio-analysis` |
+| `user_id` | The authenticated user (or `anonymous`) |
+| `session_id` | The Celery `task_id` — groups all spans for one job |
+| `tags` | `["stock-analysis", "ph-stocks-advisor"]` etc. |
+| `metadata.symbol` | The PSE ticker being analysed |
+
+Set `LANGFUSE_TRACING_ENABLED=false` to disable tracing without removing the keys.
 
 > **Tip:** Override any env var in `.env` — the Compose file reads them automatically.
 
@@ -371,7 +412,12 @@ All tests run offline with mocked data sources and mocked LLM calls — no API k
 Dockerfile                         # Multi-stage container image
 docker-compose.yml                 # Compose v2 — local dev (builds from source)
 docker-compose.prod.yml            # Compose v2 — production (pulls pre-built GHCR images)
+docker-compose.otel.yml            # Compose v2 overlay — OpenTelemetry collector, Jaeger, Prometheus, Grafana
 .dockerignore                      # Files excluded from Docker build context
+otel/                              # OpenTelemetry overlay configs
+├── otel-collector-config.yaml #   OTLP collector pipeline (traces → Jaeger, metrics → Prometheus)
+├── prometheus.yml             #   Prometheus scrape config
+└── grafana/provisioning/      #   Grafana datasource provisioning
 langgraph-flow.drawio              # Draw.io diagram of the LangGraph flow, MCP tools & state updates
 .github/
 └── workflows/
@@ -417,11 +463,10 @@ ph_stocks_advisor/
 │   └── html.py                #   HtmlFormatter (pure-Python, ph-advisor-html)
 ├── agents/
 │   ├── __init__.py
-│   ├── specialists.py         # 6 specialist agent classes (4 with LLM tool calling for web search)
+│   ├── specialists.py         # 6 specialist agent classes (data via MCP tools)
 │   ├── consolidator.py        # Consolidator agent
 │   ├── portfolio.py           # Portfolio agent (personalised hold/accumulate/trim)
-│   ├── prompts.py             # Prompt templates per agent
-│   └── web_search_tools.py    # LangChain @tool wrappers for Tavily web search
+│   └── prompts.py             # Prompt templates per agent
 ├── data/
 │   ├── __init__.py
 │   ├── models.py              # Pydantic data models & graph state
@@ -509,7 +554,9 @@ On every push to `main`, a **build-images** job builds Docker images and pushes 
 | Secret | Used by | Required? | Purpose |
 |--------|---------|-----------|---------|
 | `OPENAI_API_KEY` | CI (both workflows) | Yes | LLM calls in integration tests |
-| `LANGCHAIN_API_KEY` | CI (both workflows) | No | LangSmith tracing in integration tests |
+| `LANGFUSE_PUBLIC_KEY` | CI (both workflows) | No | Langfuse tracing in integration tests |
+| `LANGFUSE_SECRET_KEY` | CI (both workflows) | No | Langfuse tracing in integration tests |
+| `LANGFUSE_HOST` | CI (both workflows) | No | Langfuse host (e.g. `https://cloud.langfuse.com`) |
 | **Azure deployment** | | | |
 | `AZURE_CREDENTIALS` | `deploy-azure` job | For Azure | Service principal JSON (`az ad sp create-for-rbac --json-auth`) |
 | `TAVILY_API_KEY` | `deploy-azure` job | No | Web search (passed to Azure env vars) |
@@ -612,8 +659,21 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth2 client secret |
 | `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
 | `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
-| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per trading day (failed queries are not counted; resets at 3:00 PM PHT / 07:00 UTC) |
-| `WEB_WORKERS` | No | `4` | Gunicorn worker processes |
+| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per trading day (failed queries are not counted; resets at 3:00 PM PHT / 07:00 UTC) |
+| `LANGFUSE_PUBLIC_KEY` | No | — | Langfuse public key (enables LLM tracing when set together with the secret key) |
+| `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key |
+| `LANGFUSE_HOST` | No | `https://cloud.langfuse.com` | Langfuse host URL |
+| `LANGFUSE_TRACING_ENABLED` | No | `true` | Set to `false` to disable Langfuse tracing even when keys are present |
+| `LANGFUSE_TRACING_ENVIRONMENT` | No | `development` | Environment label attached to traces (e.g. `production`, `ci`) || `OTEL_ENV` | No | `dev` | `deployment.environment` resource attribute attached to all telemetry (OpenTelemetry overlay only) |
+| `OTEL_BOOTSTRAP` | No | `1` | When `1`, the OTel overlay pip-installs instrumentation packages at container start. Set to `0` once they are baked into the image |
+| `OTEL_GRPC_PORT` | No | `6182` | Host port for the OTel Collector OTLP/gRPC receiver |
+| `OTEL_HTTP_PORT` | No | `6183` | Host port for the OTel Collector OTLP/HTTP receiver |
+| `JAEGER_UI_PORT` | No | `6184` | Host port for the Jaeger UI |
+| `PROMETHEUS_PORT` | No | `6185` | Host port for the Prometheus UI |
+| `GRAFANA_PORT` | No | `6186` | Host port for the Grafana UI |
+| `OTEL_SELF_METRICS_PORT` | No | `6187` | Host port for the OTel Collector's self-metrics endpoint |
+| `GRAFANA_USER` | No | `admin` | Grafana admin username |
+| `GRAFANA_PASSWORD` | No | `admin` | Grafana admin password || `WEB_WORKERS` | No | `4` | Gunicorn worker processes |
 | `WEB_WORKER_CLASS` | No | `gevent` | Gunicorn worker class (`gevent`, `gthread`, `sync`, etc.) |
 | `WEB_WORKER_CONNECTIONS` | No | `1000` | Max simultaneous connections per gevent worker |
 | `WEB_THREADS` | No | `2` | Threads per Gunicorn worker (only used with `gthread` worker class) |

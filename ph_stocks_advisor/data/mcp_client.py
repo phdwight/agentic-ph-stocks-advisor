@@ -34,6 +34,25 @@ logger = logging.getLogger(__name__)
 _SYMBOL_NOT_FOUND_PREFIX = "SymbolNotFoundError: "
 
 
+def _make_native_thread(*, target, name: str) -> threading.Thread:
+    """Build a daemon thread that bypasses gevent monkey-patching.
+
+    Under a gevent worker the global ``threading.Thread`` is a cooperative
+    greenlet, which deadlocks when running an asyncio event loop with a
+    long-lived ``run_forever``. We force a real OS thread when the
+    unpatched class is reachable; otherwise fall back to the patched one.
+    """
+    native_cls = threading.Thread
+    try:
+        from gevent.monkey import get_original  # type: ignore[import-not-found]
+
+        native_cls = get_original("threading", "Thread")
+    except Exception:  # pragma: no cover - gevent not installed / not patched
+        pass
+    thread = native_cls(target=target, name=name, daemon=True)
+    return thread
+
+
 class MCPClientError(RuntimeError):
     """Raised when an MCP tool call fails for a non-business reason."""
 
@@ -46,9 +65,10 @@ class _SyncMCPClient:
     coroutine completes on that loop.
     """
 
-    def __init__(self, url: str, *, request_timeout: float = 60.0) -> None:
+    def __init__(self, url: str, *, request_timeout: float = 60.0, connect_timeout: float = 30.0) -> None:
         self._url = url
         self._request_timeout = request_timeout
+        self._connect_timeout = connect_timeout
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._session = None  # type: ignore[var-annotated]
@@ -67,16 +87,30 @@ class _SyncMCPClient:
         with self._lock:
             if self._session is not None:
                 return
-            self._loop = asyncio.new_event_loop()
-            self._thread = threading.Thread(
-                target=self._run_loop,
-                name=f"mcp-client-{self._url}",
-                daemon=True,
-            )
-            self._thread.start()
-            self._ready.wait(timeout=30)
+            if self._thread is None:
+                self._loop = asyncio.new_event_loop()
+                self._thread = _make_native_thread(
+                    target=self._run_loop,
+                    name=f"mcp-client-{self._url}",
+                )
+                self._thread.start()
+            if not self._ready.wait(timeout=self._connect_timeout):
+                # Don't tear the thread down — a slow connect (gevent /
+                # OTel instrumentation) may still complete on the next
+                # call. Just surface a clean error to the caller.
+                raise MCPClientError(
+                    f"Timed out after {self._connect_timeout}s waiting for MCP "
+                    f"session to initialise against {self._url}"
+                )
             if self._start_error is not None:
-                raise MCPClientError(f"Failed to connect to MCP server at {self._url}: {self._start_error}")
+                raise MCPClientError(
+                    f"Failed to connect to MCP server at {self._url}: {self._start_error}"
+                )
+            if self._session is None:
+                raise MCPClientError(
+                    f"MCP session was not established against {self._url} "
+                    "(no error reported)"
+                )
             atexit.register(self.close)
 
     def _run_loop(self) -> None:
@@ -142,7 +176,10 @@ class _SyncMCPClient:
         symbol, or :class:`MCPClientError` for any other failure.
         """
         self._ensure_started()
-        assert self._session is not None and self._loop is not None
+        if self._session is None or self._loop is None:
+            raise MCPClientError(
+                f"MCP client is not ready (url={self._url})"
+            )
 
         future = asyncio.run_coroutine_threadsafe(
             self._call_async(tool_name, arguments),

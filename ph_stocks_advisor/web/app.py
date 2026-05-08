@@ -238,6 +238,35 @@ def create_app() -> Flask:
             "app_version": _app_version(),
         }
 
+    @app.context_processor
+    def inject_sidebar_history():
+        """Provide a date-grouped list of recently analysed tickers for the
+        sidebar shown on every page."""
+        try:
+            user = get_current_user()
+            if not user:
+                return {"sidebar_history": []}
+            repo = get_repository()
+            if user.get("email"):
+                records = repo.list_user_symbols(user_id=user["email"], limit=30)
+            else:
+                records = repo.list_recent_symbols(limit=30)
+        except Exception:
+            return {"sidebar_history": []}
+
+        grouped: list[dict] = []
+        current_key: str | None = None
+        for r in records:
+            created = getattr(r, "created_at", None)
+            if created is None:
+                continue
+            day_key = created.strftime("%Y-%m-%d")
+            if day_key != current_key:
+                grouped.append({"date": created, "stocks": []})
+                current_key = day_key
+            grouped[-1]["stocks"].append(r)
+        return {"sidebar_history": grouped}
+
     # ------------------------------------------------------------------
     # Health check
     # ------------------------------------------------------------------

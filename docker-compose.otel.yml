@@ -1,0 +1,188 @@
+# docker-compose.otel.yml — OpenTelemetry observability overlay.
+#
+# Adds an OTLP collector + Jaeger (traces) + Prometheus (metrics) +
+# Grafana (dashboards) to the stack and wires the application services
+# (web, worker, mcp, advisor) to export telemetry via OTLP/HTTP.
+#
+# Usage (with the base dev stack):
+#   docker compose -f docker-compose.yml -f docker-compose.otel.yml up -d
+#
+# Usage (with the production stack):
+#   docker compose -f docker-compose.prod.yml -f docker-compose.otel.yml up -d
+#
+# Bootstrapping in-app instrumentation:
+#   The app entrypoints are wrapped with `opentelemetry-instrument`, which
+#   auto-instruments Flask, Celery, requests/httpx, psycopg, and redis.
+#   The required packages are pulled in at container start via
+#   OTEL_BOOTSTRAP=1 (see the small inline shim below). For permanent /
+#   production use, bake the OTel packages into the image instead by adding
+#   them to pyproject.toml / requirements.txt:
+#
+#     opentelemetry-distro[otlp]
+#     opentelemetry-instrumentation-flask
+#     opentelemetry-instrumentation-celery
+#     opentelemetry-instrumentation-requests
+#     opentelemetry-instrumentation-httpx
+#     opentelemetry-instrumentation-psycopg
+#     opentelemetry-instrumentation-redis
+#     opentelemetry-instrumentation-logging
+#
+# Exposed UIs (host ports — override via .env if they clash):
+#   OTLP gRPC   → localhost:${OTEL_GRPC_PORT:-6182}
+#   OTLP HTTP   → localhost:${OTEL_HTTP_PORT:-6183}
+#   Jaeger      → http://localhost:${JAEGER_UI_PORT:-6184}
+#   Prometheus  → http://localhost:${PROMETHEUS_PORT:-6185}
+#   Grafana     → http://localhost:${GRAFANA_PORT:-6186}  (admin / admin)
+
+x-otel-env: &otel-env
+  # Common OTel SDK env shared by every instrumented service.
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_PROPAGATORS: tracecontext,baggage
+  OTEL_PYTHON_LOG_CORRELATION: "true"
+  OTEL_PYTHON_LOG_LEVEL: info
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${OTEL_ENV:-dev}
+
+x-otel-bootstrap: &otel-bootstrap
+  # Tiny shim that installs OTel instrumentation packages on first boot
+  # (idempotent — pip will skip already-installed packages) and then
+  # execs the original entrypoint via `opentelemetry-instrument`.
+  #
+  # NOTE: For production, bake these packages into the image instead.
+  OTEL_BOOTSTRAP: "1"
+
+services:
+  # ── OpenTelemetry Collector (OTLP gateway) ─────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "${OTEL_GRPC_PORT:-6182}:4317"   # OTLP gRPC
+      - "${OTEL_HTTP_PORT:-6183}:4318"   # OTLP HTTP
+      - "${OTEL_SELF_METRICS_PORT:-6187}:8888"  # collector self-metrics
+    depends_on:
+      - jaeger
+      - prometheus
+
+  # ── Jaeger (distributed tracing UI) ───────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_UI_PORT:-6184}:16686"  # UI
+
+  # ── Prometheus (metrics store) ────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./otel/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-6185}:9090"
+
+  # ── Grafana (dashboards) ──────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./otel/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-6186}:3000"
+    depends_on:
+      - prometheus
+      - jaeger
+
+  # ── Application services: inject OTel env + auto-instrument entrypoint ────
+  web:
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: ph-advisor-web
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ "${OTEL_BOOTSTRAP:-1}" = "1" ]; then
+          pip install --quiet --no-cache-dir 'opentelemetry-distro[otlp]' \
+            opentelemetry-instrumentation-flask \
+            opentelemetry-instrumentation-requests \
+            opentelemetry-instrumentation-httpx \
+            opentelemetry-instrumentation-psycopg \
+            opentelemetry-instrumentation-redis \
+            opentelemetry-instrumentation-logging || true
+        fi
+        exec opentelemetry-instrument ph-advisor-web --host 0.0.0.0 --port 5000
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  worker:
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: ph-advisor-worker
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ "${OTEL_BOOTSTRAP:-1}" = "1" ]; then
+          pip install --quiet --no-cache-dir 'opentelemetry-distro[otlp]' \
+            opentelemetry-instrumentation-celery \
+            opentelemetry-instrumentation-requests \
+            opentelemetry-instrumentation-httpx \
+            opentelemetry-instrumentation-psycopg \
+            opentelemetry-instrumentation-redis \
+            opentelemetry-instrumentation-logging || true
+        fi
+        exec opentelemetry-instrument celery -A ph_stocks_advisor.web.celery_app:celery_app worker \
+          --loglevel=info --concurrency=${CELERY_CONCURRENCY:-4} --pool=prefork
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  mcp:
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: ph-advisor-mcp
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ "${OTEL_BOOTSTRAP:-1}" = "1" ]; then
+          pip install --quiet --no-cache-dir 'opentelemetry-distro[otlp]' \
+            opentelemetry-instrumentation-requests \
+            opentelemetry-instrumentation-httpx \
+            opentelemetry-instrumentation-logging || true
+        fi
+        exec opentelemetry-instrument ph-advisor-mcp
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  advisor:
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: ph-advisor-cli
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+volumes:
+  prometheus-data:
+  grafana-data:
