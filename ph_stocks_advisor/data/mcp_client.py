@@ -103,14 +103,9 @@ class _SyncMCPClient:
                     f"session to initialise against {self._url}"
                 )
             if self._start_error is not None:
-                raise MCPClientError(
-                    f"Failed to connect to MCP server at {self._url}: {self._start_error}"
-                )
+                raise MCPClientError(f"Failed to connect to MCP server at {self._url}: {self._start_error}")
             if self._session is None:
-                raise MCPClientError(
-                    f"MCP session was not established against {self._url} "
-                    "(no error reported)"
-                )
+                raise MCPClientError(f"MCP session was not established against {self._url} (no error reported)")
             atexit.register(self.close)
 
     def _run_loop(self) -> None:
@@ -177,9 +172,7 @@ class _SyncMCPClient:
         """
         self._ensure_started()
         if self._session is None or self._loop is None:
-            raise MCPClientError(
-                f"MCP client is not ready (url={self._url})"
-            )
+            raise MCPClientError(f"MCP client is not ready (url={self._url})")
 
         future = asyncio.run_coroutine_threadsafe(
             self._call_async(tool_name, arguments),
