@@ -16,6 +16,7 @@ import logging
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 
 from ph_stocks_advisor.agents.prompts import PORTFOLIO_ANALYSIS_PROMPT
 from ph_stocks_advisor.infra.config import get_today
@@ -83,19 +84,20 @@ class PortfolioAgent:
             sentiment_context=sentiment_context or "No global events context available.",
         )
 
+        invoke_config: RunnableConfig = build_langfuse_config(  # type: ignore[assignment]
+            run_name="portfolio-analysis",
+            user_id=user_id,
+            session_id=session_id,
+            tags=["portfolio-analysis", "ph-stocks-advisor"],
+            metadata={
+                "symbol": symbol,
+                "shares": shares,
+                "avg_cost": avg_cost,
+            },
+        )
         response = self._llm.invoke(
             [HumanMessage(content=prompt)],
-            config=build_langfuse_config(
-                run_name="portfolio-analysis",
-                user_id=user_id,
-                session_id=session_id,
-                tags=["portfolio-analysis", "ph-stocks-advisor"],
-                metadata={
-                    "symbol": symbol,
-                    "shares": shares,
-                    "avg_cost": avg_cost,
-                },
-            ),
+            config=invoke_config,
         )
         try:
             return str(response.content)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from ph_stocks_advisor.infra import tracing
@@ -23,9 +24,9 @@ class TestBuildLangfuseConfig:
 
     def _patch_langfuse(self, sentinel):
         fake_module = types.ModuleType("langfuse.langchain")
-        fake_module.CallbackHandler = MagicMock(return_value=sentinel)
+        cast(Any, fake_module).CallbackHandler = MagicMock(return_value=sentinel)
         fake_pkg = types.ModuleType("langfuse")
-        fake_pkg.langchain = fake_module
+        cast(Any, fake_pkg).langchain = fake_module
         return patch.dict(
             sys.modules,
             {"langfuse": fake_pkg, "langfuse.langchain": fake_module},
@@ -79,7 +80,7 @@ class TestFlushLangfuse:
 
         client = MagicMock()
         fake_pkg = types.ModuleType("langfuse")
-        fake_pkg.get_client = MagicMock(return_value=client)
+        cast(Any, fake_pkg).get_client = MagicMock(return_value=client)
         with patch.dict(sys.modules, {"langfuse": fake_pkg}):
             tracing.flush_langfuse()
 
