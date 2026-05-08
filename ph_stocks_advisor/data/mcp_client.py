@@ -47,8 +47,8 @@ def _make_native_thread(*, target, name: str) -> threading.Thread:
         from gevent.monkey import get_original  # type: ignore[import-not-found]
 
         native_cls = get_original("threading", "Thread")
-    except Exception:  # pragma: no cover - gevent not installed / not patched
-        pass
+    except Exception as exc:  # pragma: no cover - gevent not installed / not patched
+        logger.debug("gevent get_original unavailable, using stdlib Thread: %s", exc)
     thread = native_cls(target=target, name=name, daemon=True)
     return thread
 
