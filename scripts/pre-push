@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Pre-push hook: refresh the long-term project memory before pushing.
+#
+# Why a hook?  The instructions ask Copilot to run `update` at the end of every
+# task that touches tracked files. This hook makes it automatic so we never
+# push commits whose changes aren't yet reflected in `.copilot-memory.db`.
+#
+# Behaviour
+#   - Skipped entirely when SKIP_MEMORY_UPDATE=1 is set (e.g. emergency push).
+#   - Skipped when no Python venv is available (CI machines, fresh clones).
+#   - Skipped when OPENAI_API_KEY is missing (offline / no-key environments).
+#   - Never blocks the push: a failed update prints a warning and exits 0.
+#
+# Install (one-time):
+#   ./scripts/install-git-hooks.sh
+
+set -u
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$REPO_ROOT" || exit 0
+
+if [ "${SKIP_MEMORY_UPDATE:-0}" = "1" ]; then
+  echo "▸ pre-push: SKIP_MEMORY_UPDATE=1 set, skipping memory refresh."
+  exit 0
+fi
+
+# Pick a Python interpreter — prefer the project venv.
+PYTHON=""
+for candidate in \
+  "$REPO_ROOT/.venv/bin/python" \
+  "$REPO_ROOT/venv/bin/python" \
+  "$(command -v python3 || true)" \
+  "$(command -v python || true)"
+do
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+    PYTHON="$candidate"
+    break
+  fi
+done
+
+if [ -z "$PYTHON" ]; then
+  echo "▸ pre-push: no Python interpreter found, skipping memory refresh."
+  exit 0
+fi
+
+# Load .env so OPENAI_API_KEY is available without forcing the user to export it.
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$REPO_ROOT/.env"
+  set +a
+fi
+
+if [ -z "${OPENAI_API_KEY:-}" ]; then
+  echo "▸ pre-push: OPENAI_API_KEY not set, skipping memory refresh."
+  exit 0
+fi
+
+# Sanity-check the module is importable in this environment.
+if ! "$PYTHON" -c "import ph_stocks_advisor.memory" >/dev/null 2>&1; then
+  echo "▸ pre-push: ph_stocks_advisor.memory not importable, skipping."
+  exit 0
+fi
+
+DB_PATH="${COPILOT_MEMORY_DB:-$REPO_ROOT/.copilot-memory.db}"
+
+echo "▸ pre-push: refreshing long-term memory ($DB_PATH) …"
+if ! "$PYTHON" -m ph_stocks_advisor.memory --db "$DB_PATH" update; then
+  echo "⚠ pre-push: memory update failed — push will continue, but consider running it manually."
+fi
+
+exit 0
