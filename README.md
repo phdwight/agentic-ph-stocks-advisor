@@ -370,40 +370,6 @@ Override defaults via environment variables before running `deploy.sh`:
 | `AZURE_PG_PASSWORD` | _(required)_ | PostgreSQL admin password |
 | `IMAGE_TAG` | `latest` | Docker image tag |
 
-## Long-Term Project Memory
-
-A persistent **vector memory** of every code file, rule, instruction and skill
-lives at `.copilot-memory.db` (SQLite + `sqlite-vec`, OpenAI
-`text-embedding-3-small`). Copilot consults it before searching the workspace
-manually and refreshes it after edits — see
-[.github/copilot-instructions.md](.github/copilot-instructions.md).
-
-```bash
-# Build (or rebuild from scratch)
-ph-advisor-memory --db .copilot-memory.db rebuild
-
-# Incrementally update changed files
-ph-advisor-memory --db .copilot-memory.db update
-
-# Semantic search
-ph-advisor-memory --db .copilot-memory.db query "how does the consolidator agent work?" -k 5
-ph-advisor-memory --db .copilot-memory.db query "REIT dividend rules" --type rule
-
-# Stats
-ph-advisor-memory --db .copilot-memory.db stats
-```
-
-Requires `OPENAI_API_KEY`. The DB itself is git-ignored; rebuild locally on first checkout.
-
-To keep the DB in sync automatically, install the pre-push hook once:
-
-```bash
-./scripts/install-git-hooks.sh
-```
-
-It runs `update` before every push (skipped silently when there's no venv or
-`OPENAI_API_KEY`; bypass with `SKIP_MEMORY_UPDATE=1 git push`).
-
 ## Testing
 
 ```bash
@@ -525,19 +491,12 @@ ph_stocks_advisor/
 ├── graph/
 │   ├── __init__.py
 │   └── workflow.py            # LangGraph workflow & agent registry
-├── infra/
-│   ├── __init__.py
-│   ├── config.py              # Settings, LLM / repository factory & Redis pool
-│   ├── repository.py          # Abstract repository interface
-│   ├── repository_sqlite.py   # SQLite implementation (default)
-│   └── repository_postgres.py # PostgreSQL implementation
-└── memory/                    # Long-term project memory (vector DB)
+└── infra/
     ├── __init__.py
-    ├── __main__.py            #   CLI entry (ph-advisor-memory)
-    ├── embeddings.py          #   Embedder protocol + OpenAI implementation
-    ├── ingest.py              #   Walk workspace → chunks → store
-    └── vector_store.py        #   SQLite + sqlite-vec store
-.copilot-memory.db                 # Persistent vector memory of code, rules & skills (git-ignored)
+    ├── config.py              # Settings, LLM / repository factory & Redis pool
+    ├── repository.py          # Abstract repository interface
+    ├── repository_sqlite.py   # SQLite implementation (default)
+    └── repository_postgres.py # PostgreSQL implementation
 ph_stocks_mcp/                     # MCP server exposing the data tools
 ├── __init__.py
 ├── __main__.py                #   Entry point (ph-advisor-mcp)
@@ -560,8 +519,7 @@ tests/
 ├── test_portfolio.py           # Portfolio holdings & advisory feature tests
 ├── test_repository.py
 ├── test_sse.py                # SSE progress streaming tests
-├── test_user_type.py          # User type system (elevated bypass) tests
-└── test_memory.py             # Long-term vector memory store & ingest tests
+└── test_user_type.py          # User type system (elevated bypass) tests
 ```
 
 ### CI/CD

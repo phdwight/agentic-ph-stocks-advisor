@@ -2,60 +2,6 @@
 
 These instructions are automatically loaded by GitHub Copilot on every interaction.
 
-## Long-Term Project Memory
-
-This repo ships a **persistent vector memory** of the codebase, rules, and skills
-at `.copilot-memory.db` (SQLite + `sqlite-vec`, OpenAI `text-embedding-3-small`).
-Use it as a **router**, not as a reader.
-
-### When to query
-
-Run a query **before broad exploration** — when you would otherwise call
-`semantic_search`, `list_dir`, or read several files just to orient yourself.
-Examples that warrant a query:
-
-- "Where is X implemented / which file owns Y?"
-- "What rule or skill applies to this kind of change?"
-- "Has this codebase already solved a similar problem?"
-
-**Skip the query** when:
-
-- You already know the file you need to edit — go straight to `read_file`.
-- It's a one-line change in an obvious location.
-- The question is conversational and doesn't require codebase context.
-
-### How to use results
-
-Treat hits as **pointers**: read the `source_path`, then open the real file with
-`read_file` for the surrounding context you need to edit safely. Do **not** rely
-on the chunk text for replacements — chunks are 1.4k chars and may be truncated.
-
-```bash
-python -m ph_stocks_advisor.memory --db .copilot-memory.db query "<question>" -k 5
-# Restrict by source type when useful: --type rule | skill | code | doc
-```
-
-### When to update
-
-Refresh the index **at the end of a task** that modified tracked files (code,
-README, instructions, skills) — one `update` per task, not per file. The
-content-hash check makes this cheap; only changed files are re-embedded.
-
-```bash
-python -m ph_stocks_advisor.memory --db .copilot-memory.db update
-```
-
-Use `rebuild` only when the schema or embedding model changes. Use `stats` to
-confirm the DB is populated. Implementation lives in `ph_stocks_advisor/memory/`;
-tests in `tests/test_memory.py`.
-
-### Project decisions log
-
-`docs/decisions.md` is the human-curated record of *why* we chose what we chose
-(architecture, conventions, lessons learned). Append a short entry whenever you
-make a non-trivial decision; query it with `--type doc` to recover prior intent
-across model switches.
-
 ## README Maintenance
 
 **Every time you modify the codebase, check whether `README.md` needs updating and apply changes if so.**
