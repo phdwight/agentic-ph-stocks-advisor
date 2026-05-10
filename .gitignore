@@ -14,3 +14,12 @@ output/
 flask_session/
 .$langgraph-flow.drawio.bkp
 .DS_Store
+
+# ── Personal Copilot long-term memory (not part of the project) ───────────
+.copilot-memory.db
+.copilot-memory.db-*
+ph_stocks_advisor/memory/
+tests/test_memory.py
+scripts/pre-push
+scripts/install-git-hooks.sh
+docs/decisions.md

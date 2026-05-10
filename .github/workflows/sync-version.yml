@@ -1,0 +1,117 @@
+# Sync the version in pyproject.toml to the published GitHub Release tag.
+#
+# Trigger: a Release is published (manually or via the API). The release tag
+# may be ``vX.Y.Z`` or ``X.Y.Z`` — the leading ``v`` is stripped.
+#
+# Behaviour:
+#   1. Compute the target version from the release tag.
+#   2. If pyproject.toml already matches, exit cleanly.
+#   3. Otherwise rewrite the ``version = "..."`` line, commit to ``main``,
+#      and force-update the release tag to point at the new commit so the
+#      tag and the source tree always agree.
+#
+# Manual dispatch is also supported for back-fills (provide the version).
+
+name: Sync Version on Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to write into pyproject.toml (without leading v)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-version-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync-version:
+    name: Update pyproject.toml version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target version
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            raw="${{ inputs.version }}"
+          else
+            raw="${{ github.event.release.tag_name }}"
+          fi
+          version="${raw#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$raw' is not a valid PEP 440 / SemVer version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$raw"           >> "$GITHUB_OUTPUT"
+
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          # Prefer a dedicated bot PAT (RELEASE_BOT_TOKEN) so the push can
+          # bypass branch protection on `main`. Falls back to GITHUB_TOKEN
+          # when the secret is absent (works on unprotected branches).
+          token: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Update pyproject.toml
+        id: write
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          current=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' pyproject.toml)
+          echo "Current: $current → Target: $version"
+          if [ "$current" = "$version" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Replace only the top-level [project] version line (first match).
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          target = os.environ["VERSION"]
+          path = Path("pyproject.toml")
+          text = path.read_text()
+          new_text, count = re.subn(
+              r'^(version\s*=\s*)"[^"]+"',
+              lambda m: f'{m.group(1)}"{target}"',
+              text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          if count != 1:
+              raise SystemExit("Failed to locate the version line in pyproject.toml")
+          path.write_text(new_text)
+          PY
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+
+      - name: Commit and push
+        if: steps.write.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore(release): sync pyproject.toml to ${{ steps.ver.outputs.version }} [skip ci]"
+          git push origin main
+
+      - name: Move release tag to the sync commit
+        if: steps.write.outputs.changed == 'true' && github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.tag }}"
+          git tag -f "$tag"
+          git push origin "$tag" --force
