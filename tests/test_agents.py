@@ -108,23 +108,19 @@ def test_agent_run_returns_analysis(
         (
             PriceAgent,
             "ph_stocks_advisor.agents.specialists.fetch_stock_price",
-            lambda: __import__(
-                "ph_stocks_advisor.data.models", fromlist=["StockPrice"]
-            ).StockPrice(symbol="TEL", current_price=0.0),
+            lambda: __import__("ph_stocks_advisor.data.models", fromlist=["StockPrice"]).StockPrice(
+                symbol="TEL", current_price=0.0
+            ),
         ),
         (
             DividendAgent,
             "ph_stocks_advisor.agents.specialists.fetch_dividend_info",
-            lambda: __import__(
-                "ph_stocks_advisor.data.models", fromlist=["DividendInfo"]
-            ).DividendInfo(symbol="TEL"),
+            lambda: __import__("ph_stocks_advisor.data.models", fromlist=["DividendInfo"]).DividendInfo(symbol="TEL"),
         ),
         (
             MovementAgent,
             "ph_stocks_advisor.agents.specialists.fetch_price_movement",
-            lambda: __import__(
-                "ph_stocks_advisor.data.models", fromlist=["PriceMovement"]
-            ).PriceMovement(symbol="TEL"),
+            lambda: __import__("ph_stocks_advisor.data.models", fromlist=["PriceMovement"]).PriceMovement(symbol="TEL"),
         ),
     ],
     ids=["price", "dividend", "movement"],

@@ -151,9 +151,7 @@ class TestEmptyAgentDataShortCircuit:
 
         # PriceAgent fails with empty-data; the other specialists succeed.
         FailingPriceAgent = MagicMock()
-        FailingPriceAgent.return_value.run.side_effect = EmptyAgentDataError(
-            "PriceAgent", "TEL"
-        )
+        FailingPriceAgent.return_value.run.side_effect = EmptyAgentDataError("PriceAgent", "TEL")
         FailingPriceAgent.__name__ = "PriceAgent"
 
         def _ok_agent(name, analysis_cls, data_cls, analysis_text):
@@ -167,21 +165,11 @@ class TestEmptyAgentDataShortCircuit:
 
         # StockPrice requires current_price, so build it manually for the
         # other agents we don't care about here.
-        OkDividendAgent = _ok_agent(
-            "DividendAgent", DividendAnalysis, DividendInfo, "div ok"
-        )
-        OkMovementAgent = _ok_agent(
-            "MovementAgent", MovementAnalysis, PriceMovement, "mov ok"
-        )
-        OkValuationAgent = _ok_agent(
-            "ValuationAgent", ValuationAnalysis, FairValueEstimate, "val ok"
-        )
-        OkControversyAgent = _ok_agent(
-            "ControversyAgent", ControversyAnalysis, ControversyInfo, "ctr ok"
-        )
-        OkSentimentAgent = _ok_agent(
-            "SentimentAgent", SentimentAnalysis, SentimentInfo, "sen ok"
-        )
+        OkDividendAgent = _ok_agent("DividendAgent", DividendAnalysis, DividendInfo, "div ok")
+        OkMovementAgent = _ok_agent("MovementAgent", MovementAnalysis, PriceMovement, "mov ok")
+        OkValuationAgent = _ok_agent("ValuationAgent", ValuationAnalysis, FairValueEstimate, "val ok")
+        OkControversyAgent = _ok_agent("ControversyAgent", ControversyAnalysis, ControversyInfo, "ctr ok")
+        OkSentimentAgent = _ok_agent("SentimentAgent", SentimentAnalysis, SentimentInfo, "sen ok")
 
         # Consolidator must NOT run when an error is present.
         MockConsolidator = MagicMock()
