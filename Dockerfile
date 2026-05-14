@@ -9,14 +9,12 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install runtime deps from the pip-compile-locked requirements.txt
-# for fully reproducible builds. The postgres extra (psycopg2-binary) is
-# not in the lock file (pip-compile is run without extras), so it's
-# installed separately using the constraint declared in pyproject.toml.
+# for fully reproducible builds. The lock includes the postgres extra
+# (psycopg2-binary), so a single install covers everything we need.
 COPY pyproject.toml requirements.txt ./
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt && \
-    /opt/venv/bin/pip install --no-cache-dir "psycopg2-binary>=2.9"
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Install the project itself last (deps are already locked & installed)
 COPY . .
