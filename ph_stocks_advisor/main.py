@@ -138,6 +138,10 @@ def _analyse_single(symbol: str, requested_formats: list[str], output_path: str 
 def main(symbol: str | None = None) -> None:
     """Run the multi-agent analysis, save to DB, and print the report."""
 
+    from ph_stocks_advisor.infra.logging import configure_logging
+
+    configure_logging()
+
     # Parse CLI args
     requested_formats: list[str] = []
     output_path: str | None = None

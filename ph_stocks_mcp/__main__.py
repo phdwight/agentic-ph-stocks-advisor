@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import logging
-
+from ph_stocks_advisor.infra.logging import configure_logging
 from ph_stocks_mcp.server import build_server
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging()
     server = build_server()
     server.run(transport="streamable-http")
 

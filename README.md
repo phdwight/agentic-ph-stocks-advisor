@@ -651,6 +651,7 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `MCP_HOST_PORT` | No | `5184` | Host port mapped to the MCP container (Docker Compose only — exposes MCP to external clients) |
 | `MCP_CONNECT_TIMEOUT` | No | `60` | Seconds to wait for the MCP session to initialise (raise when the server is slow under concurrent load) |
 | `MCP_REQUEST_TIMEOUT` | No | `60` | Seconds to wait for a single MCP tool response |
+| `LOG_LEVEL` | No | `INFO` | Root log level for every Python service (CLI, MCP server, Celery worker, web). Accepts standard names: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
 | `WEB_PORT` | No | `5180` | Host port for the Flask web UI (Docker Compose only) |
 | `ADMIN_PORT` | No | `5181` | Host port for the SQLAdmin panel (Docker Compose only) |
 | `ADMIN_SECRET_KEY` | No | `sqladmin-dev-…` | Flask secret key for the admin panel |

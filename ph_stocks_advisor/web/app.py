@@ -973,6 +973,10 @@ def main() -> None:
     import argparse
     import os
 
+    from ph_stocks_advisor.infra.logging import LOG_FORMAT_GUNICORN_ACCESS, configure_logging
+
+    configure_logging()
+
     parser = argparse.ArgumentParser(description="PH Stocks Advisor Web UI")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=5000, help="Port to bind to")
@@ -1013,6 +1017,8 @@ def main() -> None:
             "-",
             "--error-logfile",
             "-",
+            "--access-logformat",
+            LOG_FORMAT_GUNICORN_ACCESS,
             "ph_stocks_advisor.web.app:create_app()",
         ]
 

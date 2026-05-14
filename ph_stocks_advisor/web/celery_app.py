@@ -14,9 +14,14 @@ from __future__ import annotations
 import logging
 
 from celery import Celery
-from celery.signals import after_setup_logger
+from celery.signals import setup_logging
 
 from ph_stocks_advisor.infra.config import get_settings
+from ph_stocks_advisor.infra.logging import (
+    LOG_FORMAT_CELERY,
+    LOG_FORMAT_CELERY_TASK,
+    configure_logging,
+)
 
 _settings = get_settings()
 
@@ -33,22 +38,25 @@ celery_app.conf.update(
     result_expires=3600,  # results kept for 1 hour
     task_track_started=True,
     worker_hijack_root_logger=False,
+    worker_log_format=LOG_FORMAT_CELERY,
+    worker_task_log_format=LOG_FORMAT_CELERY_TASK,
 )
 
 
-@after_setup_logger.connect
-def _setup_app_logger(logger: logging.Logger, loglevel: int, **kwargs):
-    """Propagate the worker's log level to the application logger.
+@setup_logging.connect
+def _configure_celery_logging(loglevel: int | None = None, **_kwargs: object) -> None:
+    """Take full control of logging setup so Celery does not install
+    its own root handler on top of ours.
 
-    Celery's ``--loglevel`` flag only configures the ``celery.*`` loggers.
-    This signal handler ensures ``ph_stocks_advisor.*`` loggers (including
-    Tavily, data clients, etc.) also emit at the configured level.
+    Returning anything from a ``setup_logging`` handler tells Celery to
+    skip its default ``logging.config.dictConfig`` call, which is what
+    used to attach a *second* handler to ``ph_stocks_advisor.*`` and
+    duplicate every line in the worker output.
     """
-    app_logger = logging.getLogger("ph_stocks_advisor")
-    app_logger.setLevel(loglevel)
-    # Attach the same handlers so messages appear in the worker output.
-    for handler in logger.handlers:
-        app_logger.addHandler(handler)
+    configure_logging(loglevel)
+    # Make sure our app logger inherits the worker's loglevel without
+    # acquiring its own handler (propagation does the actual emitting).
+    logging.getLogger("ph_stocks_advisor").setLevel(loglevel or logging.INFO)
 
 
 # Auto-discover task modules inside the web package
