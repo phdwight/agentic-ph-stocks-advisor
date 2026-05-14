@@ -81,8 +81,12 @@ class _SyncMCPClient:
 
     def __init__(self, url: str, *, request_timeout: float | None = None, connect_timeout: float | None = None) -> None:
         self._url = url
-        self._request_timeout = request_timeout if request_timeout is not None else _env_float("MCP_REQUEST_TIMEOUT", 60.0)
-        self._connect_timeout = connect_timeout if connect_timeout is not None else _env_float("MCP_CONNECT_TIMEOUT", 60.0)
+        self._request_timeout = (
+            request_timeout if request_timeout is not None else _env_float("MCP_REQUEST_TIMEOUT", 60.0)
+        )
+        self._connect_timeout = (
+            connect_timeout if connect_timeout is not None else _env_float("MCP_CONNECT_TIMEOUT", 60.0)
+        )
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._session = None  # type: ignore[var-annotated]
