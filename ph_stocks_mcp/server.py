@@ -12,6 +12,7 @@ type.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -63,7 +64,7 @@ def build_server() -> FastMCP:
     # Validation
     # ------------------------------------------------------------------
     @mcp.tool()
-    def validate_symbol(symbol: str) -> str:
+    async def validate_symbol(symbol: str) -> str:
         """Return the canonical PSE stock code for *symbol*.
 
         Raises an MCP tool error prefixed with ``SymbolNotFoundError:`` when
@@ -71,7 +72,7 @@ def build_server() -> FastMCP:
         """
         logger.info("MCP tool called: validate_symbol(symbol=%r)", symbol)
         try:
-            result = validate_pse_symbol(symbol)
+            result = await asyncio.to_thread(validate_pse_symbol, symbol)
         except SymbolNotFoundError as exc:
             logger.info("MCP tool validate_symbol rejected symbol=%r: %s", symbol, exc)
             raise ValueError(f"{_SYMBOL_NOT_FOUND_PREFIX}{exc}") from exc
@@ -82,39 +83,39 @@ def build_server() -> FastMCP:
     # Data tools — each returns a Pydantic model
     # ------------------------------------------------------------------
     @mcp.tool()
-    def get_stock_price(symbol: str) -> StockPrice:
+    async def get_stock_price(symbol: str) -> StockPrice:
         """Return current price snapshot vs. 52-week range for a PSE stock."""
         logger.info("MCP tool called: get_stock_price(symbol=%r)", symbol)
-        return fetch_stock_price(symbol)
+        return await asyncio.to_thread(fetch_stock_price, symbol)
 
     @mcp.tool()
-    def get_dividend_info(symbol: str) -> DividendInfo:
+    async def get_dividend_info(symbol: str) -> DividendInfo:
         """Return dividend yield, payout ratio, sustainability and announcements."""
         logger.info("MCP tool called: get_dividend_info(symbol=%r)", symbol)
-        return fetch_dividend_info(symbol)
+        return await asyncio.to_thread(fetch_dividend_info, symbol)
 
     @mcp.tool()
-    def get_price_movement(symbol: str) -> PriceMovement:
+    async def get_price_movement(symbol: str) -> PriceMovement:
         """Return 1-year price movement, candlestick patterns and TV performance."""
         logger.info("MCP tool called: get_price_movement(symbol=%r)", symbol)
-        return fetch_price_movement(symbol)
+        return await asyncio.to_thread(fetch_price_movement, symbol)
 
     @mcp.tool()
-    def get_fair_value(symbol: str) -> FairValueEstimate:
+    async def get_fair_value(symbol: str) -> FairValueEstimate:
         """Return Graham-number fair-value estimate plus PE/PB ratios."""
         logger.info("MCP tool called: get_fair_value(symbol=%r)", symbol)
-        return fetch_fair_value(symbol)
+        return await asyncio.to_thread(fetch_fair_value, symbol)
 
     @mcp.tool()
-    def get_controversy_info(symbol: str) -> ControversyInfo:
+    async def get_controversy_info(symbol: str) -> ControversyInfo:
         """Return detected price spikes, risk factors and recent news headlines."""
         logger.info("MCP tool called: get_controversy_info(symbol=%r)", symbol)
-        return fetch_controversy_info(symbol)
+        return await asyncio.to_thread(fetch_controversy_info, symbol)
 
     @mcp.tool()
-    def get_sentiment_info(symbol: str) -> SentimentInfo:
+    async def get_sentiment_info(symbol: str) -> SentimentInfo:
         """Return macro / global-events sentiment context for a PSE stock."""
         logger.info("MCP tool called: get_sentiment_info(symbol=%r)", symbol)
-        return fetch_sentiment_info(symbol)
+        return await asyncio.to_thread(fetch_sentiment_info, symbol)
 
     return mcp

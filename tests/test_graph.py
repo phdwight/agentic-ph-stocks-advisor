@@ -199,3 +199,59 @@ class TestEmptyAgentDataShortCircuit:
         assert "TEL" in result["error"]
         # The consolidator must never have been instantiated/run.
         MockConsolidator.return_value.run.assert_not_called()
+
+    def test_transport_error_aborts_and_skips_consolidator(self):
+        """A generic specialist failure (e.g. MCP timeout under concurrent load)
+        must surface as an error and skip the consolidator, so no degraded
+        report can be persisted/cached."""
+        # PriceAgent fails with a generic transport-style error.
+        FailingPriceAgent = MagicMock()
+        FailingPriceAgent.return_value.run.side_effect = RuntimeError(
+            "Timed out after 30.0s waiting for MCP session to initialise"
+        )
+        FailingPriceAgent.__name__ = "PriceAgent"
+
+        def _ok_agent(name, analysis_cls, data_cls, analysis_text):
+            mock = MagicMock()
+            mock.return_value.run.return_value = analysis_cls(
+                data=data_cls(symbol="BDO"),
+                analysis=analysis_text,
+            )
+            mock.__name__ = name
+            return mock
+
+        OkDividendAgent = _ok_agent("DividendAgent", DividendAnalysis, DividendInfo, "div ok")
+        OkMovementAgent = _ok_agent("MovementAgent", MovementAnalysis, PriceMovement, "mov ok")
+        OkValuationAgent = _ok_agent("ValuationAgent", ValuationAnalysis, FairValueEstimate, "val ok")
+        OkControversyAgent = _ok_agent("ControversyAgent", ControversyAnalysis, ControversyInfo, "ctr ok")
+        OkSentimentAgent = _ok_agent("SentimentAgent", SentimentAnalysis, SentimentInfo, "sen ok")
+
+        # Consolidator must NOT run when an error is present — otherwise the
+        # LLM would hallucinate a "₱XX.XX" placeholder report from partial data
+        # and that junk would get cached.
+        MockConsolidator = MagicMock()
+
+        mock_registry = [
+            ("price_agent", "price_analysis", FailingPriceAgent),
+            ("dividend_agent", "dividend_analysis", OkDividendAgent),
+            ("movement_agent", "movement_analysis", OkMovementAgent),
+            ("valuation_agent", "valuation_analysis", OkValuationAgent),
+            ("controversy_agent", "controversy_analysis", OkControversyAgent),
+            ("sentiment_agent", "sentiment_analysis", OkSentimentAgent),
+        ]
+
+        mock_llm = MagicMock()
+
+        with (
+            patch.object(workflow_mod, "AGENT_REGISTRY", mock_registry),
+            patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
+            patch.object(workflow_mod, "validate_symbol", return_value="BDO"),
+        ):
+            result = run_analysis("BDO", llm=mock_llm, mini_llm=mock_llm)
+
+        assert result.get("final_report") is None
+        assert result.get("error") is not None
+        assert "PriceAgent" in result["error"]
+        assert "BDO" in result["error"]
+        assert "Timed out" in result["error"]
+        MockConsolidator.return_value.run.assert_not_called()

@@ -137,13 +137,22 @@ def _make_specialist_node(
             )
             return {"error": str(exc)}  # type: ignore[return-value]
         except Exception as exc:
+            # Any other failure (MCP transport timeout, network error,
+            # upstream API blip — common under concurrent load) must
+            # ALSO abort the pipeline. Silently dropping the analysis
+            # would let the consolidator fabricate a degraded report
+            # from partial data, which then gets persisted/cached and
+            # served to users as junk (e.g. "₱XX.XX" placeholders).
             logger.error(
-                "%s failed for %s: %s",
+                "%s failed for %s: %s — aborting analysis.",
                 agent_class.__name__,
                 state["symbol"],
                 exc,
+                exc_info=True,
             )
-            return {}  # type: ignore[return-value]
+            return {  # type: ignore[return-value]
+                "error": f"{agent_class.__name__} failed for {state['symbol']}: {exc}"
+            }
 
     return _node
 
