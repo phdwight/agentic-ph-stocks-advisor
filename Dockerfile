@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -8,17 +8,22 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
-# Install runtime + postgres deps into a virtual-env we can copy later
+# Install runtime deps from the pip-compile-locked requirements.txt
+# for fully reproducible builds. The postgres extra (psycopg2-binary) is
+# not in the lock file (pip-compile is run without extras), so it's
+# installed separately using the constraint declared in pyproject.toml.
+COPY pyproject.toml requirements.txt ./
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir ".[postgres]"
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt && \
+    /opt/venv/bin/pip install --no-cache-dir "psycopg2-binary>=2.9"
 
+# Install the project itself last (deps are already locked & installed)
 COPY . .
-RUN /opt/venv/bin/pip install --no-cache-dir .
+RUN /opt/venv/bin/pip install --no-cache-dir --no-deps .
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 

@@ -2,7 +2,7 @@
 
 An agentic AI application that analyses Philippine Stock Exchange (PSE) listed stocks and provides a **BUY** or **NOT BUY** verdict in plain English.
 
-Built with **LangGraph** + **LangChain** using a multi-agent architecture. Requires Python ≥ 3.11.
+Built with **LangGraph** + **LangChain** using a multi-agent architecture. Requires Python ≥ 3.14.
 
 ## Architecture
 
@@ -422,7 +422,8 @@ langgraph-flow.drawio              # Draw.io diagram of the LangGraph flow, MCP 
 .github/
 └── workflows/
     ├── develop-ci.yml             # CI — lint, type-check, test (develop branch)
-    └── main-ci-cd.yml             # CI/CD — same checks + deploy to Azure (main branch)
+    ├── main-ci-cd.yml             # CI/CD — same checks + deploy to Azure / SSH (main branch)
+    └── sync-version.yml           # Sync pyproject.toml version with the published GitHub Release tag
 admin/                             # SQLAdmin database panel
 ├── app.py                     #   Flask + SQLAdmin wiring & model views
 ├── Dockerfile                 #   Container image for admin panel
@@ -444,6 +445,7 @@ ph_stocks_advisor/
 │   ├── celery_app.py          #   Celery instance & configuration
 │   ├── tasks.py               #   Celery task definitions (analyse_stock)
 │   ├── progress.py            #   Redis Pub/Sub progress publisher + subscriber (SSE)
+│   ├── worker.py              #   Custom Gunicorn gevent worker that skips SSL monkey-patch (Py 3.12 fix)
 │   ├── templates/             #   Jinja2 HTML templates
 │   │   ├── base.html          #     Shared layout
 │   │   ├── index.html         #     Landing page with analysis form
@@ -491,12 +493,20 @@ ph_stocks_advisor/
 ├── graph/
 │   ├── __init__.py
 │   └── workflow.py            # LangGraph workflow & agent registry
-└── infra/
+├── infra/
+│   ├── __init__.py
+│   ├── config.py              # Settings, LLM / repository factory & Redis pool
+│   ├── logging.py             # Unified log formatter shared by every entry point
+│   ├── tracing.py             # Langfuse callback config (optional, no-op when disabled)
+│   ├── repository.py          # Abstract repository interface
+│   ├── repository_sqlite.py   # SQLite implementation (default)
+│   └── repository_postgres.py # PostgreSQL implementation
+└── memory/                    # Long-term project memory (Copilot context store)
     ├── __init__.py
-    ├── config.py              # Settings, LLM / repository factory & Redis pool
-    ├── repository.py          # Abstract repository interface
-    ├── repository_sqlite.py   # SQLite implementation (default)
-    └── repository_postgres.py # PostgreSQL implementation
+    ├── __main__.py            #   CLI: rebuild / update / query / stats
+    ├── embeddings.py          #   Embedder Protocol + OpenAI implementation
+    ├── ingest.py              #   Walk the workspace and chunk files for indexing
+    └── vector_store.py        #   SQLite + sqlite-vec vector store façade
 ph_stocks_mcp/                     # MCP server exposing the data tools
 ├── __init__.py
 ├── __main__.py                #   Entry point (ph-advisor-mcp)
@@ -504,6 +514,7 @@ ph_stocks_mcp/                     # MCP server exposing the data tools
 
 tests/
 ├── conftest.py                # Shared fixtures, mock helpers & trajectory tracker
+├── dummy_responses.py         # Canned API responses for offline tests
 ├── test_tools.py
 ├── test_mcp_server.py         # MCP server tools + façade dispatch behaviour
 ├── test_agents.py
@@ -512,13 +523,17 @@ tests/
 ├── test_consolidator.py
 ├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
 ├── test_graph.py
-├── test_trajectory.py          # Trajectory tests (agent step sequences & graph order)
-├── test_dedup.py               # Concurrent analysis deduplication tests
-├── test_healthz.py             # Heartbeat endpoint tests
-├── test_rate_limit.py          # Per-user daily rate limiting tests
-├── test_portfolio.py           # Portfolio holdings & advisory feature tests
+├── test_trajectory.py         # Trajectory tests (agent step sequences & graph order)
+├── test_dedup.py              # Concurrent analysis deduplication tests
+├── test_healthz.py            # Heartbeat endpoint tests
+├── test_logging.py            # Unified log formatter tests
+├── test_memory.py             # Long-term project memory store tests
+├── test_rate_limit.py         # Per-user daily rate limiting tests
+├── test_portfolio.py          # Portfolio holdings & advisory feature tests
 ├── test_repository.py
+├── test_sidebar.py            # Recent-history sidebar rendering tests
 ├── test_sse.py                # SSE progress streaming tests
+├── test_tracing.py            # Langfuse tracing integration tests
 └── test_user_type.py          # User type system (elevated bypass) tests
 ```
 
@@ -526,10 +541,11 @@ tests/
 
 Two GitHub Actions workflows follow a **develop → main** promotion strategy:
 
-| Workflow | Branch | Jobs | Deploys? |
-|----------|--------|------|----------|
-| `develop-ci.yml` | `develop` | Lint, type-check, unit tests, integration tests | No |
-| `main-ci-cd.yml` | `main` | Same CI checks + build & push GHCR images + deploy | Yes (push only) |
+| Workflow | Branch / Trigger | Jobs | Deploys? |
+|----------|------------------|------|----------|
+| `develop-ci.yml` | push to `develop` | Lint, type-check, unit tests, integration tests | No |
+| `main-ci-cd.yml` | push to `main` | Same CI checks + build & push GHCR images + deploy | Yes |
+| `sync-version.yml` | GitHub Release published | Rewrite `pyproject.toml` version to match the release tag and re-tag the commit | No |
 
 Both use `uv` for fast dependency installation and share the same quality gates:
 
@@ -678,7 +694,7 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `OTEL_SELF_METRICS_PORT` | No | `6187` | Host port for the OTel Collector's self-metrics endpoint |
 | `GRAFANA_USER` | No | `admin` | Grafana admin username |
 | `GRAFANA_PASSWORD` | No | `admin` | Grafana admin password || `WEB_WORKERS` | No | `4` | Gunicorn worker processes |
-| `WEB_WORKER_CLASS` | No | `gevent` | Gunicorn worker class (`gevent`, `gthread`, `sync`, etc.) |
+| `WEB_WORKER_CLASS` | No | `gevent` (compose: `ph_stocks_advisor.web.worker.GeventWorkerNoSSL`) | Gunicorn worker class. Compose uses a custom gevent worker that skips SSL monkey-patching (avoids a Py 3.12 + OpenSSL ≥ 3.5 recursion bug). |
 | `WEB_WORKER_CONNECTIONS` | No | `1000` | Max simultaneous connections per gevent worker |
 | `WEB_THREADS` | No | `2` | Threads per Gunicorn worker (only used with `gthread` worker class) |
 | `WEB_TIMEOUT` | No | `120` | Gunicorn worker timeout in seconds |
