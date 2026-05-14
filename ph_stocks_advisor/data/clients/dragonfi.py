@@ -195,7 +195,7 @@ def _extract_annual_values(series_data: dict[str, Any] | None) -> dict[str, floa
             continue
         try:
             result[key] = float(val)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return result
 

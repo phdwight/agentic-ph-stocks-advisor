@@ -10,7 +10,7 @@ in-process fallback: ``MCP_SERVER_URL`` must be configured.
 from __future__ import annotations
 
 import logging
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -35,15 +35,13 @@ from ph_stocks_advisor.data.services.price import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-_M = TypeVar("_M", bound=BaseModel)
-
 
 def _call(tool_name: str, symbol: str) -> Any:
     """Invoke an MCP tool with a single ``symbol`` argument."""
     return get_client().call(tool_name, {"symbol": symbol})
 
 
-def _model_call(tool_name: str, symbol: str, model: type[_M]) -> _M:
+def _model_call[M: BaseModel](tool_name: str, symbol: str, model: type[M]) -> M:
     """Invoke an MCP tool and validate its payload as *model*."""
     return model.model_validate(_call(tool_name, symbol))
 
