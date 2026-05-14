@@ -16,10 +16,12 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import tomllib
 import uuid
 from datetime import UTC, datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from pathlib import Path
 
 from flask import Flask, Response, abort, jsonify, render_template, request, session
 from markupsafe import Markup
@@ -39,11 +41,50 @@ from ph_stocks_advisor.web.rate_limit import reserve as rl_reserve
 logger = logging.getLogger(__name__)
 
 
-def _app_version() -> str:
+# Cache the resolved version so we don't re-read pyproject.toml on every
+# request — the value is fixed for the lifetime of the process.
+_VERSION_CACHE: str | None = None
+
+
+def _read_pyproject_version() -> str | None:
+    """Return the version declared in the repo's ``pyproject.toml``.
+
+    The web footer must reflect the *current* source revision so that
+    deployed releases always show their published version (e.g. when
+    the installed egg-info lags behind ``pyproject.toml`` after a
+    bump but before reinstall). Returns ``None`` when the file is not
+    reachable (e.g. installed wheel without source layout).
+    """
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if not pyproject.is_file():
+        return None
     try:
-        return _pkg_version("ph-stocks-advisor")
-    except PackageNotFoundError:
-        return "dev"
+        with pyproject.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return None
+    version = project.get("version")
+    return version if isinstance(version, str) and version else None
+
+
+def _app_version() -> str:
+    global _VERSION_CACHE
+    if _VERSION_CACHE is not None:
+        return _VERSION_CACHE
+    # Prefer pyproject.toml (source of truth in the repo) so that the
+    # footer matches the latest release even when the installed
+    # distribution's metadata is stale.
+    version = _read_pyproject_version()
+    if version is None:
+        try:
+            version = _pkg_version("ph-stocks-advisor")
+        except PackageNotFoundError:
+            version = "dev"
+    _VERSION_CACHE = version
+    return version
 
 
 # Philippine Stock Exchange timezone (UTC+8).

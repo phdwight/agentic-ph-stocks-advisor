@@ -16,6 +16,7 @@ These tests focus on **behaviour**:
 from __future__ import annotations
 
 import asyncio
+import os
 from unittest.mock import patch
 
 import pytest
@@ -230,3 +231,56 @@ def test_facade_propagates_mcp_not_configured_error(monkeypatch):
         tools.fetch_stock_price("TEL")
 
     _clear_settings_cache()
+
+
+# ---------------------------------------------------------------------------
+# Resilience: init failure recovery, fork detection, retry-after-error
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.no_mcp_stub
+def test_client_recovers_after_init_timeout():
+    """A timed-out init must not poison subsequent calls.
+
+    Reproduces the symptom described in the bug report ("only one ticker
+    succeeds — others fail with 'Timed out after 30s waiting for MCP
+    session to initialise'"): the previous implementation kept the
+    half-started thread around and re-raised on every following call.
+    """
+    from ph_stocks_advisor.data.mcp_client import MCPClientError, _SyncMCPClient
+
+    client = _SyncMCPClient("http://does-not-exist.invalid:1/mcp/", connect_timeout=0.05)
+
+    with pytest.raises(MCPClientError, match="Timed out|Failed to connect"):
+        client._ensure_started()
+
+    # State must be reset so a retry actually re-attempts initialisation
+    # rather than instantly failing on the already-set ready flag.
+    assert client._thread is None
+    assert client._loop is None
+    assert client._session is None
+
+    with pytest.raises(MCPClientError, match="Timed out|Failed to connect"):
+        client._ensure_started()
+
+
+@pytest.mark.no_mcp_stub
+def test_get_client_discards_singleton_after_fork(monkeypatch):
+    """After ``os.fork()`` (Celery prefork), the inherited singleton must
+    be replaced — its event-loop thread does not survive the fork."""
+    import ph_stocks_advisor.data.mcp_client as mcp_mod
+    from ph_stocks_advisor.data.mcp_client import _SyncMCPClient, get_client
+
+    reset_client()
+
+    # Pretend a singleton was created in a different (parent) process.
+    fake_parent = _SyncMCPClient("http://mcp:8000/mcp/")
+    fake_parent._owner_pid = -1  # impossible PID — guarantees mismatch
+    monkeypatch.setattr(mcp_mod, "_client", fake_parent)
+
+    client = get_client("http://mcp:8000/mcp/")
+
+    assert client is not fake_parent
+    assert client._owner_pid == os.getpid()
+
+    reset_client()

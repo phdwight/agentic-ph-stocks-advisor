@@ -140,3 +140,74 @@ class TestValidationFailure:
         assert result.get("error") is not None
         assert "XYZ" in result["error"]
         assert result.get("final_report") is None
+
+
+class TestEmptyAgentDataShortCircuit:
+    """When a specialist returns empty upstream data, the pipeline must abort."""
+
+    def test_empty_data_aborts_and_skips_consolidator(self):
+        """An empty PriceAgent payload must surface an error and skip consolidation."""
+        from ph_stocks_advisor.agents.specialists import EmptyAgentDataError
+
+        # PriceAgent fails with empty-data; the other specialists succeed.
+        FailingPriceAgent = MagicMock()
+        FailingPriceAgent.return_value.run.side_effect = EmptyAgentDataError(
+            "PriceAgent", "TEL"
+        )
+        FailingPriceAgent.__name__ = "PriceAgent"
+
+        def _ok_agent(name, analysis_cls, data_cls, analysis_text):
+            mock = MagicMock()
+            mock.return_value.run.return_value = analysis_cls(
+                data=data_cls(symbol="TEL"),
+                analysis=analysis_text,
+            )
+            mock.__name__ = name
+            return mock
+
+        # StockPrice requires current_price, so build it manually for the
+        # other agents we don't care about here.
+        OkDividendAgent = _ok_agent(
+            "DividendAgent", DividendAnalysis, DividendInfo, "div ok"
+        )
+        OkMovementAgent = _ok_agent(
+            "MovementAgent", MovementAnalysis, PriceMovement, "mov ok"
+        )
+        OkValuationAgent = _ok_agent(
+            "ValuationAgent", ValuationAnalysis, FairValueEstimate, "val ok"
+        )
+        OkControversyAgent = _ok_agent(
+            "ControversyAgent", ControversyAnalysis, ControversyInfo, "ctr ok"
+        )
+        OkSentimentAgent = _ok_agent(
+            "SentimentAgent", SentimentAnalysis, SentimentInfo, "sen ok"
+        )
+
+        # Consolidator must NOT run when an error is present.
+        MockConsolidator = MagicMock()
+
+        mock_registry = [
+            ("price_agent", "price_analysis", FailingPriceAgent),
+            ("dividend_agent", "dividend_analysis", OkDividendAgent),
+            ("movement_agent", "movement_analysis", OkMovementAgent),
+            ("valuation_agent", "valuation_analysis", OkValuationAgent),
+            ("controversy_agent", "controversy_analysis", OkControversyAgent),
+            ("sentiment_agent", "sentiment_analysis", OkSentimentAgent),
+        ]
+
+        mock_llm = MagicMock()
+
+        with (
+            patch.object(workflow_mod, "AGENT_REGISTRY", mock_registry),
+            patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
+            patch.object(workflow_mod, "validate_symbol", return_value="TEL"),
+        ):
+            result = run_analysis("TEL", llm=mock_llm, mini_llm=mock_llm)
+
+        # The pipeline must surface the empty-data error and skip the report.
+        assert result.get("final_report") is None
+        assert result.get("error") is not None
+        assert "PriceAgent" in result["error"]
+        assert "TEL" in result["error"]
+        # The consolidator must never have been instantiated/run.
+        MockConsolidator.return_value.run.assert_not_called()

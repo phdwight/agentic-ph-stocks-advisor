@@ -49,14 +49,51 @@ document.addEventListener("DOMContentLoaded", () => {
       if (extra) Object.assign(tasks[symbol], extra);
     }
     saveTasks(tasks);
+    if (status === "error") {
+      scheduleErrorAutoFade(symbol);
+    }
+  }
+
+  // Tracker error rows should not stick around forever — fade them out
+  // and remove them from the persisted task list after a short read window.
+  // Tracked per-symbol so duplicate updates don't stack timers.
+  const ERROR_AUTO_FADE_MS = 8000;   // visible time before fade starts
+  const ERROR_FADE_DURATION = 600;   // must match CSS transition duration
+  const errorFadeTimers = {};
+
+  function scheduleErrorAutoFade(symbol) {
+    if (errorFadeTimers[symbol]) {
+      clearTimeout(errorFadeTimers[symbol]);
+    }
+    errorFadeTimers[symbol] = setTimeout(() => {
+      const row = cardRefs[symbol];
+      const finish = () => {
+        delete errorFadeTimers[symbol];
+        // Only remove if it's still in error state (user may have retried).
+        const tasks = loadTasks();
+        if (tasks[symbol] && tasks[symbol].status === "error") {
+          removeTask(symbol);
+          renderTracker();
+        }
+      };
+      if (row && row.classList.contains("tracker-row-error")) {
+        row.classList.add("is-fading");
+        setTimeout(finish, ERROR_FADE_DURATION);
+      } else {
+        finish();
+      }
+    }, ERROR_AUTO_FADE_MS);
   }
 
   function removeTask(symbol) {
     const tasks = loadTasks();
     const task = tasks[symbol];
-    // If the task completed successfully, add it to the "Previously Analysed" chips
+    // If the task completed successfully, surface it in the recent chips
+    // and the left "Recent" sidebar so the user doesn't have to refresh
+    // the page to see their newly-completed analysis.
     if (task && task.status === "done" && task.verdict) {
       addChipToRecent(symbol, task.verdict);
+      addToSidebar(symbol, task.verdict);
     }
     delete tasks[symbol];
     saveTasks(tasks);
@@ -170,6 +207,94 @@ document.addEventListener("DOMContentLoaded", () => {
     // Prepend chip then let calibrateCarousel redistribute
     chipsContainer.prepend(chip);
     calibrateCarousel();
+  }
+
+  /* ================================================================== */
+  /*  Dynamically prepend a ticker to the left "Recent" sidebar         */
+  /* ================================================================== */
+
+  function addToSidebar(symbol, verdict) {
+    const layout = document.querySelector(".layout");
+    if (!layout) return;
+
+    // Build today's label so it matches the server-side format
+    // produced by ``group.date.strftime('%b %d, %Y')`` in base.html.
+    const now = new Date();
+    const monthNames = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+    const todayLabel =
+      `${monthNames[now.getMonth()]} ${String(now.getDate()).padStart(2, "0")}, ${now.getFullYear()}`;
+
+    // Locate (or build) the sidebar — it is omitted server-side when the
+    // user has zero history yet, in which case we create it on the fly.
+    let sidebar = layout.querySelector(".sidebar");
+    let history;
+    if (!sidebar) {
+      sidebar = document.createElement("aside");
+      sidebar.className = "sidebar";
+      sidebar.setAttribute("aria-label", "Recently analysed tickers");
+      sidebar.innerHTML = `
+        <h2 class="sidebar-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Recent
+        </h2>
+        <ul class="sidebar-history"></ul>`;
+      layout.prepend(sidebar);
+      history = sidebar.querySelector(".sidebar-history");
+    } else {
+      history = sidebar.querySelector(".sidebar-history");
+      if (!history) {
+        history = document.createElement("ul");
+        history.className = "sidebar-history";
+        sidebar.appendChild(history);
+      }
+    }
+
+    // Find or create today's day group at the top of the list.
+    let todayGroup = history.querySelector(".sidebar-day");
+    let tickers;
+    const firstLabel = todayGroup
+      ? todayGroup.querySelector(".sidebar-day-label")?.textContent.trim()
+      : null;
+    if (!todayGroup || firstLabel !== todayLabel) {
+      todayGroup = document.createElement("li");
+      todayGroup.className = "sidebar-day";
+      todayGroup.innerHTML = `
+        <div class="sidebar-day-label">${todayLabel}</div>
+        <ul class="sidebar-tickers"></ul>`;
+      history.prepend(todayGroup);
+    }
+    tickers = todayGroup.querySelector(".sidebar-tickers");
+
+    // Dedup: a re-analysis of the same symbol should move to the top,
+    // not stack a duplicate row underneath the previous result.
+    history.querySelectorAll(".sidebar-ticker").forEach(a => {
+      const sym = a.querySelector(".sidebar-ticker-symbol")?.textContent.trim();
+      if (sym === symbol) {
+        const li = a.closest("li");
+        if (li) li.remove();
+      }
+    });
+
+    // Drop now-empty day groups created above by the dedup pass.
+    history.querySelectorAll(".sidebar-day").forEach(group => {
+      const list = group.querySelector(".sidebar-tickers");
+      if (list && list.children.length === 0 && group !== todayGroup) {
+        group.remove();
+      }
+    });
+
+    const isBuy = (verdict || "").toUpperCase() === "BUY";
+    const verdictLabel = isBuy ? "BUY" : "NOT BUY";
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <a href="/report/${encodeURIComponent(symbol)}" class="sidebar-ticker">
+        <span class="sidebar-ticker-symbol">${symbol}</span>
+        <span class="sidebar-ticker-verdict badge-sm ${isBuy ? "buy" : "not-buy"}">${verdictLabel}</span>
+      </a>`;
+    tickers.prepend(li);
   }
 
   /* ================================================================== */
@@ -492,6 +617,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================================================================== */
 
   function flashError(msg, symbol) {
+    errorArea.classList.remove("is-fading");
     errorArea.style.display = "block";
     if (symbol) {
       errorText.innerHTML =
@@ -500,11 +626,18 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       errorText.textContent = msg;
     }
-    setTimeout(hideError, 8000);
+    if (flashError._fadeTimer) clearTimeout(flashError._fadeTimer);
+    if (flashError._hideTimer) clearTimeout(flashError._hideTimer);
+    // Start the CSS fade after the read window, then hide once it ends.
+    flashError._fadeTimer = setTimeout(() => {
+      errorArea.classList.add("is-fading");
+      flashError._hideTimer = setTimeout(hideError, 600);
+    }, 8000);
   }
 
   function hideError() {
     errorArea.style.display = "none";
+    errorArea.classList.remove("is-fading");
   }
 
   /* ================================================================== */

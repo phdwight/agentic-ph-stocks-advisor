@@ -60,8 +60,8 @@ services:
       CATALYST_RANGE_PCT: ${CATALYST_RANGE_PCT:-65}
       CATALYST_DAY_CHANGE_PCT: ${CATALYST_DAY_CHANGE_PCT:-0.5}
       CATALYST_NEAR_HIGH_PCT: ${CATALYST_NEAR_HIGH_PCT:-5}
-    # Port is NOT exposed to the host by default — only sibling services
-    # need to reach it. Uncomment for local debugging.
+    # Exposed on the host so external MCP clients (Claude Desktop, IDEs,
+    # curl, etc.) can connect at http://<host>:${MCP_HOST_PORT:-5184}/mcp/
     ports:
       - "${MCP_HOST_PORT:-5184}:8000"
     entrypoint: ["ph-advisor-mcp"]

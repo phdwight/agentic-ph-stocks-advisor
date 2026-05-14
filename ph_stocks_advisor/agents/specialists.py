@@ -32,9 +32,12 @@ from ph_stocks_advisor.agents.prompts import (
 from ph_stocks_advisor.data.models import (
     ControversyAnalysis,
     DividendAnalysis,
+    DividendInfo,
     MovementAnalysis,
     PriceAnalysis,
+    PriceMovement,
     SentimentAnalysis,
+    StockPrice,
     ValuationAnalysis,
 )
 from ph_stocks_advisor.data.tools import (
@@ -48,6 +51,72 @@ from ph_stocks_advisor.data.tools import (
 from ph_stocks_advisor.infra.config import get_today
 
 logger = logging.getLogger(__name__)
+
+
+class EmptyAgentDataError(RuntimeError):
+    """Raised when an upstream data tool returns an empty payload.
+
+    "Empty" means the fetched model carries no usable signal — every
+    field is either unset, zero, an empty collection, or an empty
+    string (the symbol field is ignored). When this happens, the
+    downstream LLM analysis would be meaningless, so the workflow
+    must abort and surface the error instead of silently producing
+    a low-quality report.
+    """
+
+    def __init__(self, agent_name: str, symbol: str) -> None:
+        self.agent_name = agent_name
+        self.symbol = symbol
+        super().__init__(
+            f"{agent_name} returned an empty data object for symbol '{symbol}'. "
+            "Aborting analysis — upstream data source produced no usable signal."
+        )
+
+
+def _is_empty_stock_price(data: StockPrice) -> bool:
+    """A `StockPrice` is empty when no meaningful price information exists."""
+    return (
+        data.current_price <= 0.0
+        and data.fifty_two_week_high <= 0.0
+        and data.fifty_two_week_low <= 0.0
+        and data.previous_close <= 0.0
+        and not data.price_catalysts
+    )
+
+
+def _is_empty_dividend_info(data: DividendInfo) -> bool:
+    """A `DividendInfo` is empty when every metric and enrichment field is unset."""
+    return (
+        data.dividend_rate == 0.0
+        and data.dividend_yield == 0.0
+        and data.payout_ratio == 0.0
+        and data.five_year_avg_yield == 0.0
+        and data.annual_dividend_per_share == 0.0
+        and not data.ex_dividend_date
+        and not data.net_income_trend
+        and not data.revenue_trend
+        and not data.free_cash_flow_trend
+        and not data.dividend_sustainability_note
+        and not data.recent_dividend_news
+        and not data.recent_declared_dividends
+        and not data.dividend_announcements
+    )
+
+
+def _is_empty_price_movement(data: PriceMovement) -> bool:
+    """A `PriceMovement` is empty when no historical price data is present."""
+    return (
+        data.year_start_price == 0.0
+        and data.year_end_price == 0.0
+        and data.year_change_pct == 0.0
+        and data.max_price == 0.0
+        and data.min_price == 0.0
+        and data.volatility == 0.0
+        and not data.monthly_prices
+        and not data.candlestick_patterns
+        and not data.performance_summary
+        and not data.web_news
+    )
 
 
 def _invoke_llm(llm: BaseChatModel, prompt: str) -> str:
@@ -64,6 +133,8 @@ class PriceAgent:
 
     def run(self, symbol: str) -> PriceAnalysis:
         data = fetch_stock_price(symbol)
+        if _is_empty_stock_price(data):
+            raise EmptyAgentDataError("PriceAgent", symbol)
         prompt = PRICE_ANALYSIS_PROMPT.format(
             symbol=symbol,
             data=data.model_dump_json(indent=2),
@@ -80,6 +151,8 @@ class DividendAgent:
 
     def run(self, symbol: str) -> DividendAnalysis:
         data = fetch_dividend_info(symbol)
+        if _is_empty_dividend_info(data):
+            raise EmptyAgentDataError("DividendAgent", symbol)
         prompt = DIVIDEND_ANALYSIS_PROMPT.format(
             symbol=symbol,
             data=data.model_dump_json(indent=2),
@@ -96,6 +169,8 @@ class MovementAgent:
 
     def run(self, symbol: str) -> MovementAnalysis:
         data = fetch_price_movement(symbol)
+        if _is_empty_price_movement(data):
+            raise EmptyAgentDataError("MovementAgent", symbol)
         prompt = MOVEMENT_ANALYSIS_PROMPT.format(
             symbol=symbol,
             data=data.model_dump_json(indent=2),

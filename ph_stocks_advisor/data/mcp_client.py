@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
+import os
 import threading
 from typing import Any
 
@@ -32,6 +33,19 @@ logger = logging.getLogger(__name__)
 # Marker prefix the server attaches to ``SymbolNotFoundError`` messages so we
 # can re-raise the original exception type on the client side.
 _SYMBOL_NOT_FOUND_PREFIX = "SymbolNotFoundError: "
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a positive float from the environment, falling back on errors."""
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("Invalid float for %s=%r, using default %s", name, raw, default)
+        return default
+    return value if value > 0 else default
 
 
 def _make_native_thread(*, target, name: str) -> threading.Thread:
@@ -65,10 +79,10 @@ class _SyncMCPClient:
     coroutine completes on that loop.
     """
 
-    def __init__(self, url: str, *, request_timeout: float = 60.0, connect_timeout: float = 30.0) -> None:
+    def __init__(self, url: str, *, request_timeout: float | None = None, connect_timeout: float | None = None) -> None:
         self._url = url
-        self._request_timeout = request_timeout
-        self._connect_timeout = connect_timeout
+        self._request_timeout = request_timeout if request_timeout is not None else _env_float("MCP_REQUEST_TIMEOUT", 60.0)
+        self._connect_timeout = connect_timeout if connect_timeout is not None else _env_float("MCP_CONNECT_TIMEOUT", 60.0)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._session = None  # type: ignore[var-annotated]
@@ -77,34 +91,62 @@ class _SyncMCPClient:
         self._start_error: BaseException | None = None
         self._lock = threading.Lock()
         self._closed = False
+        self._owner_pid = os.getpid()
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
+    def _reset_locked(self) -> None:
+        """Reset thread/loop/session state. Caller must hold ``self._lock``."""
+        self._loop = None
+        self._thread = None
+        self._session = None
+        self._stack = None
+        self._ready = threading.Event()
+        self._start_error = None
+        self._closed = False
+        self._owner_pid = os.getpid()
+
     def _ensure_started(self) -> None:
-        if self._session is not None:
+        if self._session is not None and self._owner_pid == os.getpid():
             return
         with self._lock:
+            # Detect fork (e.g. Celery prefork worker): the inherited loop
+            # thread does not survive ``os.fork()`` so any prior session
+            # state in this process is dead. Discard and rebuild.
+            if self._owner_pid != os.getpid():
+                logger.info(
+                    "MCP client detected fork (owner_pid=%s, current_pid=%s); rebuilding session",
+                    self._owner_pid,
+                    os.getpid(),
+                )
+                self._reset_locked()
             if self._session is not None:
                 return
             if self._thread is None:
                 self._loop = asyncio.new_event_loop()
+                self._ready = threading.Event()
+                self._start_error = None
                 self._thread = _make_native_thread(
                     target=self._run_loop,
                     name=f"mcp-client-{self._url}",
                 )
                 self._thread.start()
             if not self._ready.wait(timeout=self._connect_timeout):
-                # Don't tear the thread down — a slow connect (gevent /
-                # OTel instrumentation) may still complete on the next
-                # call. Just surface a clean error to the caller.
+                # Tear the half-started state down so the NEXT call retries
+                # cleanly instead of waiting on the same already-set event
+                # forever.
+                self._reset_locked()
                 raise MCPClientError(
                     f"Timed out after {self._connect_timeout}s waiting for MCP "
                     f"session to initialise against {self._url}"
                 )
             if self._start_error is not None:
-                raise MCPClientError(f"Failed to connect to MCP server at {self._url}: {self._start_error}")
+                err = self._start_error
+                self._reset_locked()
+                raise MCPClientError(f"Failed to connect to MCP server at {self._url}: {err}")
             if self._session is None:
+                self._reset_locked()
                 raise MCPClientError(f"MCP session was not established against {self._url} (no error reported)")
             atexit.register(self.close)
 
@@ -169,16 +211,37 @@ class _SyncMCPClient:
         tools, ``str`` / primitive for scalar tools). Raises
         :class:`SymbolNotFoundError` when the server reports a missing
         symbol, or :class:`MCPClientError` for any other failure.
-        """
-        self._ensure_started()
-        if self._session is None or self._loop is None:
-            raise MCPClientError(f"MCP client is not ready (url={self._url})")
 
-        future = asyncio.run_coroutine_threadsafe(
-            self._call_async(tool_name, arguments),
-            self._loop,
-        )
-        return future.result(timeout=self._request_timeout)
+        Transparently rebuilds the underlying session once if the previous
+        one was torn down (e.g. server restart, transport error).
+        """
+        last_error: BaseException | None = None
+        for attempt in range(2):
+            self._ensure_started()
+            if self._session is None or self._loop is None:
+                raise MCPClientError(f"MCP client is not ready (url={self._url})")
+
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._call_async(tool_name, arguments),
+                    self._loop,
+                )
+                return future.result(timeout=self._request_timeout)
+            except SymbolNotFoundError:
+                raise
+            except MCPClientError:
+                raise
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "MCP tool %r failed on attempt %d (%s); rebuilding session",
+                    tool_name,
+                    attempt + 1,
+                    exc,
+                )
+                with self._lock:
+                    self._reset_locked()
+        raise MCPClientError(f"MCP tool {tool_name!r} failed after retry: {last_error}")
 
     async def _call_async(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         assert self._session is not None
@@ -251,6 +314,15 @@ def get_client(url: str | None = None) -> _SyncMCPClient:
 
     global _client
     with _client_lock:
+        # Detect fork: a singleton inherited from a parent process has a
+        # dead loop thread and must be discarded.
+        if _client is not None and _client._owner_pid != os.getpid():
+            logger.info(
+                "Discarding MCP client inherited from parent process (owner_pid=%s, current_pid=%s)",
+                _client._owner_pid,
+                os.getpid(),
+            )
+            _client = None
         if _client is None or _client._url != url:
             if _client is not None:
                 _client.close()

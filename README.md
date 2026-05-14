@@ -79,7 +79,7 @@ The project ships with a multi-stage `Dockerfile` and a Compose v2 file with fiv
 |-----------|------|
 | **db** | PostgreSQL 16 — persistent report storage |
 | **redis** | Redis 7 — Celery message broker & result backend |
-| **mcp** | PH Stocks Advisor MCP server — PSE data tools over Streamable HTTP (port 8000) |
+| **mcp** | PH Stocks Advisor MCP server — PSE data tools over Streamable HTTP (container :8000, host :5184) |
 | **web** | Flask web UI via Gunicorn + gevent (port 5000) |
 | **worker** | Celery worker — runs stock analyses in the background |
 | **advisor** | One-shot CLI analysis (optional) |
@@ -646,8 +646,11 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `CATALYST_NEAR_HIGH_PCT` | No | `5` | % gap to 52-week high for "near high" catalyst |
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection URL (broker + result backend for Celery) |
 | `REDIS_PORT` | No | `6379` | Host port for Redis (Docker Compose only) |
-| `MCP_SERVER_URL` | **Yes** | _(empty)_ | URL of the PH Stocks Advisor MCP server (e.g. `http://mcp:8000/mcp/`). All market-data calls dispatch through this server — there is no in-process fallback. An unset value raises `MCPNotConfiguredError` on the first data call. |
-| `MCP_PORT` | No | `8000` | Host port for the MCP server (Docker Compose only) |
+| `MCP_SERVER_URL` | **Yes** | _(empty)_ | URL of the PH Stocks Advisor MCP server (e.g. `http://mcp:8000/mcp/` from sibling containers, or `http://localhost:5184/mcp/` from the host). All market-data calls dispatch through this server — there is no in-process fallback. An unset value raises `MCPNotConfiguredError` on the first data call. |
+| `MCP_PORT` | No | `8000` | Port the MCP server listens on **inside the container** |
+| `MCP_HOST_PORT` | No | `5184` | Host port mapped to the MCP container (Docker Compose only — exposes MCP to external clients) |
+| `MCP_CONNECT_TIMEOUT` | No | `60` | Seconds to wait for the MCP session to initialise (raise when the server is slow under concurrent load) |
+| `MCP_REQUEST_TIMEOUT` | No | `60` | Seconds to wait for a single MCP tool response |
 | `WEB_PORT` | No | `5180` | Host port for the Flask web UI (Docker Compose only) |
 | `ADMIN_PORT` | No | `5181` | Host port for the SQLAdmin panel (Docker Compose only) |
 | `ADMIN_SECRET_KEY` | No | `sqladmin-dev-…` | Flask secret key for the admin panel |

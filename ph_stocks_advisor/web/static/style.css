@@ -504,6 +504,13 @@ a:hover {
   font-size: 0.85rem;
   font-weight: 400;
   box-shadow: var(--shadow-inner);
+  opacity: 1;
+  transition: opacity 0.6s var(--ease-out);
+}
+
+.error-area.is-fading {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .error-report-link {
@@ -628,6 +635,13 @@ a:hover {
 
 .tracker-row-error {
   background: var(--crimson-bg);
+  transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+}
+
+.tracker-row-error.is-fading {
+  opacity: 0;
+  transform: translateX(12px);
+  pointer-events: none;
 }
 
 .tracker-row:hover {

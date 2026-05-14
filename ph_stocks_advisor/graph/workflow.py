@@ -25,6 +25,7 @@ from ph_stocks_advisor.agents.consolidator import ConsolidatorAgent
 from ph_stocks_advisor.agents.specialists import (
     ControversyAgent,
     DividendAgent,
+    EmptyAgentDataError,
     MovementAgent,
     PriceAgent,
     SentimentAgent,
@@ -100,6 +101,12 @@ def _make_specialist_node(
     """Return a node function that runs *agent_class* and writes *state_key*."""
 
     def _node(state: GraphState) -> GraphState:
+        # If a previous specialist already aborted with an empty-data error,
+        # short-circuit to keep error semantics deterministic and to avoid
+        # wasting LLM calls on a run that will not produce a final report.
+        if state.get("error"):
+            return {}  # type: ignore[return-value]
+
         try:
             agent = agent_class(llm)
             result = agent.run(state["symbol"])
@@ -118,6 +125,17 @@ def _make_specialist_node(
                 )
 
             return {state_key: result}  # type: ignore[return-value]
+        except EmptyAgentDataError as exc:
+            # Halt the entire pipeline: an empty upstream payload means
+            # any consolidated verdict would be unreliable. Surface the
+            # failure through the shared error channel so the consolidator
+            # is skipped and the caller sees a clear error message.
+            logger.error(
+                "%s returned empty data for %s — aborting analysis.",
+                agent_class.__name__,
+                state["symbol"],
+            )
+            return {"error": str(exc)}  # type: ignore[return-value]
         except Exception as exc:
             logger.error(
                 "%s failed for %s: %s",
@@ -162,6 +180,12 @@ def _make_consolidate_node(
     """Return the consolidator node."""
 
     def _consolidate(state: GraphState) -> GraphState:
+        # Honour any upstream error (e.g. an empty-data abort from a
+        # specialist agent): skip consolidation entirely so the caller
+        # receives the original error instead of a fabricated report.
+        if state.get("error"):
+            return {}  # type: ignore[return-value]
+
         if task_id:
             from ph_stocks_advisor.web.progress import (
                 STEP_CONSOLIDATING,

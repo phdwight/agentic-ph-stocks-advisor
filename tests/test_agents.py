@@ -95,3 +95,49 @@ def test_agent_run_returns_analysis(
         result = agent.run("TEL")
         assert assertion(result), f"Assertion failed for {agent_cls.__name__}"
         llm.invoke.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Empty-data short-circuit behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "agent_cls,patch_target,empty_data_factory",
+    [
+        (
+            PriceAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_stock_price",
+            lambda: __import__(
+                "ph_stocks_advisor.data.models", fromlist=["StockPrice"]
+            ).StockPrice(symbol="TEL", current_price=0.0),
+        ),
+        (
+            DividendAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_dividend_info",
+            lambda: __import__(
+                "ph_stocks_advisor.data.models", fromlist=["DividendInfo"]
+            ).DividendInfo(symbol="TEL"),
+        ),
+        (
+            MovementAgent,
+            "ph_stocks_advisor.agents.specialists.fetch_price_movement",
+            lambda: __import__(
+                "ph_stocks_advisor.data.models", fromlist=["PriceMovement"]
+            ).PriceMovement(symbol="TEL"),
+        ),
+    ],
+    ids=["price", "dividend", "movement"],
+)
+def test_agent_raises_on_empty_data(agent_cls, patch_target, empty_data_factory):
+    """When upstream data is empty, the agent must abort instead of calling the LLM."""
+    from ph_stocks_advisor.agents.specialists import EmptyAgentDataError
+
+    with patch(patch_target, return_value=empty_data_factory()):
+        llm = make_mock_llm("should not be called")
+        agent = agent_cls(llm)
+        with pytest.raises(EmptyAgentDataError) as exc_info:
+            agent.run("TEL")
+        assert "TEL" in str(exc_info.value)
+        assert agent_cls.__name__ in str(exc_info.value)
+        llm.invoke.assert_not_called()
