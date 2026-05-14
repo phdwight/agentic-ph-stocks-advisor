@@ -32,7 +32,7 @@ from ph_stocks_advisor.infra.repository_sqlite import SQLiteReportRepository
 
 
 @pytest.fixture
-def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository, None, None]:
+def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository]:
     """Fresh SQLite repo with all tables created."""
     db_path = str(tmp_path / "test_portfolio.db")
     repo = SQLiteReportRepository(db_path=db_path)

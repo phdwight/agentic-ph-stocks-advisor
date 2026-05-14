@@ -177,7 +177,7 @@ def _clear_repo_singleton():
 
 
 @pytest.fixture
-def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository, None, None]:
+def sqlite_repo(tmp_path) -> Generator[SQLiteReportRepository]:
     """Create a fresh SQLite repo in a temp directory."""
     db_path = str(tmp_path / "test_user_type.db")
     repo = SQLiteReportRepository(db_path=db_path)

@@ -157,7 +157,7 @@ class PostgresReportRepository(AbstractReportRepository):
         return self._pool
 
     @contextmanager
-    def _conn(self) -> Generator[psycopg2.extensions.connection, None, None]:
+    def _conn(self) -> Generator[psycopg2.extensions.connection]:
         """Borrow a connection from the pool, auto-return on exit."""
         pool = self._get_pool()
         conn = pool.getconn()

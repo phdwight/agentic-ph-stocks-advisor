@@ -125,7 +125,7 @@ def publish_progress(
 # ---------------------------------------------------------------------------
 
 
-def subscribe_progress(task_id: str) -> Generator[dict[str, Any], None, None]:
+def subscribe_progress(task_id: str) -> Generator[dict[str, Any]]:
     """Yield progress events for *task_id*.
 
     1. Reads the stored state key — if the task is already done the
