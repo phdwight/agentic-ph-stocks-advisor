@@ -335,8 +335,7 @@ class TestPostgresConnectionRecycling:
 
         monkeypatch.setattr(repo, "_get_pool", lambda: _FakePool())
 
-        with pytest.raises(psycopg2.OperationalError):
-            with repo._conn():
-                raise psycopg2.OperationalError("server closed the connection unexpectedly")
+        with pytest.raises(psycopg2.OperationalError), repo._conn():
+            raise psycopg2.OperationalError("server closed the connection unexpectedly")
 
         assert returned == [(live, True)], "Broken connection must be discarded."
