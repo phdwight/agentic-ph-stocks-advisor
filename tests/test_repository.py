@@ -318,6 +318,7 @@ class TestPostgresConnectionRecycling:
 
     def test_operational_error_during_use_marks_conn_broken(self, monkeypatch):
         """If the connection dies mid-request, it must not return to the pool alive."""
+        pytest.importorskip("psycopg2", reason="psycopg2 not installed")
         import psycopg2  # type: ignore[import-untyped]
 
         repo = self._make_repo()
