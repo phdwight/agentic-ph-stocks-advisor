@@ -227,3 +227,116 @@ class TestGetRepository:
         from ph_stocks_advisor.infra.repository_postgres import PostgresReportRepository
 
         assert issubclass(PostgresReportRepository, AbstractReportRepository)
+
+
+# ---------------------------------------------------------------------------
+# Postgres connection-recycling behaviour (regression test for stale pooled
+# connections raising ``OperationalError('server closed the connection
+# unexpectedly')`` in long-running Celery workers).
+# ---------------------------------------------------------------------------
+
+
+class TestPostgresConnectionRecycling:
+    """Verify that dead pooled connections are detected and replaced."""
+
+    def _make_repo(self):
+        pytest.importorskip("psycopg2", reason="psycopg2 not installed")
+        from ph_stocks_advisor.infra.repository_postgres import PostgresReportRepository
+
+        # Avoid touching a real DB — we only exercise the pool wrapper.
+        return PostgresReportRepository("postgresql://unused", min_conn=1, max_conn=2)
+
+    def _fake_conn(self, *, alive: bool):
+        """Build a stand-in for a psycopg2 connection.
+
+        ``alive=True`` connections respond to ``SELECT 1`` normally;
+        dead ones raise ``OperationalError`` from ``cursor.execute`` to
+        mimic a server-side disconnect.
+        """
+        import psycopg2  # type: ignore[import-untyped]
+
+        class _Cursor:
+            def __init__(self, alive: bool) -> None:
+                self._alive = alive
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def execute(self, *_args, **_kwargs):
+                if not self._alive:
+                    raise psycopg2.OperationalError(
+                        "server closed the connection unexpectedly",
+                    )
+
+            def fetchone(self):
+                return (1,)
+
+        class _Conn:
+            def __init__(self, alive: bool) -> None:
+                self._alive = alive
+                self.closed = 0
+                self.rolled_back = False
+
+            def cursor(self, **_kwargs):
+                return _Cursor(self._alive)
+
+            def rollback(self):
+                self.rolled_back = True
+
+        return _Conn(alive)
+
+    def test_dead_connection_is_discarded_and_replaced(self, monkeypatch):
+        """A stale pooled connection must be closed and a fresh one returned."""
+        repo = self._make_repo()
+
+        dead = self._fake_conn(alive=False)
+        live = self._fake_conn(alive=True)
+        checked_out = [dead, live]
+        returned: list[tuple[object, bool]] = []
+
+        class _FakePool:
+            closed = False
+
+            def getconn(self):
+                return checked_out.pop(0)
+
+            def putconn(self, conn, close=False):
+                returned.append((conn, close))
+
+        monkeypatch.setattr(repo, "_get_pool", lambda: _FakePool())
+
+        with repo._conn() as conn:
+            assert conn is live, "Caller should receive the healthy connection."
+
+        # Dead connection must be returned with close=True so the pool
+        # opens a fresh socket next time; the live one returns normally.
+        assert (dead, True) in returned
+        assert (live, False) in returned
+
+    def test_operational_error_during_use_marks_conn_broken(self, monkeypatch):
+        """If the connection dies mid-request, it must not return to the pool alive."""
+        pytest.importorskip("psycopg2", reason="psycopg2 not installed")
+        import psycopg2  # type: ignore[import-untyped]
+
+        repo = self._make_repo()
+        live = self._fake_conn(alive=True)
+        returned: list[tuple[object, bool]] = []
+
+        class _FakePool:
+            closed = False
+
+            def getconn(self):
+                return live
+
+            def putconn(self, conn, close=False):
+                returned.append((conn, close))
+
+        monkeypatch.setattr(repo, "_get_pool", lambda: _FakePool())
+
+        with pytest.raises(psycopg2.OperationalError), repo._conn():
+            raise psycopg2.OperationalError("server closed the connection unexpectedly")
+
+        assert returned == [(live, True)], "Broken connection must be discarded."

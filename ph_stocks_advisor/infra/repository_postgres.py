@@ -10,6 +10,7 @@ database connections instead of opening one per request.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from collections.abc import Generator
@@ -156,15 +157,82 @@ class PostgresReportRepository(AbstractReportRepository):
             )
         return self._pool
 
+    def _is_conn_alive(self, conn: psycopg2.extensions.connection) -> bool:
+        """Cheaply test whether a pooled connection is still usable.
+
+        PostgreSQL servers (and intermediate proxies) may close idle
+        connections after a timeout, causing the next operation to raise
+        ``OperationalError('server closed the connection unexpectedly')``.
+        We probe with ``SELECT 1`` and return ``False`` for any failure
+        so the caller can recycle the connection.
+        """
+        if conn.closed:
+            return False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            # Reset any leftover transaction state from the probe so the
+            # caller starts cleanly.
+            conn.rollback()
+            return True
+        except psycopg2.Error:
+            return False
+
     @contextmanager
     def _conn(self) -> Generator[psycopg2.extensions.connection]:
-        """Borrow a connection from the pool, auto-return on exit."""
+        """Borrow a connection from the pool, auto-return on exit.
+
+        Validates the connection before yielding it and recycles dead
+        connections so callers never see a stale socket.  If the caller
+        raises an :class:`OperationalError` (indicating the connection
+        died mid-request), the connection is closed instead of being
+        returned to the pool.
+        """
         pool = self._get_pool()
-        conn = pool.getconn()
+
+        # Borrow a live connection, replacing any dead ones we find.
+        # Bound the retry loop to ``max_conn`` so we cannot spin forever
+        # in the unlikely event the entire pool is poisoned.
+        conn: psycopg2.extensions.connection | None = None
+        for _ in range(max(self._max_conn, 1)):
+            candidate = pool.getconn()
+            if self._is_conn_alive(candidate):
+                conn = candidate
+                break
+            logger.warning(
+                "Discarding dead PostgreSQL connection from pool; the server likely closed it.",
+            )
+            try:
+                pool.putconn(candidate, close=True)
+            except Exception:
+                logger.debug("Failed returning dead connection to pool.", exc_info=True)
+        if conn is None:
+            # Last resort: try one more checkout without the liveness
+            # probe; the caller's error handling will surface a clear
+            # exception if it is also dead.
+            conn = pool.getconn()
+        assert conn is not None  # noqa: S101 - narrow type for static checkers
+
+        broken = False
         try:
             yield conn
+        except psycopg2.OperationalError, psycopg2.InterfaceError:
+            # Connection died mid-request (server closed socket, network
+            # blip, or it was already closed).  Don't return it to the pool.
+            broken = True
+            raise
+        except psycopg2.Error:
+            # Roll back so the next borrower doesn't inherit an aborted
+            # transaction; the connection itself is still usable.
+            with contextlib.suppress(psycopg2.Error):
+                conn.rollback()
+            raise
         finally:
-            pool.putconn(conn)
+            try:
+                pool.putconn(conn, close=bool(broken or conn.closed))
+            except Exception:
+                logger.debug("Failed returning connection to pool.", exc_info=True)
 
     def initialize(self) -> None:
         with self._conn() as conn:
