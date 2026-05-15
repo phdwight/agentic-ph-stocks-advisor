@@ -212,6 +212,7 @@ class PostgresReportRepository(AbstractReportRepository):
             # probe; the caller's error handling will surface a clear
             # exception if it is also dead.
             conn = pool.getconn()
+        assert conn is not None  # noqa: S101 - narrow type for static checkers
 
         broken = False
         try:
@@ -229,7 +230,7 @@ class PostgresReportRepository(AbstractReportRepository):
             raise
         finally:
             try:
-                pool.putconn(conn, close=broken or conn.closed)
+                pool.putconn(conn, close=bool(broken or conn.closed))
             except Exception:
                 logger.debug("Failed returning connection to pool.", exc_info=True)
 
