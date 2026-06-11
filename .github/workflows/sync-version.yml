@@ -1,7 +1,7 @@
 # Sync the version in pyproject.toml to the published GitHub Release tag.
 #
 # Trigger: a Release is published (manually or via the API). The release tag
-# may be ``vX.Y.Z`` or ``X.Y.Z`` — the leading ``v`` is stripped.
+# may be ``vX.Y.Z``, ``VX.Y.Z``, or ``X.Y.Z`` — the leading ``v``/``V`` is stripped.
 #
 # Behaviour:
 #   1. Compute the target version from the release tag.
@@ -45,7 +45,7 @@ jobs:
           else
             raw="${{ github.event.release.tag_name }}"
           fi
-          version="${raw#v}"
+          version="${raw#[vV]}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::'$raw' is not a valid PEP 440 / SemVer version"
             exit 1
