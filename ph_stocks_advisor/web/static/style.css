@@ -2260,11 +2260,39 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
    TALA — Home compaction (cut the excess whitespace)
    ========================================================================== */
 .hero { padding: 2.4rem 0 1.8rem; }
-.hero h1 { font-size: clamp(2.2rem, 5vw, 3.1rem); }
-.hero-sub { margin-bottom: 1.8rem; font-size: 0.95rem; }
+.hero h1 {
+  font-size: clamp(2.2rem, 5vw, 3.1rem);
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+}
+.hero-sub { margin-bottom: 1.8rem; font-size: 0.95rem; max-width: 42ch; }
 .recent-stocks { padding: 1.6rem 0 0; }
 .features { padding: 2.4rem 0 3rem; }
 .features h2, .recent-stocks h2 { margin-bottom: 1.2rem; }
+
+/* Hero kicker pill: "6 Specialist Agents" */
+.hero-pill {
+  display: inline-flex; align-items: center;
+  background: var(--accent-100); color: var(--accent-800);
+  border-radius: 100px; padding: 0.35rem 0.9rem;
+  font-family: var(--font-serif); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.09em; font-size: 0.72rem;
+  margin-bottom: 1.1rem;
+}
+
+/* Quick-pick ticker chips under the search */
+.quick-picks {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem;
+  max-width: 540px; margin: 1rem auto 0;
+}
+.quick-pick {
+  border: 1px solid var(--divider); background: transparent; border-radius: var(--radius);
+  padding: 0.42rem 0.85rem; font-family: var(--font-serif); font-weight: 600;
+  letter-spacing: 0.05em; color: var(--text); font-size: 0.85rem; transition: 0.14s;
+}
+.quick-pick:hover {
+  border-color: var(--accent-400); color: var(--accent-700); background: var(--accent-100);
+}
 
 /* ==========================================================================
    TALA — Report: Console (desktop, horizontal) / Stream (mobile, vertical)
