@@ -1,39 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Build context whitelist-by-exclusion. Anything left here is copied into the
+# builder (`COPY . .`) and then into the runtime image (`COPY --from=builder`),
+# so keep this tight: only package source + build inputs (pyproject.toml,
+# requirements.txt, ph_stocks_advisor/, ph_stocks_mcp/) should survive.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Version control
 .git
 .gitignore
 
-# Python
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
-dist/
-build/
-.venv/
-venv/
-.eggs/
-
-# IDE
-.vscode/
-.idea/
-
-# Docker (avoid recursive copy)
-Dockerfile
-docker-compose.yml
-
-# Environment (secrets injected at runtime)
+# Secrets — injected at runtime, must never enter an image layer
 .env
+.env.*
+!.env.example
 
-# Test & CI artefacts
+# Tests & test fixtures — not shipped to production
+tests/
+conftest.py
+pytest.ini
 .pytest_cache/
 htmlcov/
 .coverage
+.coverage.*
 
-# OS
+# Python build/runtime artefacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+
+# Lint / type-check caches
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# Docker & compose (avoid recursive copy; not needed at runtime)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Local dev / runtime state — never belongs in an image
+flask_session/
+.langgraph_api/
+langgraph.json
+output/
+db/
+*.db
+
+# CI / tooling / editor config
+.github/
+.claude/
+.vscode/
+.idea/
+.python-version
+scripts/
+
+# Deployment & observability configs (used by compose/CI, not the app)
+infra/
+otel/
+
+# Sibling service with its own build context (./admin) — not part of this image
+admin/
+
+# Docs & design assets
+docs/
+README.md
+LICENSE
+*.drawio
+*.drawio.bkp
+
+# OS cruft
 .DS_Store
 Thumbs.db
-
-# Database files (DB lives in the postgres container)
-*.db
-db/
-output/
