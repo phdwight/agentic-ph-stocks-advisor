@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, Required, TypedDict
+from typing import Annotated, Any, Required, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
@@ -75,9 +75,21 @@ AGENT_REGISTRY: list[AgentEntry] = [
 # ---------------------------------------------------------------------------
 
 
+def _keep_first_error(existing: str | None, incoming: str | None) -> str | None:
+    """Reducer for the shared ``error`` channel.
+
+    The six specialist agents run as a parallel fan-out, so when several
+    fail in the same superstep (e.g. an OpenAI outage or bad API key), they
+    all write ``error`` at once. A plain LastValue channel rejects that with
+    ``InvalidUpdateError``; this reducer instead keeps the first error seen,
+    which is enough to abort the pipeline deterministically.
+    """
+    return existing if existing is not None else incoming
+
+
 class GraphState(TypedDict, total=False):
     symbol: Required[str]
-    error: str | None
+    error: Annotated[str | None, _keep_first_error]
     price_analysis: PriceAnalysis | None
     dividend_analysis: DividendAnalysis | None
     movement_analysis: MovementAnalysis | None
