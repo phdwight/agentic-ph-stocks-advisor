@@ -73,6 +73,7 @@
   --border-strong:  rgba(29, 31, 32, 0.28);
   --divider:        rgba(29, 31, 32, 0.16);
   --reg:            rgba(29, 31, 32, 0.5);   /* registration marks */
+  --reg-cross:      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M5.5 0V11M0 5.5H11' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1'/%3E%3C/svg%3E");
 
   /* -- Radii: gently rounded, 6px everywhere -- */
   --radius:         6px;
@@ -2253,3 +2254,133 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 
 /* -- Cards flattened by tokens: give tracker/modal a clean hairline frame -- */
 .tracker-panel, .modal-card { background: transparent; box-shadow: none; }
+
+/* ==========================================================================
+   TALA — Home compaction (cut the excess whitespace)
+   ========================================================================== */
+.hero { padding: 2.4rem 0 1.8rem; }
+.hero h1 { font-size: clamp(2.2rem, 5vw, 3.1rem); }
+.hero-sub { margin-bottom: 1.8rem; font-size: 0.95rem; }
+.recent-stocks { padding: 1.6rem 0 0; }
+.features { padding: 2.4rem 0 3rem; }
+.features h2, .recent-stocks h2 { margin-bottom: 1.2rem; }
+
+/* ==========================================================================
+   TALA — Report: Console (desktop, horizontal) / Stream (mobile, vertical)
+   ========================================================================== */
+
+/* Widen the report page; the console has its own left rail, so the base
+   "Recent" sidebar is dropped here to avoid a competing column. */
+.page-report .sidebar { display: none; }
+.page-report .layout > .container { max-width: 1180px; }
+.page-report main.container { padding-top: 1.4rem; padding-bottom: 2rem; }
+
+.report-console {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 2.75rem;
+  align-items: start;
+}
+
+/* -- Left rail -- */
+.report-rail {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+.rail-back {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  color: var(--accent-700);
+  font-family: var(--font-serif); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.8rem;
+  align-self: flex-start; text-decoration: none;
+}
+.rail-back:hover { color: var(--accent-800); }
+.rail-head { display: flex; flex-direction: column; gap: 0.35rem; }
+.rail-ident { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+.rail-sym {
+  font-family: var(--font-serif); font-weight: 600; font-size: 2.5rem;
+  line-height: 1; letter-spacing: -0.01em;
+}
+.rail-price {
+  font-family: var(--font-serif); font-weight: 600; font-size: 1.4rem;
+  color: var(--teal-dark); font-variant-numeric: tabular-nums;
+}
+.rail-meta { color: var(--text-muted); font-size: 0.78rem; }
+.cached-tag { color: var(--accent-700); }
+
+/* -- Verdict panel + diverging meter -- */
+.verdict-panel { padding: 1.2rem; display: flex; flex-direction: column; gap: 0.85rem; }
+.verdict-word {
+  font-family: var(--font-serif); font-weight: 600; font-size: 2.4rem;
+  line-height: 0.9; letter-spacing: 0.005em;
+}
+.verdict-word.buy { color: var(--accent-500); }
+.verdict-word.nb  { color: var(--n-800); }
+.verdict-meter { display: flex; flex-direction: column; gap: 0.5rem; }
+.meter-track {
+  position: relative; height: 8px; border-radius: 100px;
+  background: linear-gradient(90deg, var(--teal) 0%, var(--n-200) 50%, var(--accent-500) 100%);
+}
+.meter-mk {
+  position: absolute; top: 50%; width: 15px; height: 15px; border-radius: 50%;
+  background: var(--text); border: 2.5px solid var(--bg); box-shadow: var(--shadow);
+  transform: translate(-50%, -50%);
+}
+.meter-labels {
+  display: flex; justify-content: space-between;
+  font-family: var(--font-serif); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em; font-size: 0.66rem; color: var(--text-muted);
+}
+.verdict-why { color: var(--text-secondary); font-size: 0.84rem; line-height: 1.5; }
+.rail-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+/* -- Agent cards -- */
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+.agent-card { padding: 1.2rem; display: flex; flex-direction: column; gap: 0.85rem; }
+.agent-card.lead { grid-column: 1 / -1; }
+.agent-hd { display: flex; align-items: center; gap: 0.7rem; }
+.agent-hd .section-icon {
+  width: 36px; height: 36px; flex: none;
+  display: grid; place-items: center; margin: 0;
+}
+.agent-id { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.agent-name { font-family: var(--font-serif); font-weight: 600; font-size: 1.15rem; line-height: 1; }
+.agent-role {
+  font-family: var(--font-serif); text-transform: uppercase;
+  letter-spacing: 0.07em; font-size: 0.6rem; color: var(--text-muted);
+}
+.agent-tag {
+  font-family: var(--font-serif); font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; font-size: 0.64rem; padding: 4px 9px; border-radius: 100px;
+  background: var(--accent-100); color: var(--accent-800); flex: none;
+}
+.agent-card .section-body { font-size: 0.88rem; }
+.agent-card .section-body > :first-child { margin-top: 0; }
+.agent-card .section-body > :last-child { margin-bottom: 0; }
+
+/* Registration marks on the verdict panel + agent cards */
+.verdict-panel, .agent-card { position: relative; }
+.verdict-panel::after, .agent-card::after {
+  content: ""; position: absolute; inset: -6px; pointer-events: none; z-index: 4;
+  background-image: var(--reg-cross), var(--reg-cross), var(--reg-cross), var(--reg-cross);
+  background-position: left top, right top, left bottom, right bottom;
+  background-repeat: no-repeat;
+}
+
+/* -- Stream (mobile, vertical): single column, inline ticker header -- */
+@media (max-width: 900px) {
+  .report-console { grid-template-columns: 1fr; gap: 1.25rem; }
+  .report-rail { position: static; top: auto; gap: 0.9rem; }
+  .rail-ident { align-items: baseline; }
+  .rail-sym { font-size: 2rem; }
+  .agent-grid { grid-template-columns: 1fr; gap: 1.1rem; }
+  .agent-card.lead { grid-column: auto; }
+  .page-report main.container { padding-left: 1.25rem; padding-right: 1.25rem; }
+}
