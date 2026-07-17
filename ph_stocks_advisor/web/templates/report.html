@@ -16,7 +16,7 @@
     <div class="rail-head">
       <div class="rail-ident">
         <span class="rail-sym">{{ record.symbol }}</span>
-        {% if current_price %}<span class="rail-price">₱{{ "%.2f"|format(current_price) }}</span>{% endif %}
+        {% if current_price %}<span class="rail-price current-price-value">₱{{ "%.2f"|format(current_price) }}</span>{% endif %}
       </div>
       <p class="rail-meta">
         Generated {{ timestamp }}{% if is_cached %} · <span class="cached-tag">cached</span>{% endif %}
