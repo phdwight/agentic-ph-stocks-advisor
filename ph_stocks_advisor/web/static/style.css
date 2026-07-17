@@ -74,6 +74,11 @@
   --divider:        rgba(29, 31, 32, 0.16);
   --reg:            rgba(29, 31, 32, 0.5);   /* registration marks */
   --reg-cross:      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M5.5 0V11M0 5.5H11' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1'/%3E%3C/svg%3E");
+  /* Rounded corner brackets (⌜ ⌝ ⌞ ⌟) — read as frame corners, not "+" */
+  --reg-tl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M9.5 1.5H1.5V9.5' fill='none' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --reg-tr: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M1.5 1.5H9.5V9.5' fill='none' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --reg-bl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M1.5 1.5V9.5H9.5' fill='none' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --reg-br: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M9.5 1.5V9.5H1.5' fill='none' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   /* -- Radii: gently rounded, 6px everywhere -- */
   --radius:         6px;
@@ -2187,11 +2192,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   inset: -6px;
   pointer-events: none;
   z-index: 4;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M5.5 0V11M0 5.5H11' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M5.5 0V11M0 5.5H11' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M5.5 0V11M0 5.5H11' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='M5.5 0V11M0 5.5H11' stroke='%231d1f20' stroke-opacity='0.5' stroke-width='1'/%3E%3C/svg%3E");
+  background-image: var(--reg-tl), var(--reg-tr), var(--reg-bl), var(--reg-br);
   background-position: left top, right top, left bottom, right bottom;
   background-repeat: no-repeat;
 }
@@ -2369,7 +2370,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 .verdict-panel, .agent-card { position: relative; }
 .verdict-panel::after, .agent-card::after {
   content: ""; position: absolute; inset: -6px; pointer-events: none; z-index: 4;
-  background-image: var(--reg-cross), var(--reg-cross), var(--reg-cross), var(--reg-cross);
+  background-image: var(--reg-tl), var(--reg-tr), var(--reg-bl), var(--reg-br);
   background-position: left top, right top, left bottom, right bottom;
   background-repeat: no-repeat;
 }
