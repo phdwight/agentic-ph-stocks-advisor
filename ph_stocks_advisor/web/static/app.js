@@ -663,4 +663,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Calibrate carousel speed on initial load
   calibrateCarousel();
+
+  /* ================================================================== */
+  /*  Quick-pick ticker chips → fill the input and submit               */
+  /* ================================================================== */
+
+  document.querySelectorAll(".quick-pick").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      input.value = btn.dataset.symbol;
+      form.dispatchEvent(new Event("submit", { cancelable: true }));
+    });
+  });
 });
