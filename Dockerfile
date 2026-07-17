@@ -14,11 +14,17 @@ RUN apt-get update && \
 COPY pyproject.toml requirements.txt ./
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+    /opt/venv/bin/pip install --no-cache-dir --no-compile -r requirements.txt
 
 # Install the project itself last (deps are already locked & installed)
 COPY . .
-RUN /opt/venv/bin/pip install --no-cache-dir --no-deps .
+RUN /opt/venv/bin/pip install --no-cache-dir --no-compile --no-deps .
+
+# Slim the venv for the runtime image: bytecode regenerates on first import
+# (long-running services amortise this instantly), and pip/setuptools/wheel
+# are build-time only — the runtime stage never installs packages.
+RUN find /opt/venv -type d -name __pycache__ -prune -exec rm -rf {} + && \
+    /opt/venv/bin/pip uninstall -y pip setuptools wheel 2>/dev/null || true
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM python:3.14-slim
