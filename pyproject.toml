@@ -1,6 +1,6 @@
 [project]
 name = "ph-stocks-advisor"
-version = "2.1.5"
+version = "2.1.7"
 description = "Agentic AI Philippine Stock Market Advisor"
 requires-python = ">=3.14"
 dependencies = [
