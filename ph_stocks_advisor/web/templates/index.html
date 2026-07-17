@@ -4,8 +4,9 @@
 
 {% block content %}
 <div class="hero">
-  <h1>Philippine Stock Market<br><span class="accent-text">AI Advisor</span></h1>
-  <p class="hero-sub">Enter a PSE stock symbol for an AI-powered <strong>BUY</strong> or <strong>NOT BUY</strong> analysis.</p>
+  <span class="hero-pill">6 Specialist Agents</span>
+  <h1>Analyze any Philippine stock</h1>
+  <p class="hero-sub">Enter a ticker and six agents — price, valuation, sentiment, movement, dividend and controversy — weigh in, then a verdict.</p>
 
   <form id="analyse-form" class="analyse-form" method="post" action="/analyse">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -14,7 +15,7 @@
         type="text"
         id="symbol-input"
         name="symbol"
-        placeholder="e.g. TEL, SM, BDO, ALI, JFC"
+        placeholder="e.g. BDO"
         autocomplete="off"
         required
       >
@@ -24,6 +25,12 @@
       </button>
     </div>
   </form>
+
+  <div class="quick-picks" aria-label="Popular tickers">
+    {% for sym in ['BDO', 'SM', 'ALI', 'JFC', 'TEL', 'BPI'] %}
+    <button type="button" class="quick-pick" data-symbol="{{ sym }}">{{ sym }}</button>
+    {% endfor %}
+  </div>
 
   <!-- Task tracker: shows progress for each submitted stock -->
   <div id="tracker-panel" class="tracker-panel" style="display:none;">
