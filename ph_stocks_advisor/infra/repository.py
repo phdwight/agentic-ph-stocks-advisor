@@ -183,7 +183,7 @@ class ReportRecord:
         self.controversy_section = controversy_section
         self.sentiment_section = sentiment_section
         self.created_at = created_at or datetime.now(tz=UTC)
-        # 0–100 sell→buy verdict score; None for pre-scoring legacy rows.
+        # 0–100 avoid→buy verdict score; None for pre-scoring legacy rows.
         self.score = score
 
     @classmethod

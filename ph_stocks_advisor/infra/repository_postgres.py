@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_oid);
 
 # ── Schema migrations (idempotent) ──────────────────────────────────────────
 _MIGRATIONS_SQL = [
-    # Verdict score (0-100 sell->buy scale) for reports created pre-scoring
+    # Verdict score (0-100 avoid->buy scale) for reports created pre-scoring
     """
     ALTER TABLE reports
         ADD COLUMN IF NOT EXISTS score INTEGER;

@@ -308,7 +308,7 @@ class ConsolidationResponse(BaseModel):
     Used with ``BaseChatModel.with_structured_output()`` so the verdict
     and per-dimension scores are returned typed — no regex parsing.
 
-    The six sub-scores are judgments on a 0–100 sell→buy scale (see the
+    The six sub-scores are judgments on a 0–100 avoid→buy scale (see the
     rubric in ``CONSOLIDATION_PROMPT``). The final score is NOT computed
     by the LLM — the consolidator combines the sub-scores with
     configurable weights, so the scale can be tuned without prompt edits.
@@ -349,13 +349,16 @@ class ConsolidationResponse(BaseModel):
     )
 
 
-# Verdict-score display bands (0–100 sell→buy scale). Lower bound inclusive.
+# Verdict-score display bands (0–100 avoid→buy scale). Lower bound inclusive.
+# Labels are framed for a BUY decision (this app advises whether to buy,
+# never assumes the user already holds the stock — so no "sell"/"hold"):
+# AVOID = strong do-not-buy, WAIT = signals not aligned yet.
 SCORE_BANDS: list[tuple[int, str]] = [
     (80, "STRONG BUY"),
     (60, "BUY"),
-    (40, "HOLD"),
-    (20, "SELL"),
-    (0, "STRONG SELL"),
+    (40, "WAIT"),
+    (20, "NOT BUY"),
+    (0, "AVOID"),
 ]
 
 
@@ -364,7 +367,7 @@ def score_band(score: int) -> str:
     for lower, label in SCORE_BANDS:
         if score >= lower:
             return label
-    return "STRONG SELL"
+    return "AVOID"
 
 
 class FinalReport(BaseModel):
@@ -373,7 +376,7 @@ class FinalReport(BaseModel):
     symbol: str
     verdict: Verdict
     summary: str
-    # 0–100 sell→buy scale driving the report meter; None for legacy
+    # 0–100 avoid→buy scale driving the report meter; None for legacy
     # reports generated before scoring existed.
     score: int | None = None
     price_section: str = ""
