@@ -2477,3 +2477,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   background: rgba(31, 158, 150, 0.12);
   color: var(--teal-dark);
 }
+
+/* Defence: badge text must never fall back to the base white-on-light —
+   if a variant class is missing (e.g. stale CSS), stay readable. */
+.badge-sm { color: var(--n-800); }

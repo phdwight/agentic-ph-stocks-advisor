@@ -89,6 +89,33 @@ def _app_version() -> str:
     return version
 
 
+# Cache-busting revision for static assets. A content hash (not the app
+# version — that only bumps on GitHub Releases, so it can stay identical
+# across deploys and let CDN/browser caches serve stale CSS/JS). The hash
+# changes exactly when any static file changes.
+_ASSET_REV_CACHE: str | None = None
+
+
+def _asset_rev() -> str:
+    global _ASSET_REV_CACHE
+    if _ASSET_REV_CACHE is not None:
+        return _ASSET_REV_CACHE
+    import hashlib
+
+    digest = hashlib.sha256()
+    static_dir = Path(__file__).resolve().parent / "static"
+    try:
+        for f in sorted(static_dir.glob("*")):
+            if f.is_file():
+                digest.update(f.name.encode())
+                digest.update(f.read_bytes())
+        rev = digest.hexdigest()[:10]
+    except OSError:
+        rev = _app_version()  # fall back to the version string
+    _ASSET_REV_CACHE = rev
+    return rev
+
+
 # Philippine Stock Exchange timezone (UTC+8).
 _PHT = timezone(timedelta(hours=8))
 # Daily cutoff hour in PHT — reports generated before this are stale.
@@ -309,6 +336,7 @@ def create_app() -> Flask:
             "auth_enabled": get_settings().auth_enabled,
             "csrf_token": _generate_csrf_token,
             "app_version": _app_version(),
+            "asset_rev": _asset_rev(),
         }
 
     @app.context_processor
