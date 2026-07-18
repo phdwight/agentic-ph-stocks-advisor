@@ -662,7 +662,7 @@ def create_app() -> Flask:
         # fresh run is deferred until after the 3 PM PHT close.
         market_open_stale = (not is_cached) and trading_calendar.is_market_open()
 
-        # Verdict score (0–100 sell→buy) drives the meter. Legacy rows
+        # Verdict score (0–100 avoid→buy) drives the meter. Legacy rows
         # created before scoring have no score — fall back to the old
         # fixed marker positions and the binary verdict word.
         from ph_stocks_advisor.data.models import score_band
@@ -673,10 +673,10 @@ def create_app() -> Flask:
             marker_pct = verdict_score
             if verdict_band in ("BUY", "STRONG BUY"):
                 band_class = "buy"
-            elif verdict_band == "HOLD":
-                band_class = "hold"
+            elif verdict_band == "WAIT":
+                band_class = "wait"
             else:
-                band_class = "sell"
+                band_class = "avoid"
         else:
             verdict_band = None
             marker_pct = 80 if is_buy else 18

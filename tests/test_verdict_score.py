@@ -40,12 +40,12 @@ def _fresh_settings():
 @pytest.mark.parametrize(
     "score,band",
     [
-        (0, "STRONG SELL"),
-        (19, "STRONG SELL"),
-        (20, "SELL"),
-        (39, "SELL"),
-        (40, "HOLD"),
-        (59, "HOLD"),
+        (0, "AVOID"),
+        (19, "AVOID"),
+        (20, "NOT BUY"),
+        (39, "NOT BUY"),
+        (40, "WAIT"),
+        (59, "WAIT"),
         (60, "BUY"),
         (79, "BUY"),
         (80, "STRONG BUY"),
@@ -110,7 +110,7 @@ def test_run_derives_verdict_from_score_overriding_llm(sample_advisor_state, _fr
     report = ConsolidatorAgent(make_structured_mock_llm(resp)).run(sample_advisor_state)
     assert report.score == 45
     assert report.verdict == Verdict.NOT_BUY
-    assert score_band(report.score) == "HOLD"
+    assert score_band(report.score) == "WAIT"
 
 
 def test_run_respects_configurable_buy_threshold(sample_advisor_state, _fresh_settings):

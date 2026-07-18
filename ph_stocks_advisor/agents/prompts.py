@@ -315,10 +315,11 @@ Your report MUST include:
 3. A final **Verdict** line that says exactly one of: **BUY** or **NOT BUY**.
 4. A one-sentence justification for the verdict.
 
-**PER-DIMENSION SCORES (0–100 sell→buy scale):**
+**PER-DIMENSION SCORES (0–100 avoid→buy scale):**
 Alongside the report, score each of the six dimensions as an integer from
-0 to 100, where 0 = strongly avoid/sell signal, 50 = neutral/hold, and
-100 = strongly favourable/buy signal. Judge each dimension on its own
+0 to 100, framed strictly as a BUY decision (the reader does not own the
+stock): 0 = strongly avoid buying, 50 = wait / signals not aligned yet,
+and 100 = strongly favourable to buy now. Judge each dimension on its own
 evidence — do NOT try to average them yourself. Calibrate per this rubric:
 
 - **price_score** — 50 = trading mid-range with no edge; >70 requires price

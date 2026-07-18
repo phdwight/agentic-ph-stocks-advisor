@@ -43,7 +43,7 @@ class Settings:
     tavily_max_results: int = int(os.getenv("TAVILY_MAX_RESULTS", "5"))
     tavily_search_depth: str = os.getenv("TAVILY_SEARCH_DEPTH", "basic")
 
-    # -- Verdict score (0–100 sell→buy scale) -----------------------------------
+    # -- Verdict score (0–100 avoid→buy scale) -----------------------------------
     # The consolidator LLM emits six per-dimension sub-scores; the final
     # score is their weighted average using these env-tunable weights
     # (normalised by their sum, so they need not add to exactly 1).
