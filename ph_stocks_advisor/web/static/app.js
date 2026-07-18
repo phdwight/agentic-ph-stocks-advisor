@@ -92,8 +92,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // and the left "Recent" sidebar so the user doesn't have to refresh
     // the page to see their newly-completed analysis.
     if (task && task.status === "done" && task.verdict) {
-      addChipToRecent(symbol, task.verdict);
-      addToSidebar(symbol, task.verdict);
+      addChipToRecent(symbol, task.verdict, task.score);
+      addToSidebar(symbol, task.verdict, task.score);
     }
     delete tasks[symbol];
     saveTasks(tasks);
@@ -179,7 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /*  Dynamically add a chip to "Previously Analysed Stocks"            */
   /* ================================================================== */
 
-  function addChipToRecent(symbol, verdict) {
+  function addChipToRecent(symbol, verdict, score) {
     const chipsContainer = document.getElementById("stock-chips");
     const recentSection = document.getElementById("recent-stocks");
     if (!chipsContainer || !recentSection) return;
@@ -190,7 +190,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Show the section if it was hidden (no previous stocks)
     recentSection.style.display = "";
 
-    const isBuy = verdict.toUpperCase() === "BUY";
+    const chipInfo = bandChip(verdict, score);
     const now = new Date();
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const dateStr = `${monthNames[now.getMonth()]} ${String(now.getDate()).padStart(2, "0")}`;
@@ -201,7 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chip.dataset.symbol = symbol;
     chip.innerHTML = `
       <span class="chip-symbol">${symbol}</span>
-      <span class="chip-verdict badge-sm ${isBuy ? "buy" : "not-buy"}">${isBuy ? "BUY" : "NOT BUY"}</span>
+      <span class="chip-verdict badge-sm ${chipInfo.cls}">${chipInfo.label}</span>
       <span class="chip-date">${dateStr}</span>`;
 
     // Prepend chip then let calibrateCarousel redistribute
@@ -213,7 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /*  Dynamically prepend a ticker to the left "Recent" sidebar         */
   /* ================================================================== */
 
-  function addToSidebar(symbol, verdict) {
+  function addToSidebar(symbol, verdict, score) {
     const layout = document.querySelector(".layout");
     if (!layout) return;
 
@@ -286,13 +286,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    const isBuy = (verdict || "").toUpperCase() === "BUY";
-    const verdictLabel = isBuy ? "BUY" : "NOT BUY";
+    const chipInfo = bandChip(verdict, score);
     const li = document.createElement("li");
     li.innerHTML = `
       <a href="/report/${encodeURIComponent(symbol)}" class="sidebar-ticker">
         <span class="sidebar-ticker-symbol">${symbol}</span>
-        <span class="sidebar-ticker-verdict badge-sm ${isBuy ? "buy" : "not-buy"}">${verdictLabel}</span>
+        <span class="sidebar-ticker-verdict badge-sm ${chipInfo.cls}">${chipInfo.label}</span>
       </a>`;
     tickers.prepend(li);
   }
@@ -302,6 +301,23 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================================================================== */
 
   const cardRefs = {}; // symbol → DOM element
+
+  /**
+   * Chip label + class for a verdict, preferring the score band so chips
+   * agree with the report's scale (mirrors the server's score_band).
+   */
+  function bandChip(verdict, score) {
+    const s = Number(score);
+    if (score === null || score === undefined || Number.isNaN(s)) {
+      const isBuy = (verdict || "").toUpperCase() === "BUY";
+      return { label: isBuy ? "BUY" : "DON'T BUY", cls: isBuy ? "buy" : "not-buy" };
+    }
+    if (s >= 80) return { label: "STRONG BUY", cls: "buy" };
+    if (s >= 60) return { label: "BUY", cls: "buy" };
+    if (s >= 40) return { label: "WAIT", cls: "wait" };
+    if (s >= 20) return { label: "DON'T BUY", cls: "avoid" };
+    return { label: "AVOID", cls: "avoid" };
+  }
 
   function renderTracker() {
     const tasks = loadTasks();
@@ -569,6 +585,7 @@ document.addEventListener("DOMContentLoaded", () => {
           } else {
             updateTask(symbol, "done", {
               verdict: data.verdict || "",
+              score: data.score,
               report_id: data.report_id,
             });
             setTimeout(() => { removeTask(symbol); renderTracker(); }, 8000);
@@ -600,7 +617,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (data.error) {
             updateTask(symbol, "error", { msg: `Failed: ${data.error}` });
           } else {
-            updateTask(symbol, "done", { verdict: data.verdict || "" });
+            updateTask(symbol, "done", { verdict: data.verdict || "", score: data.score });
             // Auto-dismiss completed tasks after 8 seconds
             setTimeout(() => { removeTask(symbol); renderTracker(); }, 8000);
           }

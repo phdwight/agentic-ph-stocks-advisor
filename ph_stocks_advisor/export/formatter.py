@@ -139,6 +139,18 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
         if re.fullmatch(r"-{2,}", stripped):
             continue
 
+        # Drop standalone inline verdict lines (e.g. "Verdict: **NOT BUY**").
+        # The verdict is displayed exactly once — by the verdict panel /
+        # score scale — never inside section bodies, where a summary-embedded
+        # binary verdict can contradict the score band (e.g. WAIT vs NOT BUY).
+        # Render-time stripping also cleans reports cached before this rule.
+        if re.fullmatch(
+            r"\**\s*(?:Final\s+)?Verdict:?\s*\**\s*(?:NOT\s+BUY|BUY)\s*\**\s*[.!]?",
+            stripped,
+            re.IGNORECASE,
+        ):
+            continue
+
         # --- Bold heading on its own line ---
         # Matches:  **Price Analysis:**
         #           **Price Analysis:----**

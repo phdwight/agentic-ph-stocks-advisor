@@ -42,8 +42,8 @@ def _fresh_settings():
     [
         (0, "AVOID"),
         (19, "AVOID"),
-        (20, "NOT BUY"),
-        (39, "NOT BUY"),
+        (20, "DON'T BUY"),
+        (39, "DON'T BUY"),
         (40, "WAIT"),
         (59, "WAIT"),
         (60, "BUY"),
@@ -264,3 +264,132 @@ def test_report_page_legacy_fallback_marker(page_client):
     html = page_client.get("/report/TEL").get_data(as_text=True)
     assert "left: 80%" in html  # legacy BUY fallback
     assert "score / 100" not in html  # no number without a score
+
+
+# ---------------------------------------------------------------------------
+# Inline verdict lines are stripped from section bodies
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "verdict_line",
+    [
+        "Verdict: NOT BUY",
+        "Verdict: BUY",
+        "**Verdict: NOT BUY**",
+        "**Verdict:** NOT BUY",
+        "Final Verdict: NOT BUY",
+        "verdict: not buy.",
+    ],
+)
+def test_parse_sections_strips_inline_verdict_lines(verdict_line):
+    """The verdict renders once (panel/score scale) — never inside bodies."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = (
+        "**Executive Summary:**\nGood stock overall.\n\n"
+        "**Sentiment Analysis:**\n- Neutral outlook.\n"
+        "The dividend case is strong, but the price is unsupported.\n"
+        f"{verdict_line}\n"
+    )
+    sections = parse_sections(summary)
+    joined = "\n".join(body for _, body in sections)
+    assert "Verdict" not in joined
+    # Real content around it survives.
+    assert "Neutral outlook" in joined
+    assert "dividend case is strong" in joined
+
+
+def test_parse_sections_keeps_verdict_mentions_inside_prose():
+    """Only standalone verdict lines are dropped, not prose mentioning them."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = "**Executive Summary:**\nAnalysts debate whether the verdict: BUY calls were premature.\n"
+    sections = parse_sections(summary)
+    assert "verdict: BUY calls were premature" in sections[0][1]
+
+
+def test_report_page_has_no_inline_verdict(page_client):
+    from ph_stocks_advisor.infra.config import get_repository
+    from ph_stocks_advisor.infra.repository import ReportRecord
+
+    get_repository().save(
+        ReportRecord(
+            id=None,
+            symbol="TEL",
+            verdict="NOT BUY",
+            summary=("**Executive Summary:**\nWeak setup.\n\n**Sentiment Analysis:**\n- Neutral.\nVerdict: NOT BUY\n"),
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+            score=43,
+        )
+    )
+    html = page_client.get("/report/TEL").get_data(as_text=True)
+    assert "WAIT" in html  # panel shows the band for 43
+    assert "Verdict: NOT BUY" not in html  # no inline contradiction
+
+
+# ---------------------------------------------------------------------------
+# Verdict chips (sidebar / marquee / history) show the score band
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "score,verdict,label,cls",
+    [
+        (85, "BUY", "STRONG BUY", "buy"),
+        (65, "BUY", "BUY", "buy"),
+        (43, "NOT BUY", "WAIT", "wait"),
+        (25, "NOT BUY", "DON'T BUY", "avoid"),
+        (10, "NOT BUY", "AVOID", "avoid"),
+        (None, "BUY", "BUY", "buy"),  # legacy rows keep the buy label
+        (None, "NOT BUY", "DON'T BUY", "not-buy"),  # legacy: friendly label, old style
+    ],
+)
+def test_verdict_chip_prefers_score_band(score, verdict, label, cls):
+    from ph_stocks_advisor.web.app import _verdict_chip
+
+    chip = _verdict_chip(_record_with(score=score, verdict=verdict))
+    assert chip == {"label": label, "cls": cls}
+
+
+def _record_with(score, verdict):
+    from ph_stocks_advisor.infra.repository import ReportRecord
+
+    return ReportRecord(
+        id=None,
+        symbol="TEL",
+        verdict=verdict,
+        summary="s",
+        price_section="",
+        dividend_section="",
+        movement_section="",
+        valuation_section="",
+        controversy_section="",
+        score=score,
+    )
+
+
+def test_homepage_marquee_shows_band_not_binary(page_client):
+    """A WAIT-scored stock must not appear as NOT BUY on the homepage."""
+    from ph_stocks_advisor.infra.config import get_repository
+
+    repo = get_repository()
+    repo.save(_record_with(score=43, verdict="NOT BUY"))
+    # Auth-disabled requests run as the dev user; link the symbol to them
+    # so the homepage "Your Analysed Stocks" marquee includes it.
+    repo.add_user_symbol("dev@localhost", "TEL")
+    html = page_client.get("/").get_data(as_text=True)
+    assert ">WAIT</span>" in html
+    assert ">NOT BUY</span>" not in html
+
+
+def test_history_page_shows_band(page_client):
+    from ph_stocks_advisor.infra.config import get_repository
+
+    get_repository().save(_record_with(score=43, verdict="NOT BUY"))
+    html = page_client.get("/history/TEL").get_data(as_text=True)
+    assert "WAIT" in html

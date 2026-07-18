@@ -1,6 +1,6 @@
 # Philippine Stock Market AI Advisor
 
-An agentic AI application that analyses Philippine Stock Exchange (PSE) listed stocks and provides a **BUY** or **NOT BUY** verdict in plain English.
+An agentic AI application that analyses Philippine Stock Exchange (PSE) listed stocks and produces a **0–100 verdict score** on a buy-decision scale — **AVOID · DON'T BUY · WAIT · BUY · STRONG BUY** — in plain English. (A binary BUY / NOT BUY verdict is derived from the score internally for compatibility.)
 
 Built with **LangGraph** + **LangChain** using a multi-agent architecture. Requires Python ≥ 3.14.
 
@@ -27,7 +27,7 @@ A detailed diagram of the LangGraph flow — including MCP tool calls and the pe
 | **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
 | **Controversy Agent** | Price spike detection, risk factors, news headlines surfaced via the MCP data tool |
 | **Sentiment Agent** | Global events impact (wars, pandemics, economic shifts, climate); macro context surfaced via the MCP data tool |
-| **Consolidator** | Merges all analyses → prose summary with BUY / NOT BUY verdict (via structured output; regex fallback) |
+| **Consolidator** | Merges all analyses → prose summary + six per-dimension sub-scores (0–100, rubric-guided). The final verdict score is a deterministic weighted average of the sub-scores (env-tunable weights); the binary verdict is derived from it. Structured output with regex fallback |
 | **Portfolio Agent** | Personalised hold / accumulate / trim advisory for elevated users based on their stock holdings (on-demand, not part of the main graph) |
 
 ### Data Sources
@@ -267,9 +267,22 @@ Elevated users can record their stock positions and receive **personalised portf
 | `/api/portfolio-analyse/<symbol>` | `POST` | Trigger portfolio analysis (async Celery task) |
 | `/api/portfolio-report/<symbol>` | `GET` | Retrieve latest portfolio advisory |
 
-### Authentication (Microsoft Entra ID + Google OAuth2)
+### Authentication (Passkeys + OAuth recovery)
 
-The web UI supports **Microsoft Entra ID** and **Google** login with **passkey (FIDO2)** support. When at least one provider is configured, users must sign in before accessing any page. Both providers can be enabled simultaneously.
+The primary sign-in is a **passkey (WebAuthn/FIDO2)** — open self-signup, email-first: a new user enters their email + name and registers a passkey (Touch ID / Windows Hello / phone); returning users type their email and authenticate with their device. Microsoft Entra ID and Google OAuth remain available as **recovery sign-ins** (a lost device isn't a lockout). When at least one method is configured, users must sign in before accessing any page.
+
+#### Passkeys (WebAuthn)
+
+Passkeys are enabled by setting the relying-party ID and origin (off by default):
+
+```bash
+WEBAUTHN_RP_ID=your.domain.com                # host only — passkeys BIND to this domain
+WEBAUTHN_ORIGIN=https://your.domain.com       # exact origin used for server-side verification
+WEBAUTHN_RP_NAME="PH Stock Advisor AI"        # label shown in the OS passkey prompt
+FLASK_SECRET_KEY=<random-secret>
+```
+
+For local development use `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGIN=http://localhost:5180`. Changing the RP ID later invalidates all existing passkeys. Ceremonies verify against the *configured* origin (never request headers), so the flow is safe behind a reverse proxy or Cloudflare tunnel. The login flow is hardened against account enumeration (decoy credential lists + uniform errors), and anonymous callers cannot attach a passkey to an existing email. Endpoints under `/auth/passkey/*` cover register/login plus authenticated list/delete (passkeys can also be revoked from the admin panel's **Passkeys** view).
 
 #### Microsoft Entra ID
 
@@ -299,7 +312,7 @@ GOOGLE_CLIENT_ID=<your-google-client-id>
 GOOGLE_CLIENT_SECRET=<your-google-client-secret>
 ```
 
-When **neither** `ENTRA_CLIENT_ID` nor `GOOGLE_CLIENT_ID` is set, authentication is disabled and all routes are publicly accessible (useful for local development).
+When **no** sign-in method is configured (no `WEBAUTHN_RP_ID`, `ENTRA_CLIENT_ID`, or `GOOGLE_CLIENT_ID`), authentication is disabled and all routes are publicly accessible (useful for local development).
 
 ### Azure (Cloud Deployment)
 
@@ -500,7 +513,8 @@ ph_stocks_advisor/
 │   ├── tracing.py             # Langfuse callback config (optional, no-op when disabled)
 │   ├── repository.py          # Abstract repository interface
 │   ├── repository_sqlite.py   # SQLite implementation (default)
-│   └── repository_postgres.py # PostgreSQL implementation
+│   ├── repository_postgres.py # PostgreSQL implementation
+│   └── trading_calendar.py    # PSE session calendar (market hours, trading-day close cutoffs)
 └── memory/                    # Long-term project memory (Copilot context store)
     ├── __init__.py
     ├── __main__.py            #   CLI: rebuild / update / query / stats
@@ -558,7 +572,7 @@ Both use `uv` for fast dependency installation and share the same quality gates:
 
 The `main` workflow supports **two deployment targets** that run in parallel. Each is auto-detected based on which secrets are configured — enable one, both, or neither:
 
-On every push to `main`, a **build-images** job builds Docker images and pushes them to **GitHub Container Registry** (`ghcr.io`). The deploy jobs run after images are published:
+On every push to `main`, a **build-images** job builds Docker images and pushes them to **GitHub Container Registry** (`ghcr.io`). Builds are **path-gated** by a `changes` job: the app image rebuilds only when its build inputs change (`Dockerfile`, `.dockerignore`, `requirements.txt`, `pyproject.toml`, `ph_stocks_advisor/**`, `ph_stocks_mcp/**`), the admin image only on `admin/**`, and the deploy jobs run only when an image was actually rebuilt or `docker-compose.prod.yml` changed — docs/test-only merges skip the build entirely. Quality gates always run. The repository accepts **merge commits only** (squash/rebase disabled) so `develop` and `main` histories never diverge. The deploy jobs run after images are published:
 
 | Target | Triggered when | How it works |
 |--------|---------------|--------------|
@@ -608,6 +622,11 @@ cat > .env <<'EOF'
 OPENAI_API_KEY=sk-...
 POSTGRES_PASSWORD=<strong-password>
 ADMIN_PASSWORD=<strong-password>
+FLASK_SECRET_KEY=<random-secret>
+# Passkey sign-in (binds to your public domain)
+WEBAUTHN_RP_ID=your.domain.com
+WEBAUTHN_ORIGIN=https://your.domain.com
+WEBAUTHN_RP_NAME=PH Stock Advisor AI
 APP_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor:latest
 ADMIN_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor-admin:latest
 EOF
@@ -671,6 +690,8 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `WEB_PORT` | No | `5180` | Host port for the Flask web UI (Docker Compose only) |
 | `ADMIN_PORT` | No | `5181` | Host port for the SQLAdmin panel (Docker Compose only) |
 | `ADMIN_SECRET_KEY` | No | `sqladmin-dev-…` | Flask secret key for the admin panel |
+| `ADMIN_USERNAME` | No | `admin` | Admin panel username |
+| `ADMIN_PASSWORD` | No | _(empty — panel locked)_ | Admin panel password; when unset, no admin login is possible |
 | `ENTRA_CLIENT_ID` | No | — | Microsoft Entra ID application (client) ID (enables login) |
 | `ENTRA_CLIENT_SECRET` | No | — | Entra ID client secret |
 | `ENTRA_TENANT_ID` | No | `common` | Entra ID tenant ID (or `common` for multi-tenant) |
@@ -678,6 +699,16 @@ All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API
 | `GOOGLE_CLIENT_ID` | No | — | Google OAuth2 client ID (enables Google login) |
 | `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth2 client secret |
 | `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
+| `WEBAUTHN_RP_ID` | No | _(empty — passkeys off)_ | Passkey relying-party ID (host only, e.g. `your.domain.com`; `localhost` for dev). Setting this enables passkey sign-in |
+| `WEBAUTHN_ORIGIN` | No | `http://localhost:5180` | Exact origin used to verify WebAuthn ceremonies server-side |
+| `WEBAUTHN_RP_NAME` | No | `PH Stock Advisor AI` | Label shown in the OS/browser passkey prompt |
+| `SCORE_WEIGHT_PRICE` | No | `0.15` | Weight of the price sub-score in the 0–100 verdict score |
+| `SCORE_WEIGHT_VALUATION` | No | `0.25` | Weight of the valuation sub-score |
+| `SCORE_WEIGHT_DIVIDEND` | No | `0.15` | Weight of the dividend sub-score |
+| `SCORE_WEIGHT_MOVEMENT` | No | `0.15` | Weight of the movement sub-score |
+| `SCORE_WEIGHT_CONTROVERSY` | No | `0.15` | Weight of the controversy sub-score |
+| `SCORE_WEIGHT_SENTIMENT` | No | `0.15` | Weight of the sentiment sub-score (weights are normalised by their sum) |
+| `BUY_SCORE_THRESHOLD` | No | `60` | Score at/above which the derived binary verdict is BUY |
 | `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
 | `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per trading day (failed queries are not counted; resets at 3:00 PM PHT / 07:00 UTC) |
 | `LANGFUSE_PUBLIC_KEY` | No | — | Langfuse public key (enables LLM tracing when set together with the secret key) |

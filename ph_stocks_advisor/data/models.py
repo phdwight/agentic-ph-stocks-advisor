@@ -352,12 +352,13 @@ class ConsolidationResponse(BaseModel):
 # Verdict-score display bands (0–100 avoid→buy scale). Lower bound inclusive.
 # Labels are framed for a BUY decision (this app advises whether to buy,
 # never assumes the user already holds the stock — so no "sell"/"hold"):
-# AVOID = strong do-not-buy, WAIT = signals not aligned yet.
+# AVOID = strong do-not-buy, WAIT = signals not aligned yet. Labels are
+# imperatives (Don't Buy, Wait, Buy) — plain advice language.
 SCORE_BANDS: list[tuple[int, str]] = [
     (80, "STRONG BUY"),
     (60, "BUY"),
     (40, "WAIT"),
-    (20, "NOT BUY"),
+    (20, "DON'T BUY"),
     (0, "AVOID"),
 ]
 
