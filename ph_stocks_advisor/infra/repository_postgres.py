@@ -27,6 +27,7 @@ from ph_stocks_advisor.infra.repository import (
     PortfolioReportRecord,
     ReportRecord,
     UserRecord,
+    WebAuthnCredentialRecord,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,21 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     last_login_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+"""
+
+_CREATE_WEBAUTHN_SQL = """
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+    credential_id TEXT PRIMARY KEY,
+    user_oid      VARCHAR(320) NOT NULL,
+    public_key    TEXT         NOT NULL,
+    sign_count    BIGINT       NOT NULL DEFAULT 0,
+    transports    TEXT         NOT NULL DEFAULT '',
+    aaguid        TEXT,
+    nickname      TEXT,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    last_used_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_oid);
 """
 
 # ── Schema migrations (idempotent) ──────────────────────────────────────────
@@ -241,6 +257,7 @@ class PostgresReportRepository(AbstractReportRepository):
                 cur.execute(_CREATE_INDEX_SQL)
                 cur.execute(_CREATE_USER_SYMBOLS_SQL)
                 cur.execute(_CREATE_USERS_SQL)
+                cur.execute(_CREATE_WEBAUTHN_SQL)
                 for migration in _MIGRATIONS_SQL:
                     cur.execute(migration)
             conn.commit()
@@ -421,6 +438,86 @@ class PostgresReportRepository(AbstractReportRepository):
                 created_at=row["created_at"],
                 last_login_at=row["last_login_at"],
             )
+
+    # ------------------------------------------------------------------
+    # WebAuthn / passkey credentials
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_credential(row) -> WebAuthnCredentialRecord:
+        return WebAuthnCredentialRecord(
+            credential_id=row["credential_id"],
+            user_oid=row["user_oid"],
+            public_key=row["public_key"],
+            sign_count=row["sign_count"],
+            transports=row["transports"].split(",") if row["transports"] else [],
+            aaguid=row["aaguid"],
+            nickname=row["nickname"],
+            created_at=row["created_at"],
+            last_used_at=row["last_used_at"],
+        )
+
+    def add_webauthn_credential(self, cred: WebAuthnCredentialRecord) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO webauthn_credentials
+                        (credential_id, user_oid, public_key, sign_count, transports,
+                         aaguid, nickname, created_at, last_used_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        cred.credential_id,
+                        cred.user_oid,
+                        cred.public_key,
+                        cred.sign_count,
+                        ",".join(cred.transports),
+                        cred.aaguid,
+                        cred.nickname,
+                        cred.created_at,
+                        cred.last_used_at,
+                    ),
+                )
+            conn.commit()
+
+    def get_webauthn_credential(self, credential_id: str) -> WebAuthnCredentialRecord | None:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM webauthn_credentials WHERE credential_id = %s",
+                    (credential_id,),
+                )
+                row = cur.fetchone()
+            return self._row_to_credential(row) if row else None
+
+    def list_webauthn_credentials(self, user_oid: str) -> list[WebAuthnCredentialRecord]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM webauthn_credentials WHERE user_oid = %s ORDER BY created_at DESC",
+                    (user_oid,),
+                )
+                rows = cur.fetchall()
+            return [self._row_to_credential(r) for r in rows]
+
+    def update_webauthn_sign_count(self, credential_id: str, sign_count: int) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE webauthn_credentials SET sign_count = %s, last_used_at = %s WHERE credential_id = %s",
+                    (sign_count, datetime.now(tz=UTC), credential_id),
+                )
+            conn.commit()
+
+    def delete_webauthn_credential(self, credential_id: str, user_oid: str) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM webauthn_credentials WHERE credential_id = %s AND user_oid = %s",
+                    (credential_id, user_oid),
+                )
+            conn.commit()
 
     @staticmethod
     def _row_to_record(row) -> ReportRecord:

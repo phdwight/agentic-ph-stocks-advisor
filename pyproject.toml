@@ -19,6 +19,7 @@ dependencies = [
     "celery[redis]>=5.3",
     "redis>=5.0",
     "msal>=1.28",
+    "webauthn>=2.5",
     "flask-session>=0.5",
     "gunicorn>=22.0",
     "gevent>=24.0",

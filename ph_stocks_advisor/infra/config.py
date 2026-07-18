@@ -90,12 +90,28 @@ class Settings:
     google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     google_redirect_path: str = os.getenv("GOOGLE_REDIRECT_PATH", "/auth/google/callback")
 
+    # -- Passkeys / WebAuthn ---------------------------------------------------
+    # RP ID is the domain passkeys are bound to (host only, no scheme/port).
+    # ORIGIN is the exact https origin used to verify ceremonies server-side
+    # (never inferred from the request, for safety behind the cloudflared tunnel).
+    # Dev defaults target localhost so passkeys work in a local secure context.
+    # Off by default (empty RP ID). Enable locally with WEBAUTHN_RP_ID=localhost;
+    # in prod set WEBAUTHN_RP_ID=phstockadvisor.sakayandgo.com and the matching origin.
+    webauthn_rp_id: str = os.getenv("WEBAUTHN_RP_ID", "")
+    webauthn_rp_name: str = os.getenv("WEBAUTHN_RP_NAME", "PH Stock Advisor AI")
+    webauthn_origin: str = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:5180")
+
+    @property
+    def passkey_enabled(self) -> bool:
+        """True when passkey sign-in is turned on (RP ID + origin configured)."""
+        return bool(self.webauthn_rp_id and self.webauthn_origin)
+
     @property
     def auth_enabled(self) -> bool:
-        """True when at least one identity provider is configured."""
+        """True when at least one sign-in method is configured."""
         ms_ok = self.entra_client_id and self.entra_client_id != "NOTSET"
         g_ok = self.google_client_id and self.google_client_id != "NOTSET"
-        return bool(ms_ok or g_ok)
+        return bool(ms_ok or g_ok or self.passkey_enabled)
 
     @property
     def google_enabled(self) -> bool:
