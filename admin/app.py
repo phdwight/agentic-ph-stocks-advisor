@@ -78,9 +78,22 @@ class User(Base):
     name = Column(String(255), nullable=False)
     email = Column(String(320), nullable=False)
     provider = Column(String(50), nullable=False, server_default="microsoft")
-    avatar_url = Column(Text, nullable=False, server_default="")
     user_type = Column(Integer, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=True), nullable=False)
+    last_login_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class WebAuthnCredential(Base):
+    __tablename__ = "webauthn_credentials"
+
+    credential_id = Column(Text, primary_key=True)
+    user_oid = Column(String(320), nullable=False)
+    sign_count = Column(Integer, nullable=False, server_default="0")
+    transports = Column(Text, nullable=False, server_default="")
+    aaguid = Column(Text)
+    nickname = Column(Text)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    last_used_at = Column(DateTime(timezone=True))
 
 
 class UserSymbol(Base):
@@ -168,6 +181,7 @@ class UserAdmin(ModelView, model=User):
         User.provider,
         User.user_type,
         User.created_at,
+        User.last_login_at,
     ]
     column_searchable_list = [User.name, User.email]
     column_sortable_list = [
@@ -177,6 +191,7 @@ class UserAdmin(ModelView, model=User):
         User.provider,
         User.user_type,
         User.created_at,
+        User.last_login_at,
     ]
     column_default_sort = ("created_at", True)
 
@@ -184,8 +199,35 @@ class UserAdmin(ModelView, model=User):
 
     form_columns = ["user_type"]  # only allow editing the user type
 
-    can_create = False  # users are created via OAuth login
+    can_create = False  # users are created via OAuth/passkey sign-in
     can_delete = False
+    can_export = True
+    page_size = 25
+
+
+class WebAuthnCredentialAdmin(ModelView, model=WebAuthnCredential):
+    name = "Passkey"
+    name_plural = "Passkeys"
+    icon = "fa-solid fa-key"
+
+    column_list = [
+        WebAuthnCredential.user_oid,
+        WebAuthnCredential.nickname,
+        WebAuthnCredential.sign_count,
+        WebAuthnCredential.created_at,
+        WebAuthnCredential.last_used_at,
+    ]
+    column_searchable_list = [WebAuthnCredential.user_oid, WebAuthnCredential.nickname]
+    column_sortable_list = [
+        WebAuthnCredential.user_oid,
+        WebAuthnCredential.created_at,
+        WebAuthnCredential.last_used_at,
+    ]
+    column_default_sort = ("created_at", True)
+
+    can_create = False  # registered via the WebAuthn ceremony only
+    can_edit = False
+    can_delete = True  # allow revoking a lost/compromised passkey
     can_export = True
     page_size = 25
 
@@ -262,3 +304,4 @@ admin = Admin(
 admin.add_view(ReportAdmin)
 admin.add_view(UserAdmin)
 admin.add_view(UserSymbolAdmin)
+admin.add_view(WebAuthnCredentialAdmin)
