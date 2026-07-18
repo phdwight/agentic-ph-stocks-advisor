@@ -393,3 +393,14 @@ def test_history_page_shows_band(page_client):
     get_repository().save(_record_with(score=43, verdict="NOT BUY"))
     html = page_client.get("/history/TEL").get_data(as_text=True)
     assert "WAIT" in html
+
+
+def test_static_assets_are_content_hash_versioned(page_client):
+    """Asset URLs carry a content hash, not the app version (which only
+    changes on GitHub Releases and let CDNs serve stale CSS/JS)."""
+    import re
+
+    html = page_client.get("/").get_data(as_text=True)
+    m = re.search(r"style\.css\?v=([0-9a-f]{10})", html)
+    assert m, "style.css must be versioned with a 10-char content hash"
+    assert re.search(r"app\.js\?v=" + m.group(1), html)  # same rev everywhere
