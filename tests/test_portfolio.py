@@ -520,14 +520,15 @@ class TestPortfolioCooldown:
         )
         repo.save_portfolio_report(pr)
 
-        # Manually backdate the created_at to yesterday.
+        # Backdate created_at clearly before the last trading close so the
+        # cooldown has deterministically passed (trading-day-aware cutoff).
         import sqlite3
 
         conn = sqlite3.connect(repo._db_path)  # type: ignore[attr-defined]
-        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        stale = (datetime.now(UTC) - timedelta(days=10)).isoformat()
         conn.execute(
             "UPDATE portfolio_reports SET created_at = ? WHERE user_id = ? AND symbol = ?",
-            (yesterday, "elevated@test.com", "TEL"),
+            (stale, "elevated@test.com", "TEL"),
         )
         conn.commit()
         conn.close()

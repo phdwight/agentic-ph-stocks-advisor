@@ -359,10 +359,10 @@ class TestElevatedBypassesRateLimit:
         """Elevated user bypasses cache AND rate limit when cooldown passed."""
         client, mock_repo = elevated_client
 
-        # Report from yesterday — cooldown has passed.
+        # Report clearly before the last close — cooldown has passed.
         cached_record = MagicMock()
         cached_record.id = 50
-        cached_record.created_at = datetime.now(tz=UTC) - timedelta(days=1)
+        cached_record.created_at = datetime.now(tz=UTC) - timedelta(days=10)
         mock_repo.get_latest_by_symbol.return_value = cached_record
 
         _seed_counter(fake_redis, "dev@localhost", 100)  # way over limit
@@ -370,7 +370,11 @@ class TestElevatedBypassesRateLimit:
         task = MagicMock()
         task.id = "task-both"
 
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
+        # Market closed → the run is allowed (the market-open gate would defer it).
+        with (
+            patch.object(_app_mod.trading_calendar, "is_market_open", return_value=False),
+            patch.object(_tasks_mod.analyse_stock, "delay", return_value=task),
+        ):
             resp = client.post("/analyse", data={"symbol": "TEL"})
             assert resp.status_code == 200
             data = resp.get_json()
@@ -448,32 +452,33 @@ class TestElevatedDailyCooldown:
 
 
 class TestCutoffLabel:
-    """_cutoff_label returns 'tomorrow after …' when past cutoff, 'after …' otherwise."""
+    """_cutoff_label is trading-day aware — it names the next 3 PM PHT close."""
 
-    def test_label_says_tomorrow_when_past_cutoff(self):
-        with patch.object(_app_mod, "_is_past_cutoff", return_value=True):
-            label = _app_mod._cutoff_label()
-        assert label.startswith("tomorrow")
-        assert "3:00" in label
+    def test_label_delegates_to_trading_calendar(self):
+        with patch.object(
+            _app_mod.trading_calendar, "next_close_label", return_value="after Monday's 3:00 PM PHT close"
+        ):
+            assert _app_mod._cutoff_label() == "after Monday's 3:00 PM PHT close"
 
-    def test_label_says_after_when_before_cutoff(self):
-        with patch.object(_app_mod, "_is_past_cutoff", return_value=False):
-            label = _app_mod._cutoff_label()
-        assert not label.startswith("tomorrow")
-        assert "3:00" in label
+    def test_label_names_the_close(self):
+        # Real time, but the format always names the 3 PM PHT close.
+        label = _app_mod._cutoff_label()
+        assert "3:00" in label and "PHT" in label and "close" in label
 
-    def test_elevated_cooldown_message_contains_tomorrow_when_past_cutoff(self, elevated_client, fake_redis):
-        """The elevated cooldown error message says 'tomorrow' when past 3 PM PHT."""
+    def test_elevated_cooldown_message_uses_next_close_label(self, elevated_client, fake_redis):
+        """The elevated cooldown error embeds the trading-day-aware close label."""
         client, mock_repo = elevated_client
 
         cached_record = MagicMock()
         cached_record.id = 42
-        cached_record.created_at = datetime.now(tz=UTC)
+        cached_record.created_at = datetime.now(tz=UTC)  # fresh → cooldown
         mock_repo.get_latest_by_symbol.return_value = cached_record
 
-        with patch.object(_app_mod, "_is_past_cutoff", return_value=True):
+        with patch.object(
+            _app_mod.trading_calendar, "next_close_label", return_value="after Monday's 3:00 PM PHT close"
+        ):
             resp = client.post("/analyse", data={"symbol": "TEL"})
 
         data = resp.get_json()
         assert resp.status_code == 429
-        assert "tomorrow" in data["error"]
+        assert "after Monday's 3:00 PM PHT close" in data["error"]

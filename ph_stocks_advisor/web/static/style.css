@@ -2433,3 +2433,12 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 }
 .passkey-link:hover { color: var(--accent-800); text-decoration: underline; }
 #pk-error { margin-top: 0.2rem; }
+
+/* Report: "market open — showing last report" note */
+.rail-note {
+  display: flex; align-items: flex-start; gap: 0.4rem;
+  font-size: 0.8rem; line-height: 1.45; color: var(--accent-800);
+  background: var(--accent-100); border: 1px solid var(--accent-300);
+  border-radius: var(--radius); padding: 0.5rem 0.65rem;
+}
+.rail-note svg { flex: none; margin-top: 2px; color: var(--accent-700); }
