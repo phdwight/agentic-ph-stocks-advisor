@@ -2442,3 +2442,10 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   border-radius: var(--radius); padding: 0.5rem 0.65rem;
 }
 .rail-note svg { flex: none; margin-top: 2px; color: var(--accent-700); }
+
+/* Elevated users: yellow-gold name in the nav (dark enough to read on the
+   light ground; complements the orange accent without competing with it). */
+.nav-user-name.elevated {
+  color: #b8860b;
+  font-weight: 600;
+}
