@@ -125,10 +125,13 @@
     return done;
   }
 
+  // Mirrors the server's acceptable-form check (not deliverability).
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
   async function handleSubmit() {
     clearError();
     const email = (emailInput.value || "").trim();
-    if (!email || email.indexOf("@") === -1) {
+    if (!EMAIL_RE.test(email) || email.length > 254) {
       showError("Enter a valid email address.");
       return;
     }
