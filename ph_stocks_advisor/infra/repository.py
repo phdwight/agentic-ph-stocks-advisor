@@ -170,6 +170,7 @@ class ReportRecord:
         controversy_section: str,
         sentiment_section: str = "",
         created_at: datetime | None = None,
+        score: int | None = None,
     ) -> None:
         self.id = id
         self.symbol = symbol
@@ -182,6 +183,8 @@ class ReportRecord:
         self.controversy_section = controversy_section
         self.sentiment_section = sentiment_section
         self.created_at = created_at or datetime.now(tz=UTC)
+        # 0–100 sell→buy verdict score; None for pre-scoring legacy rows.
+        self.score = score
 
     @classmethod
     def from_final_report(cls, report: FinalReport) -> ReportRecord:
@@ -196,6 +199,7 @@ class ReportRecord:
             valuation_section=report.valuation_section,
             controversy_section=report.controversy_section,
             sentiment_section=report.sentiment_section,
+            score=report.score,
         )
 
     def __repr__(self) -> str:

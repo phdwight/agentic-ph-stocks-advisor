@@ -662,6 +662,26 @@ def create_app() -> Flask:
         # fresh run is deferred until after the 3 PM PHT close.
         market_open_stale = (not is_cached) and trading_calendar.is_market_open()
 
+        # Verdict score (0–100 sell→buy) drives the meter. Legacy rows
+        # created before scoring have no score — fall back to the old
+        # fixed marker positions and the binary verdict word.
+        from ph_stocks_advisor.data.models import score_band
+
+        verdict_score = record.score
+        if verdict_score is not None:
+            verdict_band = score_band(verdict_score)
+            marker_pct = verdict_score
+            if verdict_band in ("BUY", "STRONG BUY"):
+                band_class = "buy"
+            elif verdict_band == "HOLD":
+                band_class = "hold"
+            else:
+                band_class = "sell"
+        else:
+            verdict_band = None
+            marker_pct = 80 if is_buy else 18
+            band_class = "buy" if is_buy else "nb"
+
         # Fetch live current price for the header display.
         current_price: float | None = None
         try:
@@ -724,6 +744,10 @@ def create_app() -> Flask:
             portfolio_inflight_task_id=portfolio_inflight_task_id,
             next_cutoff_label=_cutoff_label(),
             market_open_stale=market_open_stale,
+            verdict_score=verdict_score,
+            verdict_band=verdict_band,
+            marker_pct=marker_pct,
+            band_class=band_class,
         )
 
     @app.route("/history/<symbol>")

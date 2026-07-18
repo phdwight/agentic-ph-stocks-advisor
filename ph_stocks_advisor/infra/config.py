@@ -43,6 +43,19 @@ class Settings:
     tavily_max_results: int = int(os.getenv("TAVILY_MAX_RESULTS", "5"))
     tavily_search_depth: str = os.getenv("TAVILY_SEARCH_DEPTH", "basic")
 
+    # -- Verdict score (0–100 sell→buy scale) -----------------------------------
+    # The consolidator LLM emits six per-dimension sub-scores; the final
+    # score is their weighted average using these env-tunable weights
+    # (normalised by their sum, so they need not add to exactly 1).
+    score_weight_price: float = float(os.getenv("SCORE_WEIGHT_PRICE", "0.15"))
+    score_weight_valuation: float = float(os.getenv("SCORE_WEIGHT_VALUATION", "0.25"))
+    score_weight_dividend: float = float(os.getenv("SCORE_WEIGHT_DIVIDEND", "0.15"))
+    score_weight_movement: float = float(os.getenv("SCORE_WEIGHT_MOVEMENT", "0.15"))
+    score_weight_controversy: float = float(os.getenv("SCORE_WEIGHT_CONTROVERSY", "0.15"))
+    score_weight_sentiment: float = float(os.getenv("SCORE_WEIGHT_SENTIMENT", "0.15"))
+    # Scores at or above this threshold map to the legacy binary BUY verdict.
+    buy_score_threshold: int = int(os.getenv("BUY_SCORE_THRESHOLD", "60"))
+
     # -- Database --------------------------------------------------------------
     db_backend: str = os.getenv("DB_BACKEND", "sqlite")
     sqlite_path: str = os.getenv("SQLITE_PATH", "reports.db")

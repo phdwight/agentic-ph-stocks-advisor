@@ -315,10 +315,41 @@ Your report MUST include:
 3. A final **Verdict** line that says exactly one of: **BUY** or **NOT BUY**.
 4. A one-sentence justification for the verdict.
 
-Your output will be captured as structured data with three fields:
+**PER-DIMENSION SCORES (0–100 sell→buy scale):**
+Alongside the report, score each of the six dimensions as an integer from
+0 to 100, where 0 = strongly avoid/sell signal, 50 = neutral/hold, and
+100 = strongly favourable/buy signal. Judge each dimension on its own
+evidence — do NOT try to average them yourself. Calibrate per this rubric:
+
+- **price_score** — 50 = trading mid-range with no edge; >70 requires price
+  near meaningful support or clearly below its trading range with momentum
+  not deteriorating; <30 = overextended near resistance or in freefall.
+- **valuation_score** — 50 = fairly valued vs sector peers and own history;
+  >70 requires trading clearly below conservative fair value (P/E, P/B,
+  fair-value estimates agreeing); <30 = expensive on multiple measures.
+- **dividend_score** — 50 = ordinary/uncertain income; >70 requires a
+  well-covered, sustainable yield attractive vs peers (REIT payout rules
+  are normal, not a risk); <30 = cut, suspended, or unsustainable payout.
+- **movement_score** — 50 = no notable flow; >70 requires accumulation
+  signals (net foreign buying, constructive volume); <30 = distribution,
+  heavy selling pressure, or violent unexplained swings.
+- **controversy_score** — 50 = routine/no flags; >70 = clean record with
+  transparent disclosures; <30 = active investigations, governance issues,
+  or unexplained price/volume events that warrant caution.
+- **sentiment_score** — 50 = neutral backdrop; >70 requires upgrades or
+  clear positive catalysts; <30 = downgrades or hostile macro conditions
+  for this specific stock.
+
+Use the full range — reserve 80+ and 20- for genuinely strong evidence,
+and do not default every dimension to 50.
+
+Your output will be captured as structured data:
 - ``verdict``: exactly "BUY" or "NOT BUY"
 - ``justification``: one sentence explaining why
 - ``summary``: the full report text (sections 1-3 above)
+- ``price_score``, ``valuation_score``, ``dividend_score``,
+  ``movement_score``, ``controversy_score``, ``sentiment_score``:
+  the six 0–100 integers per the rubric above
 
 Use plain, jargon-free English that any Filipino retail investor can understand.
 """
