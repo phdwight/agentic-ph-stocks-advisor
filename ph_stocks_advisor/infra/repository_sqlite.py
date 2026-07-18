@@ -16,6 +16,7 @@ from ph_stocks_advisor.infra.repository import (
     PortfolioReportRecord,
     ReportRecord,
     UserRecord,
+    WebAuthnCredentialRecord,
 )
 
 _CREATE_TABLE_SQL = """
@@ -59,6 +60,24 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TEXT NOT NULL
 );
 """
+
+_CREATE_WEBAUTHN_SQL = """
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+    credential_id TEXT PRIMARY KEY,
+    user_oid      TEXT NOT NULL,
+    public_key    TEXT NOT NULL,
+    sign_count    INTEGER NOT NULL DEFAULT 0,
+    transports    TEXT NOT NULL DEFAULT '',
+    aaguid        TEXT,
+    nickname      TEXT,
+    created_at    TEXT NOT NULL,
+    last_used_at  TEXT
+);
+"""
+
+_CREATE_WEBAUTHN_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_oid);"
+)
 
 _CREATE_HOLDINGS_SQL = """
 CREATE TABLE IF NOT EXISTS holdings (
@@ -115,6 +134,8 @@ class SQLiteReportRepository(AbstractReportRepository):
         conn.execute(_CREATE_INDEX_SQL)
         conn.execute(_CREATE_USER_SYMBOLS_SQL)
         conn.execute(_CREATE_USERS_SQL)
+        conn.execute(_CREATE_WEBAUTHN_SQL)
+        conn.execute(_CREATE_WEBAUTHN_INDEX_SQL)
         conn.execute(_CREATE_HOLDINGS_SQL)
         conn.execute(_CREATE_PORTFOLIO_REPORTS_SQL)
         conn.commit()
@@ -280,6 +301,79 @@ class SQLiteReportRepository(AbstractReportRepository):
             created_at=datetime.fromisoformat(row["created_at"]),
             last_login_at=datetime.fromisoformat(row["last_login_at"]),
         )
+
+    # ------------------------------------------------------------------
+    # WebAuthn / passkey credentials
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_credential(row: sqlite3.Row) -> WebAuthnCredentialRecord:
+        return WebAuthnCredentialRecord(
+            credential_id=row["credential_id"],
+            user_oid=row["user_oid"],
+            public_key=row["public_key"],
+            sign_count=row["sign_count"],
+            transports=row["transports"].split(",") if row["transports"] else [],
+            aaguid=row["aaguid"],
+            nickname=row["nickname"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            last_used_at=datetime.fromisoformat(row["last_used_at"]) if row["last_used_at"] else None,
+        )
+
+    def add_webauthn_credential(self, cred: WebAuthnCredentialRecord) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """
+            INSERT INTO webauthn_credentials
+                (credential_id, user_oid, public_key, sign_count, transports,
+                 aaguid, nickname, created_at, last_used_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cred.credential_id,
+                cred.user_oid,
+                cred.public_key,
+                cred.sign_count,
+                ",".join(cred.transports),
+                cred.aaguid,
+                cred.nickname,
+                cred.created_at.isoformat(),
+                cred.last_used_at.isoformat() if cred.last_used_at else None,
+            ),
+        )
+        conn.commit()
+
+    def get_webauthn_credential(self, credential_id: str) -> WebAuthnCredentialRecord | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM webauthn_credentials WHERE credential_id = ?",
+            (credential_id,),
+        ).fetchone()
+        return self._row_to_credential(row) if row else None
+
+    def list_webauthn_credentials(self, user_oid: str) -> list[WebAuthnCredentialRecord]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM webauthn_credentials WHERE user_oid = ? ORDER BY created_at DESC",
+            (user_oid,),
+        ).fetchall()
+        return [self._row_to_credential(r) for r in rows]
+
+    def update_webauthn_sign_count(self, credential_id: str, sign_count: int) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE webauthn_credentials SET sign_count = ?, last_used_at = ? WHERE credential_id = ?",
+            (sign_count, datetime.now(tz=UTC).isoformat(), credential_id),
+        )
+        conn.commit()
+
+    def delete_webauthn_credential(self, credential_id: str, user_oid: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM webauthn_credentials WHERE credential_id = ? AND user_oid = ?",
+            (credential_id, user_oid),
+        )
+        conn.commit()
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> ReportRecord:

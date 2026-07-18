@@ -27,6 +27,8 @@ blinker==1.9.0
     # via flask
 cachelib==0.13.0
     # via flask-session
+cbor2==5.9.0
+    # via webauthn
 celery[redis]==5.6.2
     # via ph-stocks-advisor (pyproject.toml)
 certifi==2026.2.25
@@ -56,6 +58,8 @@ cryptography==46.0.5
     # via
     #   msal
     #   pyjwt
+    #   pyopenssl
+    #   webauthn
 defusedxml==0.7.1
     # via fpdf2
 distro==1.9.0
@@ -207,6 +211,12 @@ protobuf==6.33.6
     #   opentelemetry-proto
 psycopg2-binary==2.9.12
     # via ph-stocks-advisor (pyproject.toml)
+pyasn1==0.6.4
+    # via
+    #   pyasn1-modules
+    #   webauthn
+pyasn1-modules==0.4.2
+    # via webauthn
 pycparser==3.0
     # via cffi
 pydantic==2.12.5
@@ -229,6 +239,8 @@ pyjwt[crypto]==2.11.0
     #   mcp
     #   msal
     #   pyjwt
+pyopenssl==26.2.0
+    # via webauthn
 python-dateutil==2.9.0.post0
     # via
     #   celery
@@ -322,6 +334,8 @@ vine==5.1.0
     #   kombu
 wcwidth==0.6.0
     # via prompt-toolkit
+webauthn==2.8.0
+    # via ph-stocks-advisor (pyproject.toml)
 werkzeug==3.1.6
     # via flask
 wrapt==1.17.3
