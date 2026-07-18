@@ -24,10 +24,17 @@ from ph_stocks_advisor.data.models import (
     ConsolidationResponse,
     FinalReport,
     Verdict,
+    score_band,
 )
-from ph_stocks_advisor.infra.config import get_today
+from ph_stocks_advisor.infra.config import get_settings, get_today
 
 logger = logging.getLogger(__name__)
+
+# Score assigned when the LLM provides only a binary verdict (regex
+# fallback, or a structured model that omitted the sub-scores): solidly
+# inside the BUY / SELL bands without overstating conviction.
+_FALLBACK_BUY_SCORE = 75
+_FALLBACK_NOT_BUY_SCORE = 25
 
 
 class ConsolidatorAgent:
@@ -48,12 +55,13 @@ class ConsolidatorAgent:
             sentiment_analysis=state.sentiment_analysis.analysis if state.sentiment_analysis else "N/A",
         )
 
-        verdict, summary = self._invoke_structured(prompt)
+        verdict, summary, score = self._invoke_structured(prompt)
 
         return FinalReport(
             symbol=state.symbol,
             verdict=verdict,
             summary=summary,
+            score=score,
             price_section=state.price_analysis.analysis if state.price_analysis else "",
             dividend_section=state.dividend_analysis.analysis if state.dividend_analysis else "",
             movement_section=state.movement_analysis.analysis if state.movement_analysis else "",
@@ -66,16 +74,38 @@ class ConsolidatorAgent:
     # Structured output (primary) → free-form + regex (fallback)
     # ------------------------------------------------------------------
 
-    def _invoke_structured(self, prompt: str) -> tuple[Verdict, str]:
+    def _invoke_structured(self, prompt: str) -> tuple[Verdict, str, int]:
         """Try structured output first; fall back to regex extraction.
 
-        Returns ``(verdict, summary)`` regardless of which path succeeds.
+        Returns ``(verdict, summary, score)`` regardless of which path
+        succeeds. When sub-scores are available the final score is their
+        configurable weighted average and the binary verdict is DERIVED
+        from it (score >= buy threshold → BUY) so the meter, the band
+        label, and the badge can never contradict each other.
         """
         try:
             structured_llm = self._llm.with_structured_output(ConsolidationResponse)
             result: ConsolidationResponse = structured_llm.invoke([HumanMessage(content=prompt)])  # type: ignore[assignment]
-            logger.info("Structured output succeeded — verdict=%s", result.verdict.value)
-            return result.verdict, result.summary
+            score = self._weighted_score(result)
+            if score is None:
+                score = _FALLBACK_BUY_SCORE if result.verdict == Verdict.BUY else _FALLBACK_NOT_BUY_SCORE
+                verdict = result.verdict
+            else:
+                verdict = Verdict.BUY if score >= get_settings().buy_score_threshold else Verdict.NOT_BUY
+                if verdict != result.verdict:
+                    logger.info(
+                        "Derived verdict %s (score=%d) overrides LLM verdict %s.",
+                        verdict.value,
+                        score,
+                        result.verdict.value,
+                    )
+            logger.info(
+                "Structured output succeeded — verdict=%s score=%d band=%s",
+                verdict.value,
+                score,
+                score_band(score),
+            )
+            return verdict, result.summary, score
         except (NotImplementedError, AttributeError, TypeError) as exc:
             logger.info(
                 "Structured output not supported (%s); falling back to regex.",
@@ -86,7 +116,34 @@ class ConsolidatorAgent:
         response = self._llm.invoke([HumanMessage(content=prompt)])
         content = str(response.content)
         verdict = self._extract_verdict(content)
-        return verdict, content
+        score = _FALLBACK_BUY_SCORE if verdict == Verdict.BUY else _FALLBACK_NOT_BUY_SCORE
+        return verdict, content, score
+
+    @staticmethod
+    def _weighted_score(result: ConsolidationResponse) -> int | None:
+        """Weighted average of the per-dimension sub-scores, or ``None``.
+
+        Weights come from Settings (env-tunable) and are normalised by
+        their sum, so they need not add to exactly 1. Dimensions the LLM
+        omitted are skipped (their weight is excluded); if every
+        sub-score is missing the caller falls back to a verdict-derived
+        score.
+        """
+        s = get_settings()
+        pairs: list[tuple[int | None, float]] = [
+            (result.price_score, s.score_weight_price),
+            (result.valuation_score, s.score_weight_valuation),
+            (result.dividend_score, s.score_weight_dividend),
+            (result.movement_score, s.score_weight_movement),
+            (result.controversy_score, s.score_weight_controversy),
+            (result.sentiment_score, s.score_weight_sentiment),
+        ]
+        present = [(v, w) for v, w in pairs if v is not None and w > 0]
+        total_weight = sum(w for _, w in present)
+        if not present or total_weight <= 0:
+            return None
+        raw = sum(v * w for v, w in present) / total_weight
+        return max(0, min(100, round(raw)))
 
     @staticmethod
     def _extract_verdict(text: str) -> Verdict:

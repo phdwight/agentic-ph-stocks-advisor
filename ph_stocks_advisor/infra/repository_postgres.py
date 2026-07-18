@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS reports (
     valuation_section   TEXT        NOT NULL DEFAULT '',
     controversy_section TEXT        NOT NULL DEFAULT '',
     sentiment_section   TEXT        NOT NULL DEFAULT '',
+    score               INTEGER,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 """
@@ -91,6 +92,11 @@ CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_oid);
 
 # ── Schema migrations (idempotent) ──────────────────────────────────────────
 _MIGRATIONS_SQL = [
+    # Verdict score (0-100 sell->buy scale) for reports created pre-scoring
+    """
+    ALTER TABLE reports
+        ADD COLUMN IF NOT EXISTS score INTEGER;
+    """,
     # Added in v2 — user_type column for NORMAL(0)/ELEVATED(1) privileges
     """
     ALTER TABLE users
@@ -270,8 +276,8 @@ class PostgresReportRepository(AbstractReportRepository):
                     INSERT INTO reports
                         (symbol, verdict, summary, price_section, dividend_section,
                          movement_section, valuation_section, controversy_section,
-                         sentiment_section, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         sentiment_section, score, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -284,6 +290,7 @@ class PostgresReportRepository(AbstractReportRepository):
                         record.valuation_section,
                         record.controversy_section,
                         record.sentiment_section,
+                        record.score,
                         record.created_at or datetime.now(tz=UTC),
                     ),
                 )
@@ -532,6 +539,7 @@ class PostgresReportRepository(AbstractReportRepository):
             valuation_section=row["valuation_section"],
             controversy_section=row["controversy_section"],
             sentiment_section=row.get("sentiment_section", "") if hasattr(row, "get") else "",
+            score=row.get("score") if hasattr(row, "get") else None,
             created_at=row["created_at"],
         )
 

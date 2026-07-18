@@ -306,7 +306,14 @@ class ConsolidationResponse(BaseModel):
     """Structured LLM output from the consolidator agent.
 
     Used with ``BaseChatModel.with_structured_output()`` so the verdict
-    is returned as a typed enum — no regex parsing required.
+    and per-dimension scores are returned typed — no regex parsing.
+
+    The six sub-scores are judgments on a 0–100 sell→buy scale (see the
+    rubric in ``CONSOLIDATION_PROMPT``). The final score is NOT computed
+    by the LLM — the consolidator combines the sub-scores with
+    configurable weights, so the scale can be tuned without prompt edits.
+    Sub-scores are optional so a less capable structured-output model
+    that omits them degrades gracefully to a verdict-derived score.
     """
 
     verdict: Verdict = Field(
@@ -322,6 +329,42 @@ class ConsolidationResponse(BaseModel):
             "area, and the verdict line."
         ),
     )
+    price_score: int | None = Field(
+        default=None, ge=0, le=100, description="Price/technical sub-score, 0-100 per the rubric."
+    )
+    valuation_score: int | None = Field(
+        default=None, ge=0, le=100, description="Valuation sub-score, 0-100 per the rubric."
+    )
+    dividend_score: int | None = Field(
+        default=None, ge=0, le=100, description="Dividend/income sub-score, 0-100 per the rubric."
+    )
+    movement_score: int | None = Field(
+        default=None, ge=0, le=100, description="Movement/fund-flow sub-score, 0-100 per the rubric."
+    )
+    controversy_score: int | None = Field(
+        default=None, ge=0, le=100, description="Controversy/risk sub-score, 0-100 per the rubric."
+    )
+    sentiment_score: int | None = Field(
+        default=None, ge=0, le=100, description="Sentiment/global-events sub-score, 0-100 per the rubric."
+    )
+
+
+# Verdict-score display bands (0–100 sell→buy scale). Lower bound inclusive.
+SCORE_BANDS: list[tuple[int, str]] = [
+    (80, "STRONG BUY"),
+    (60, "BUY"),
+    (40, "HOLD"),
+    (20, "SELL"),
+    (0, "STRONG SELL"),
+]
+
+
+def score_band(score: int) -> str:
+    """Map a 0–100 verdict score to its display band label."""
+    for lower, label in SCORE_BANDS:
+        if score >= lower:
+            return label
+    return "STRONG SELL"
 
 
 class FinalReport(BaseModel):
@@ -330,6 +373,9 @@ class FinalReport(BaseModel):
     symbol: str
     verdict: Verdict
     summary: str
+    # 0–100 sell→buy scale driving the report meter; None for legacy
+    # reports generated before scoring existed.
+    score: int | None = None
     price_section: str = ""
     dividend_section: str = ""
     movement_section: str = ""

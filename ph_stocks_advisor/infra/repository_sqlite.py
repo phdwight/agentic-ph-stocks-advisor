@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS reports (
     valuation_section TEXT  NOT NULL DEFAULT '',
     controversy_section TEXT NOT NULL DEFAULT '',
     sentiment_section TEXT NOT NULL DEFAULT '',
+    score           INTEGER,
     created_at      TEXT    NOT NULL
 );
 """
@@ -136,6 +137,12 @@ class SQLiteReportRepository(AbstractReportRepository):
         conn.execute(_CREATE_WEBAUTHN_INDEX_SQL)
         conn.execute(_CREATE_HOLDINGS_SQL)
         conn.execute(_CREATE_PORTFOLIO_REPORTS_SQL)
+        # Idempotent migration: add the verdict-score column to reports
+        # created before scoring existed (SQLite has no ADD COLUMN IF NOT
+        # EXISTS, so probe the schema first).
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(reports)")}
+        if "score" not in cols:
+            conn.execute("ALTER TABLE reports ADD COLUMN score INTEGER")
         conn.commit()
 
     def save(self, record: ReportRecord) -> int:
@@ -145,8 +152,8 @@ class SQLiteReportRepository(AbstractReportRepository):
             INSERT INTO reports
                 (symbol, verdict, summary, price_section, dividend_section,
                  movement_section, valuation_section, controversy_section,
-                 sentiment_section, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 sentiment_section, score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.symbol,
@@ -158,6 +165,7 @@ class SQLiteReportRepository(AbstractReportRepository):
                 record.valuation_section,
                 record.controversy_section,
                 record.sentiment_section,
+                record.score,
                 record.created_at.isoformat() if record.created_at else datetime.now(tz=UTC).isoformat(),
             ),
         )
@@ -390,6 +398,7 @@ class SQLiteReportRepository(AbstractReportRepository):
                 if "sentiment_section" in row.keys()  # noqa: SIM118
                 else ""
             ),
+            score=row["score"] if "score" in row.keys() else None,  # noqa: SIM118
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 

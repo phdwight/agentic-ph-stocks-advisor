@@ -78,6 +78,6 @@
 
 {% block scripts %}
 {% if passkey_enabled %}
-<script src="{{ url_for('static', filename='passkey.js') }}"></script>
+<script src="{{ url_for('static', filename='passkey.js') }}?v={{ app_version }}"></script>
 {% endif %}
 {% endblock %}

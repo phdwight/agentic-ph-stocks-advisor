@@ -31,9 +31,14 @@
 
     <section class="verdict-panel bp">
       <span class="kicker">Verdict</span>
-      <div class="verdict-word {% if is_buy %}buy{% else %}nb{% endif %}">{{ record.verdict }}</div>
+      <div class="verdict-row">
+        <div class="verdict-word {{ band_class }}">{{ verdict_band or record.verdict }}</div>
+        {% if verdict_score is not none %}
+        <div class="verdict-score"><b>{{ verdict_score }}</b><span>score / 100</span></div>
+        {% endif %}
+      </div>
       <div class="verdict-meter">
-        <div class="meter-track"><span class="meter-mk" style="left: {{ '80%' if is_buy else '18%' }};"></span></div>
+        <div class="meter-track"><span class="meter-mk" style="left: {{ marker_pct }}%;"></span></div>
         <div class="meter-labels"><span>Sell</span><span>Hold</span><span>Buy</span></div>
       </div>
       <p class="verdict-why">Consolidated from six specialist analyses of {{ record.symbol }}.</p>
@@ -174,12 +179,12 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='report-viz.js') }}"></script>
+<script src="{{ url_for('static', filename='report-viz.js') }}?v={{ app_version }}"></script>
 {% if is_elevated %}
 <script>
   window.__portfolioCooldown = {{ portfolio_on_cooldown | tojson }};
   window.__portfolioInflightTaskId = {{ portfolio_inflight_task_id | tojson }};
 </script>
-<script src="{{ url_for('static', filename='portfolio.js') }}"></script>
+<script src="{{ url_for('static', filename='portfolio.js') }}?v={{ app_version }}"></script>
 {% endif %}
 {% endblock %}

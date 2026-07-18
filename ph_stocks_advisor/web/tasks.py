@@ -94,9 +94,10 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
         report_id = repo.save(record)
 
         logger.info(
-            "Analysis for %s complete — verdict=%s, report_id=%d",
+            "Analysis for %s complete — verdict=%s, score=%s, report_id=%d",
             symbol,
             report.verdict.value,
+            report.score,
             report_id,
         )
         publish_progress(
@@ -105,11 +106,13 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
             done=True,
             symbol=symbol,
             verdict=report.verdict.value,
+            score=report.score,
             report_id=report_id,
         )
         return {
             "symbol": symbol,
             "verdict": report.verdict.value,
+            "score": report.score,
             "report_id": report_id,
         }
     except Exception as exc:

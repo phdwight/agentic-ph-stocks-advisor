@@ -2449,3 +2449,18 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   color: #b8860b;
   font-weight: 600;
 }
+
+/* Verdict score scale: 5-band word colors + the numeric score (teal,
+   quantitative — mirrors the meter's sell/buy ends). */
+.verdict-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.75rem; }
+.verdict-word.hold { color: var(--n-800); }
+.verdict-word.sell { color: var(--teal-dark); }
+.verdict-score { text-align: right; line-height: 1; }
+.verdict-score b {
+  font-family: var(--font-serif); font-weight: 600; font-size: 1.9rem;
+  color: var(--teal-dark); font-variant-numeric: tabular-nums;
+}
+.verdict-score span {
+  display: block; font-family: var(--font-serif); text-transform: uppercase;
+  letter-spacing: 0.08em; font-size: 0.62rem; color: var(--text-muted); margin-top: 2px;
+}
