@@ -189,6 +189,9 @@ def create_app() -> Flask:
 
     # Register the Entra ID authentication blueprint.
     app.register_blueprint(auth_bp)
+    from ph_stocks_advisor.web.passkey import passkey_bp
+
+    app.register_blueprint(passkey_bp)
 
     # ------------------------------------------------------------------
     # Security headers (CWE-693)
