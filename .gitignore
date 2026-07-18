@@ -6,6 +6,9 @@ __pycache__/
 dist/
 build/
 .venv/
+# Dependencies are locked via pip-compiled requirements.txt; uv.lock is a
+# local `uv run`/`uv sync` artifact and is intentionally not tracked.
+uv.lock
 *.db
 db/
 output/
