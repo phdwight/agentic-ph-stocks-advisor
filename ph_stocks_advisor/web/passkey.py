@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import uuid
 
 from flask import Blueprint, Response, jsonify, request, session
@@ -52,6 +53,15 @@ passkey_bp = Blueprint("passkey", __name__, url_prefix="/auth/passkey")
 # One generic message for every failure — never reveal *why* (anti-enumeration).
 _GENERIC_LOGIN_ERR = "Couldn't sign you in with a passkey. Check the email and try again."
 _GENERIC_REG_ERR = "Couldn't set up a passkey for that email."
+_INVALID_EMAIL_ERR = "Enter a valid email address."
+
+# We don't verify that the address is deliverable (no email is sent) — this
+# just rejects malformed input: local@domain.tld, no spaces, a dot in the domain.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _valid_email(email: str) -> bool:
+    return bool(email) and len(email) <= 254 and _EMAIL_RE.match(email) is not None
 
 
 def _user_handle(oid: str) -> bytes:
@@ -114,8 +124,8 @@ def register_begin() -> ResponseReturnValue:
     else:
         email = (data.get("email") or "").strip().lower()
         name = (data.get("name") or "").strip() or email
-        if not email or "@" not in email:
-            return jsonify({"error": _GENERIC_REG_ERR}), 400
+        if not _valid_email(email):
+            return jsonify({"error": _INVALID_EMAIL_ERR}), 400
         # Existing account: don't let an anonymous caller attach a passkey
         # (account-takeover guard). Generic message — no "email taken" leak.
         if repo.get_user_by_email(email) is not None:
@@ -203,6 +213,8 @@ def login_begin() -> ResponseReturnValue:
         return jsonify({"error": "Passkeys are not enabled."}), 404
     repo = get_repository()
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    if not _valid_email(email):
+        return jsonify({"error": _INVALID_EMAIL_ERR}), 400
 
     creds: list[WebAuthnCredentialRecord] = []
     user = repo.get_user_by_email(email) if email else None

@@ -211,3 +211,25 @@ def test_manage_endpoints_require_auth(pk_client):
     assert pk_client.get("/auth/passkey/list").status_code == 401
     hdr = _csrf(pk_client)
     assert pk_client.post("/auth/passkey/delete", json={"credential_id": "x"}, headers=hdr).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "bad_email",
+    ["", "nope", "a@b", "a b@c.com", "@example.com", "x@", "x@y.", "two@@at.com"],
+)
+def test_register_and_login_reject_malformed_email(pk_client, bad_email):
+    hdr = _csrf(pk_client)
+    reg = pk_client.post("/auth/passkey/register/begin", json={"email": bad_email, "name": "X"}, headers=hdr)
+    assert reg.status_code == 400
+    assert reg.get_json()["error"] == "Enter a valid email address."
+
+    login = pk_client.post("/auth/passkey/login/begin", json={"email": bad_email}, headers=hdr)
+    assert login.status_code == 400
+    assert login.get_json()["error"] == "Enter a valid email address."
+
+
+def test_valid_email_forms_are_accepted(pk_client):
+    hdr = _csrf(pk_client)
+    for ok in ["a@b.co", "first.last@sub.example.com", "user+tag@example.io"]:
+        reg = pk_client.post("/auth/passkey/register/begin", json={"email": ok, "name": "X"}, headers=hdr)
+        assert reg.status_code == 200, ok
