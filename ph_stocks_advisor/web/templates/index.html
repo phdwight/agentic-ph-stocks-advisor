@@ -67,7 +67,7 @@
       {% for stock in recent_stocks %}
       <a href="/report/{{ stock.symbol }}" class="stock-chip" data-symbol="{{ stock.symbol }}">
         <span class="chip-symbol">{{ stock.symbol }}</span>
-        <span class="chip-verdict badge-sm {{ 'buy' if stock.verdict == 'BUY' else 'not-buy' }}">{{ stock.verdict }}</span>
+        {% set chip = verdict_chip(stock) %}<span class="chip-verdict badge-sm {{ chip.cls }}">{{ chip.label }}</span>
         <span class="chip-date">{{ stock.created_at.strftime('%b %d') }}</span>
       </a>
       {% endfor %}

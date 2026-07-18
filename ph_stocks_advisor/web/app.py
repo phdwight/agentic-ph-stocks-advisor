@@ -132,6 +132,33 @@ def _cutoff_label() -> str:
     return trading_calendar.next_close_label()
 
 
+def _verdict_chip(record) -> dict:
+    """Label + CSS class for a verdict chip (sidebar / marquee / history).
+
+    Prefers the score band so chips always agree with the report's scale
+    (e.g. a 43 shows WAIT, not the binary NOT BUY); legacy rows without a
+    score keep the old binary label.
+    """
+    from ph_stocks_advisor.data.models import score_band
+
+    if isinstance(record, dict):
+        score = record.get("score")
+        verdict = (record.get("verdict") or "").upper()
+    else:
+        score = getattr(record, "score", None)
+        verdict = (getattr(record, "verdict", "") or "").upper()
+    if score is not None:
+        band = score_band(score)
+        if band in ("BUY", "STRONG BUY"):
+            cls = "buy"
+        elif band == "WAIT":
+            cls = "wait"
+        else:
+            cls = "avoid"
+        return {"label": band, "cls": cls}
+    return {"label": verdict, "cls": "buy" if verdict == "BUY" else "not-buy"}
+
+
 def create_app() -> Flask:
     """Application factory — returns a configured Flask instance."""
     settings = get_settings()
@@ -182,6 +209,9 @@ def create_app() -> Flask:
     # Trust reverse-proxy headers (Azure Container Apps, nginx, etc.)
     # so that request.url_root uses https:// when behind TLS termination.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # type: ignore[assignment]
+
+    # Verdict chips (sidebar / marquee / history) prefer the score band.
+    app.jinja_env.globals["verdict_chip"] = _verdict_chip
 
     # Register the Entra ID authentication blueprint.
     app.register_blueprint(auth_bp)
@@ -565,6 +595,7 @@ def create_app() -> Flask:
                     "done": True,
                     "symbol": data.get("symbol", ""),
                     "verdict": data.get("verdict", ""),
+                    "score": data.get("score"),
                     "report_id": data.get("report_id"),
                     "error": data.get("error"),
                 }
@@ -765,6 +796,7 @@ def create_app() -> Flask:
                     "id": r.id,
                     "symbol": r.symbol,
                     "verdict": r.verdict,
+                    "score": r.score,
                     "created_at": format_timestamp(r.created_at),
                 }
             )

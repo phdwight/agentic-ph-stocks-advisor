@@ -330,3 +330,66 @@ def test_report_page_has_no_inline_verdict(page_client):
     html = page_client.get("/report/TEL").get_data(as_text=True)
     assert "WAIT" in html  # panel shows the band for 43
     assert "Verdict: NOT BUY" not in html  # no inline contradiction
+
+
+# ---------------------------------------------------------------------------
+# Verdict chips (sidebar / marquee / history) show the score band
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "score,verdict,label,cls",
+    [
+        (85, "BUY", "STRONG BUY", "buy"),
+        (65, "BUY", "BUY", "buy"),
+        (43, "NOT BUY", "WAIT", "wait"),
+        (25, "NOT BUY", "NOT BUY", "avoid"),
+        (10, "NOT BUY", "AVOID", "avoid"),
+        (None, "BUY", "BUY", "buy"),  # legacy rows keep the binary label
+        (None, "NOT BUY", "NOT BUY", "not-buy"),
+    ],
+)
+def test_verdict_chip_prefers_score_band(score, verdict, label, cls):
+    from ph_stocks_advisor.web.app import _verdict_chip
+
+    chip = _verdict_chip(_record_with(score=score, verdict=verdict))
+    assert chip == {"label": label, "cls": cls}
+
+
+def _record_with(score, verdict):
+    from ph_stocks_advisor.infra.repository import ReportRecord
+
+    return ReportRecord(
+        id=None,
+        symbol="TEL",
+        verdict=verdict,
+        summary="s",
+        price_section="",
+        dividend_section="",
+        movement_section="",
+        valuation_section="",
+        controversy_section="",
+        score=score,
+    )
+
+
+def test_homepage_marquee_shows_band_not_binary(page_client):
+    """A WAIT-scored stock must not appear as NOT BUY on the homepage."""
+    from ph_stocks_advisor.infra.config import get_repository
+
+    repo = get_repository()
+    repo.save(_record_with(score=43, verdict="NOT BUY"))
+    # Auth-disabled requests run as the dev user; link the symbol to them
+    # so the homepage "Your Analysed Stocks" marquee includes it.
+    repo.add_user_symbol("dev@localhost", "TEL")
+    html = page_client.get("/").get_data(as_text=True)
+    assert ">WAIT</span>" in html
+    assert ">NOT BUY</span>" not in html
+
+
+def test_history_page_shows_band(page_client):
+    from ph_stocks_advisor.infra.config import get_repository
+
+    get_repository().save(_record_with(score=43, verdict="NOT BUY"))
+    html = page_client.get("/history/TEL").get_data(as_text=True)
+    assert "WAIT" in html

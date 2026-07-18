@@ -26,8 +26,8 @@
     <tr>
       <td>{{ r.id }}</td>
       <td>
-        <span class="badge-sm {% if r.verdict.upper() == 'BUY' %}buy{% else %}not-buy{% endif %}">
-          {{ r.verdict }}
+        {% set chip = verdict_chip(r) %}<span class="badge-sm {{ chip.cls }}">
+          {{ chip.label }}
         </span>
       </td>
       <td>{{ r.created_at }}</td>

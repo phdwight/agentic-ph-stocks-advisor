@@ -56,7 +56,7 @@
             <li>
               <a href="/report/{{ stock.symbol }}" class="sidebar-ticker">
                 <span class="sidebar-ticker-symbol">{{ stock.symbol }}</span>
-                <span class="sidebar-ticker-verdict badge-sm {{ 'buy' if stock.verdict and stock.verdict.upper() == 'BUY' else 'not-buy' }}">{{ stock.verdict }}</span>
+                {% set chip = verdict_chip(stock) %}<span class="sidebar-ticker-verdict badge-sm {{ chip.cls }}">{{ chip.label }}</span>
               </a>
             </li>
             {% endfor %}
