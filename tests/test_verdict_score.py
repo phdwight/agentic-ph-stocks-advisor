@@ -264,3 +264,69 @@ def test_report_page_legacy_fallback_marker(page_client):
     html = page_client.get("/report/TEL").get_data(as_text=True)
     assert "left: 80%" in html  # legacy BUY fallback
     assert "score / 100" not in html  # no number without a score
+
+
+# ---------------------------------------------------------------------------
+# Inline verdict lines are stripped from section bodies
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "verdict_line",
+    [
+        "Verdict: NOT BUY",
+        "Verdict: BUY",
+        "**Verdict: NOT BUY**",
+        "**Verdict:** NOT BUY",
+        "Final Verdict: NOT BUY",
+        "verdict: not buy.",
+    ],
+)
+def test_parse_sections_strips_inline_verdict_lines(verdict_line):
+    """The verdict renders once (panel/score scale) — never inside bodies."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = (
+        "**Executive Summary:**\nGood stock overall.\n\n"
+        "**Sentiment Analysis:**\n- Neutral outlook.\n"
+        "The dividend case is strong, but the price is unsupported.\n"
+        f"{verdict_line}\n"
+    )
+    sections = parse_sections(summary)
+    joined = "\n".join(body for _, body in sections)
+    assert "Verdict" not in joined
+    # Real content around it survives.
+    assert "Neutral outlook" in joined
+    assert "dividend case is strong" in joined
+
+
+def test_parse_sections_keeps_verdict_mentions_inside_prose():
+    """Only standalone verdict lines are dropped, not prose mentioning them."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = "**Executive Summary:**\nAnalysts debate whether the verdict: BUY calls were premature.\n"
+    sections = parse_sections(summary)
+    assert "verdict: BUY calls were premature" in sections[0][1]
+
+
+def test_report_page_has_no_inline_verdict(page_client):
+    from ph_stocks_advisor.infra.config import get_repository
+    from ph_stocks_advisor.infra.repository import ReportRecord
+
+    get_repository().save(
+        ReportRecord(
+            id=None,
+            symbol="TEL",
+            verdict="NOT BUY",
+            summary=("**Executive Summary:**\nWeak setup.\n\n**Sentiment Analysis:**\n- Neutral.\nVerdict: NOT BUY\n"),
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+            score=43,
+        )
+    )
+    html = page_client.get("/report/TEL").get_data(as_text=True)
+    assert "WAIT" in html  # panel shows the band for 43
+    assert "Verdict: NOT BUY" not in html  # no inline contradiction
