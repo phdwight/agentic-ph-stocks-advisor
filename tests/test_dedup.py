@@ -9,6 +9,7 @@ requests join the in-flight task instead of creating duplicates.
 from __future__ import annotations
 
 import fnmatch
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,8 +32,12 @@ class FakeRedis:
     def get(self, key: str) -> str | None:
         return self._store.get(key)
 
-    def set(self, key: str, value: str, ex: int | None = None) -> None:  # noqa: A003
+    def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool | None:  # noqa: A003
+        """Mimic redis-py: with nx=True, only set if absent (None if it exists)."""
+        if nx and key in self._store:
+            return None
         self._store[key] = value
+        return True
 
     def incr(self, key: str) -> int:
         val = int(self._store.get(key, 0)) + 1
@@ -113,49 +118,93 @@ class TestAnalyseDedup:
 
     def test_first_request_dispatches_new_task(self, client, fake_redis):
         """First request for a symbol should dispatch a new Celery task."""
-        task_result = MagicMock()
-        task_result.id = "task-abc-123"
-
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task_result) as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "apply_async") as mock_dispatch:
             resp = client.post("/analyse", data={"symbol": "TEL"})
 
         data = resp.get_json()
         assert resp.status_code == 200
         assert data["status"] == "started"
-        assert data["task_id"] == "task-abc-123"
-        mock_delay.assert_called_once_with("TEL", user_id="dev@localhost")
-        # Lock should be stored in Redis
-        assert fake_redis.get("analysis:inflight:TEL") == "task-abc-123"
+        task_id = data["task_id"]
+        # Dispatched under the SAME pre-generated id stored in the lock,
+        # so joiners always stream the right task.
+        mock_dispatch.assert_called_once_with(args=["TEL"], kwargs={"user_id": "dev@localhost"}, task_id=task_id)
+        assert fake_redis.get("analysis:inflight:TEL") == task_id
         # Reverse mapping for O(1) cancel should also be stored
-        assert fake_redis.get("analysis:task:task-abc-123") == "TEL"
+        assert fake_redis.get(f"analysis:task:{task_id}") == "TEL"
 
     def test_second_request_joins_inflight_task(self, client, fake_redis):
         """Second concurrent request should reuse the in-flight task."""
         fake_redis.set("analysis:inflight:TEL", "task-abc-123", ex=600)
 
-        with patch.object(_tasks_mod.analyse_stock, "delay") as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "apply_async") as mock_dispatch:
             resp = client.post("/analyse", data={"symbol": "TEL"})
 
         data = resp.get_json()
         assert resp.status_code == 200
         assert data["status"] == "joined"
         assert data["task_id"] == "task-abc-123"
-        mock_delay.assert_not_called()
+        mock_dispatch.assert_not_called()
+
+    def test_concurrent_claims_yield_one_dispatch(self, client, fake_redis):
+        """The SET NX claim admits exactly one dispatch for the same symbol.
+
+        Sequential requests through the test client share the same lock
+        state, so the second request exercises the exact code path a truly
+        concurrent loser takes: failed claim -> join the stored task id.
+        """
+        with patch.object(_tasks_mod.analyse_stock, "apply_async") as mock_dispatch:
+            first = client.post("/analyse", data={"symbol": "BDO"}).get_json()
+            second = client.post("/analyse", data={"symbol": "BDO"}).get_json()
+
+        assert first["status"] == "started"
+        assert second["status"] == "joined"
+        assert second["task_id"] == first["task_id"]  # same run, same stream
+        assert mock_dispatch.call_count == 1  # exactly one execution
 
     def test_different_symbols_dispatch_separately(self, client, fake_redis):
         """Different symbols should each get their own task."""
         fake_redis.set("analysis:inflight:TEL", "task-tel-001", ex=600)
 
-        task_sm = MagicMock()
-        task_sm.id = "task-sm-001"
-
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task_sm) as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "apply_async") as mock_dispatch:
             resp = client.post("/analyse", data={"symbol": "SM"})
 
         data = resp.get_json()
         assert data["status"] == "started"
-        assert data["task_id"] == "task-sm-001"
-        mock_delay.assert_called_once_with("SM", user_id="dev@localhost")
+        assert data["task_id"] != "task-tel-001"
+        assert mock_dispatch.call_count == 1
+
+    def test_dispatch_failure_releases_claim(self, client, fake_redis):
+        """If Celery dispatch raises, the inflight claim must be released."""
+        with (
+            patch.object(_tasks_mod.analyse_stock, "apply_async", side_effect=RuntimeError("broker down")),
+            pytest.raises(RuntimeError),
+        ):
+            client.post("/analyse", data={"symbol": "TEL"})
+
+        assert fake_redis.get("analysis:inflight:TEL") is None  # others can retry
+
+    def test_vanished_lock_serves_latest_report(self, client, fake_redis):
+        """Claim lost + lock gone (run just finished) -> serve the saved report."""
+        report = MagicMock()
+        report.id = 77
+        report.created_at = None  # forces the "no fresh report" path first
+
+        real_set = fake_redis.set
+
+        def racing_set(key, value, ex=None, nx=False):
+            if nx and key == "analysis:inflight:TEL":
+                return None  # claim always loses, but no lock value exists
+            return real_set(key, value, ex=ex, nx=nx)
+
+        fake_redis.set = racing_set
+        mock_repo = cast(MagicMock, _app_mod.get_repository())
+        mock_repo.get_latest_by_symbol.return_value = report
+
+        resp = client.post("/analyse", data={"symbol": "TEL"})
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "cached"
+        assert data["report_id"] == 77
 
     def test_cancel_clears_inflight_lock(self, client, fake_redis):
         """Cancelling a task should remove its inflight lock via reverse mapping."""

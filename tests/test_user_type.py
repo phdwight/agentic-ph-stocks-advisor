@@ -41,8 +41,11 @@ class FakeRedis:
     def get(self, key: str) -> str | None:
         return self._store.get(key)
 
-    def set(self, key: str, value: str, ex: int | None = None) -> None:  # noqa: A003
+    def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool | None:  # noqa: A003
+        if nx and key in self._store:
+            return None
         self._store[key] = value
+        return True
 
     def incr(self, key: str) -> int:
         val = int(self._store.get(key, 0)) + 1
@@ -326,7 +329,7 @@ class TestElevatedBypassesRateLimit:
         task = MagicMock()
         task.id = "task-elevated"
 
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
+        with patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task):
             resp = client.post("/analyse", data={"symbol": "TEL"})
             assert resp.status_code == 200
             data = resp.get_json()
@@ -337,7 +340,7 @@ class TestElevatedBypassesRateLimit:
         client, _ = elevated_client
         task = MagicMock()
 
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
+        with patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task):
             for i in range(10):  # limit is 3
                 task.id = f"task-{i}"
                 resp = client.post("/analyse", data={"symbol": f"SYM{i}"})
@@ -373,7 +376,7 @@ class TestElevatedBypassesRateLimit:
         # Market closed → the run is allowed (the market-open gate would defer it).
         with (
             patch.object(_app_mod.trading_calendar, "is_market_open", return_value=False),
-            patch.object(_tasks_mod.analyse_stock, "delay", return_value=task),
+            patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task),
         ):
             resp = client.post("/analyse", data={"symbol": "TEL"})
             assert resp.status_code == 200
@@ -445,7 +448,7 @@ class TestElevatedDailyCooldown:
         # SYM2 — no report, should start
         task = MagicMock()
         task.id = "task-sym2"
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
+        with patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task):
             resp2 = client.post("/analyse", data={"symbol": "SYM2"})
             assert resp2.status_code == 200
             assert resp2.get_json()["status"] == "started"
