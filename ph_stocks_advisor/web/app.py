@@ -156,7 +156,10 @@ def _verdict_chip(record) -> dict:
         else:
             cls = "avoid"
         return {"label": band, "cls": cls}
-    return {"label": verdict, "cls": "buy" if verdict == "BUY" else "not-buy"}
+    # Legacy rows display the friendlier imperative too; the stored
+    # enum value stays "NOT BUY".
+    label = "BUY" if verdict == "BUY" else "DON'T BUY"
+    return {"label": label, "cls": "buy" if verdict == "BUY" else "not-buy"}
 
 
 def create_app() -> Flask:

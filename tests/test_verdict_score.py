@@ -42,8 +42,8 @@ def _fresh_settings():
     [
         (0, "AVOID"),
         (19, "AVOID"),
-        (20, "NOT BUY"),
-        (39, "NOT BUY"),
+        (20, "DON'T BUY"),
+        (39, "DON'T BUY"),
         (40, "WAIT"),
         (59, "WAIT"),
         (60, "BUY"),
@@ -343,10 +343,10 @@ def test_report_page_has_no_inline_verdict(page_client):
         (85, "BUY", "STRONG BUY", "buy"),
         (65, "BUY", "BUY", "buy"),
         (43, "NOT BUY", "WAIT", "wait"),
-        (25, "NOT BUY", "NOT BUY", "avoid"),
+        (25, "NOT BUY", "DON'T BUY", "avoid"),
         (10, "NOT BUY", "AVOID", "avoid"),
-        (None, "BUY", "BUY", "buy"),  # legacy rows keep the binary label
-        (None, "NOT BUY", "NOT BUY", "not-buy"),
+        (None, "BUY", "BUY", "buy"),  # legacy rows keep the buy label
+        (None, "NOT BUY", "DON'T BUY", "not-buy"),  # legacy: friendly label, old style
     ],
 )
 def test_verdict_chip_prefers_score_band(score, verdict, label, cls):

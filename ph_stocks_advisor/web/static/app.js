@@ -310,12 +310,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const s = Number(score);
     if (score === null || score === undefined || Number.isNaN(s)) {
       const isBuy = (verdict || "").toUpperCase() === "BUY";
-      return { label: isBuy ? "BUY" : "NOT BUY", cls: isBuy ? "buy" : "not-buy" };
+      return { label: isBuy ? "BUY" : "DON'T BUY", cls: isBuy ? "buy" : "not-buy" };
     }
     if (s >= 80) return { label: "STRONG BUY", cls: "buy" };
     if (s >= 60) return { label: "BUY", cls: "buy" };
     if (s >= 40) return { label: "WAIT", cls: "wait" };
-    if (s >= 20) return { label: "NOT BUY", cls: "avoid" };
+    if (s >= 20) return { label: "DON'T BUY", cls: "avoid" };
     return { label: "AVOID", cls: "avoid" };
   }
 
