@@ -204,7 +204,10 @@ def test_register_begin_existing_email_is_generic(pk_client):
     )
     assert resp.status_code == 400
     # The generic message must NOT reveal that the email is already registered.
-    assert resp.get_json()["error"] == "Couldn't set up a passkey for that email."
+    assert (
+        resp.get_json()["error"]
+        == "Couldn't set up a passkey for that email. If you already have an account, sign in instead."
+    )
 
 
 def test_manage_endpoints_require_auth(pk_client):

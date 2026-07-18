@@ -52,7 +52,7 @@ passkey_bp = Blueprint("passkey", __name__, url_prefix="/auth/passkey")
 
 # One generic message for every failure — never reveal *why* (anti-enumeration).
 _GENERIC_LOGIN_ERR = "Couldn't sign you in with a passkey. Check the email and try again."
-_GENERIC_REG_ERR = "Couldn't set up a passkey for that email."
+_GENERIC_REG_ERR = "Couldn't set up a passkey for that email. If you already have an account, sign in instead."
 _INVALID_EMAIL_ERR = "Enter a valid email address."
 
 # We don't verify that the address is deliverable (no email is sent) — this
