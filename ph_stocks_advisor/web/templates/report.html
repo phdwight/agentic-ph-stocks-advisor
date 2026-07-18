@@ -21,6 +21,12 @@
       <p class="rail-meta">
         Generated {{ timestamp }}{% if is_cached %} · <span class="cached-tag">cached</span>{% endif %}
       </p>
+      {% if market_open_stale %}
+      <p class="rail-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Market is open — showing the last report. A fresh analysis is available {{ next_cutoff_label }}.
+      </p>
+      {% endif %}
     </div>
 
     <section class="verdict-panel bp">
