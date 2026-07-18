@@ -37,6 +37,7 @@ from ph_stocks_advisor.export.html import _body_to_html
 from ph_stocks_advisor.infra import trading_calendar
 from ph_stocks_advisor.infra.config import get_redis, get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
+from ph_stocks_advisor.web.rate_limit import release as rl_release
 from ph_stocks_advisor.web.rate_limit import reserve as rl_reserve
 
 logger = logging.getLogger(__name__)
@@ -452,23 +453,44 @@ def create_app() -> Flask:
                 }
             ), 425
 
-        # No fresh report — check for an in-flight analysis (dedup)
+        # No fresh report — claim the in-flight dedup lock ATOMICALLY.
+        # When several users ask for the same symbol at once, exactly one
+        # request may dispatch a run; the rest join the winner's task and
+        # stream its progress (same result, no duplicate token spend).
+        # SET NX is the claim — unlike a GET-then-SET sequence it cannot
+        # race. The task id is generated up-front so the lock value is
+        # final from the moment the claim lands (no placeholder state).
         r = get_redis()
         inflight_key = f"{_INFLIGHT_PREFIX}{symbol}"
-        existing_task_id = r.get(inflight_key)
-        if existing_task_id:
-            logger.info(
-                "In-flight analysis found for %s (task %s), joining.",
-                symbol,
-                existing_task_id,
-            )
-            return jsonify(
-                {
-                    "status": "joined",
-                    "symbol": symbol,
-                    "task_id": existing_task_id,
-                }
-            )
+        my_task_id = str(uuid.uuid4())
+        if not r.set(inflight_key, my_task_id, nx=True, ex=_INFLIGHT_TTL):
+            existing_task_id = r.get(inflight_key)
+            if existing_task_id:
+                logger.info(
+                    "In-flight analysis found for %s (task %s), joining.",
+                    symbol,
+                    existing_task_id,
+                )
+                # The joiner asked for this ticker too — track it for them.
+                if user and user.get("email"):
+                    try:
+                        get_repository().add_user_symbol(user["email"], symbol)
+                    except Exception:
+                        logger.debug("Failed to record user-symbol link.")
+                return jsonify(
+                    {
+                        "status": "joined",
+                        "symbol": symbol,
+                        "task_id": existing_task_id,
+                    }
+                )
+            # Rare: the lock vanished between the failed claim and the read —
+            # the in-flight run just finished (or was cancelled). If it saved
+            # a report, serve that; otherwise let the user retry.
+            finished = repo.get_latest_by_symbol(symbol)
+            if finished and finished.id:
+                return jsonify({"status": "cached", "symbol": symbol, "report_id": finished.id})
+            return jsonify({"error": f"{symbol} just finished processing — please try again."}), 409
 
         # --- Per-user daily rate limit (atomic reserve) ----------------
         # Elevated users are exempt from the daily analysis limit.
@@ -476,6 +498,9 @@ def create_app() -> Flask:
         if not is_elevated:
             allowed, count = rl_reserve(r, user_id, settings.daily_analysis_limit)
             if not allowed:
+                # We hold the inflight claim but won't run — release it so
+                # another user's request for this symbol can proceed.
+                r.delete(inflight_key)
                 logger.warning(
                     "User %s exceeded daily analysis limit (%d/%d).",
                     user_id,
@@ -493,15 +518,20 @@ def create_app() -> Flask:
                     }
                 ), 429
 
-        # Dispatch analysis to the Celery worker.
-        # The slot is already reserved.  If the analysis fails the worker
-        # calls ``release()`` to return the slot to the user's quota.
-        task = analyse_stock.delay(symbol, user_id=user_id)
+        # Dispatch analysis to the Celery worker under the pre-generated
+        # task id (the one already stored in the inflight lock, so joiners
+        # stream the right task). If dispatch fails, release both the
+        # claim and the reserved quota slot — nothing ran.
+        try:
+            analyse_stock.apply_async(args=[symbol], kwargs={"user_id": user_id}, task_id=my_task_id)
+        except Exception:
+            r.delete(inflight_key)
+            if not is_elevated:
+                rl_release(r, user_id)
+            raise
 
-        # Store the lock so concurrent requests join this task
-        r.set(inflight_key, task.id, ex=_INFLIGHT_TTL)
         # Reverse mapping for O(1) cancel lookup (avoids scan_iter)
-        r.set(f"{_INFLIGHT_TASK_PREFIX}{task.id}", symbol, ex=_INFLIGHT_TTL)
+        r.set(f"{_INFLIGHT_TASK_PREFIX}{my_task_id}", symbol, ex=_INFLIGHT_TTL)
 
         # Track symbol for the current user.
         if user and user.get("email"):
@@ -511,7 +541,7 @@ def create_app() -> Flask:
             except Exception:
                 logger.debug("Failed to record user-symbol link.")
 
-        return jsonify({"status": "started", "symbol": symbol, "task_id": task.id})
+        return jsonify({"status": "started", "symbol": symbol, "task_id": my_task_id})
 
     @app.route("/status/<task_id>")
     @login_required

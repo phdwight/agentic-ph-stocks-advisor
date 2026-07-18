@@ -36,8 +36,11 @@ class FakeRedis:
     def get(self, key: str) -> str | None:
         return self._store.get(key)
 
-    def set(self, key: str, value: str, ex: int | None = None) -> None:  # noqa: A003
+    def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool | None:  # noqa: A003
+        if nx and key in self._store:
+            return None
         self._store[key] = value
+        return True
 
     def incr(self, key: str) -> int:
         val = int(self._store.get(key, 0)) + 1
@@ -304,7 +307,7 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-001"
 
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
+        with patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task):
             client.post("/analyse", data={"symbol": "ABC"})
 
         remaining = _rl_mod.get_remaining(fake_redis, "dev@localhost", 3)
@@ -315,7 +318,7 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-001"
 
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
+        with patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task):
             for i in range(3):
                 task.id = f"task-{i}"
                 resp = client.post("/analyse", data={"symbol": f"SYM{i}"})
@@ -341,7 +344,7 @@ class TestAnalyseRateLimit:
 
         with (
             patch.object(_app_mod, "get_repository", return_value=mock_repo),
-            patch.object(_tasks_mod.analyse_stock, "delay", return_value=task),
+            patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task),
         ):
             # Cached request — should not count
             resp = client.post("/analyse", data={"symbol": "TEL"})
@@ -358,7 +361,7 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-new"
 
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task):
+        with patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task):
             # Join — should not count
             resp = client.post("/analyse", data={"symbol": "TEL"})
             assert resp.status_code == 200
@@ -387,7 +390,10 @@ class TestAnalyseRateLimit:
         task = MagicMock()
         task.id = "task-001"
 
-        with patch.object(_tasks_mod.analyse_stock, "delay", return_value=task) as mock_delay:
+        with patch.object(_tasks_mod.analyse_stock, "apply_async", return_value=task) as mock_dispatch:
             client.post("/analyse", data={"symbol": "ABC"})
 
-        mock_delay.assert_called_once_with("ABC", user_id="dev@localhost")
+        assert mock_dispatch.call_count == 1
+        call = mock_dispatch.call_args
+        assert call.kwargs["args"] == ["ABC"]
+        assert call.kwargs["kwargs"] == {"user_id": "dev@localhost"}
