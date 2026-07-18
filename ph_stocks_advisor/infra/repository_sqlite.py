@@ -75,9 +75,7 @@ CREATE TABLE IF NOT EXISTS webauthn_credentials (
 );
 """
 
-_CREATE_WEBAUTHN_INDEX_SQL = (
-    "CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_oid);"
-)
+_CREATE_WEBAUTHN_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_webauthn_user ON webauthn_credentials(user_oid);"
 
 _CREATE_HOLDINGS_SQL = """
 CREATE TABLE IF NOT EXISTS holdings (

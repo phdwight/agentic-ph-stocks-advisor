@@ -24,6 +24,7 @@ import logging
 import uuid
 
 from flask import Blueprint, Response, jsonify, request, session
+from flask.typing import ResponseReturnValue
 from webauthn import (
     generate_authentication_options,
     generate_registration_options,
@@ -98,7 +99,7 @@ def _transports_from(raw_json: str) -> list[str]:
 
 
 @passkey_bp.route("/register/begin", methods=["POST"])
-def register_begin() -> Response:
+def register_begin() -> ResponseReturnValue:
     settings = get_settings()
     if not settings.passkey_enabled:
         return jsonify({"error": "Passkeys are not enabled."}), 404
@@ -127,9 +128,7 @@ def register_begin() -> Response:
         user_id=_user_handle(oid),
         user_name=email,
         user_display_name=name,
-        exclude_credentials=[
-            PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id)) for c in existing
-        ],
+        exclude_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id)) for c in existing],
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.DISCOURAGED,
             user_verification=UserVerificationRequirement.PREFERRED,
@@ -144,7 +143,7 @@ def register_begin() -> Response:
 
 
 @passkey_bp.route("/register/complete", methods=["POST"])
-def register_complete() -> Response:
+def register_complete() -> ResponseReturnValue:
     settings = get_settings()
     if not settings.passkey_enabled:
         return jsonify({"error": "Passkeys are not enabled."}), 404
@@ -198,7 +197,7 @@ def register_complete() -> Response:
 
 
 @passkey_bp.route("/login/begin", methods=["POST"])
-def login_begin() -> Response:
+def login_begin() -> ResponseReturnValue:
     settings = get_settings()
     if not settings.passkey_enabled:
         return jsonify({"error": "Passkeys are not enabled."}), 404
@@ -232,7 +231,7 @@ def login_begin() -> Response:
 
 
 @passkey_bp.route("/login/complete", methods=["POST"])
-def login_complete() -> Response:
+def login_complete() -> ResponseReturnValue:
     settings = get_settings()
     if not settings.passkey_enabled:
         return jsonify({"error": "Passkeys are not enabled."}), 404
@@ -282,7 +281,7 @@ def login_complete() -> Response:
 
 
 @passkey_bp.route("/list", methods=["GET"])
-def list_passkeys() -> Response:
+def list_passkeys() -> ResponseReturnValue:
     current = _session_user()
     if not current:
         return jsonify({"error": "Not signed in."}), 401
@@ -302,7 +301,7 @@ def list_passkeys() -> Response:
 
 
 @passkey_bp.route("/delete", methods=["POST"])
-def delete_passkey() -> Response:
+def delete_passkey() -> ResponseReturnValue:
     current = _session_user()
     if not current:
         return jsonify({"error": "Not signed in."}), 401
