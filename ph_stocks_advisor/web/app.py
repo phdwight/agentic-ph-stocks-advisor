@@ -34,6 +34,7 @@ from ph_stocks_advisor.export.formatter import (
     parse_sections,
 )
 from ph_stocks_advisor.export.html import _body_to_html
+from ph_stocks_advisor.infra import trading_calendar
 from ph_stocks_advisor.infra.config import get_redis, get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
 from ph_stocks_advisor.web.rate_limit import reserve as rl_reserve
@@ -103,37 +104,31 @@ _INFLIGHT_TTL = 10 * 60  # 10 minutes
 
 
 def _last_cutoff() -> datetime:
-    """Return the most recent 3:00 PM PHT boundary as a UTC datetime.
+    """Most recent trading-day 3:00 PM PHT close as UTC (skips weekends).
 
-    If PHT now is at or past ``_CUTOFF_HOUR_PHT``, the cutoff is today
-    at that hour; otherwise it is yesterday at that hour.
+    Reports created on/after this instant are fresh. See
+    :mod:`ph_stocks_advisor.infra.trading_calendar`.
     """
-    now_pht = datetime.now(tz=_PHT)
-    cutoff_pht = now_pht.replace(hour=_CUTOFF_HOUR_PHT, minute=0, second=0, microsecond=0)
-    if now_pht < cutoff_pht:
-        cutoff_pht -= timedelta(days=1)
-    return cutoff_pht.astimezone(UTC)
+    return trading_calendar.last_trading_close()
 
 
 def _next_cutoff() -> datetime:
-    """Return the next 3:00 PM PHT boundary as a UTC datetime."""
-    return _last_cutoff() + timedelta(days=1)
+    """Next trading-day 3:00 PM PHT close as UTC."""
+    return trading_calendar.next_trading_close()
 
 
 def _is_past_cutoff() -> bool:
-    """Return True if the current PHT time is at or past the cutoff hour."""
+    """Return True if the current PHT time is at or past the 3 PM close hour."""
     return datetime.now(tz=_PHT).hour >= _CUTOFF_HOUR_PHT
 
 
 def _cutoff_label() -> str:
-    """Human-friendly label for the next cutoff window.
+    """Human label for when the next fresh run becomes available.
 
-    Returns ``'tomorrow after 3:00\u202fPM PHT'`` when today's cutoff
-    has already passed, or ``'after 3:00\u202fPM PHT'`` when it hasn't.
+    e.g. ``"after today's 3:00 PM PHT close"`` or ``"after Monday's \u2026"`` \u2014
+    trading-day aware, so on a Friday evening it points to Monday.
     """
-    if _is_past_cutoff():
-        return "tomorrow after 3:00\u202fPM PHT"
-    return "after 3:00\u202fPM PHT"
+    return trading_calendar.next_close_label()
 
 
 def create_app() -> Flask:
@@ -439,6 +434,24 @@ def create_app() -> Flask:
                         }
                     )
 
+        # A new run is warranted (report is stale or missing), but the PSE
+        # session is live — no runs during 9 AM–3 PM PHT. Serve the most
+        # recent report if we have one (the report page notes it's pre-close);
+        # otherwise a fresh analysis becomes available after today's close.
+        if trading_calendar.is_market_open():
+            if record and record.created_at:
+                return jsonify({"status": "cached", "symbol": symbol, "report_id": record.id})
+            return jsonify(
+                {
+                    "error": (
+                        f"The market is open (9 AM–3 PM PHT). A fresh analysis for {symbol} "
+                        f"will be available {trading_calendar.next_close_label()}."
+                    ),
+                    "reset_at": trading_calendar.next_trading_close().isoformat(),
+                    "symbol": symbol,
+                }
+            ), 425
+
         # No fresh report — check for an in-flight analysis (dedup)
         r = get_redis()
         inflight_key = f"{_INFLIGHT_PREFIX}{symbol}"
@@ -615,6 +628,10 @@ def create_app() -> Flask:
         if record.created_at:
             is_cached = record.created_at >= _last_cutoff()
 
+        # A stale report shown during live market hours: the page notes that a
+        # fresh run is deferred until after the 3 PM PHT close.
+        market_open_stale = (not is_cached) and trading_calendar.is_market_open()
+
         # Fetch live current price for the header display.
         current_price: float | None = None
         try:
@@ -676,6 +693,7 @@ def create_app() -> Flask:
             portfolio_before_cutoff=portfolio_before_cutoff,
             portfolio_inflight_task_id=portfolio_inflight_task_id,
             next_cutoff_label=_cutoff_label(),
+            market_open_stale=market_open_stale,
         )
 
     @app.route("/history/<symbol>")
