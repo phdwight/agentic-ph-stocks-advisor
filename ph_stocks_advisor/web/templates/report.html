@@ -174,12 +174,12 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='report-viz.js') }}"></script>
+<script src="{{ url_for('static', filename='report-viz.js') }}?v={{ app_version }}"></script>
 {% if is_elevated %}
 <script>
   window.__portfolioCooldown = {{ portfolio_on_cooldown | tojson }};
   window.__portfolioInflightTaskId = {{ portfolio_inflight_task_id | tojson }};
 </script>
-<script src="{{ url_for('static', filename='portfolio.js') }}"></script>
+<script src="{{ url_for('static', filename='portfolio.js') }}?v={{ app_version }}"></script>
 {% endif %}
 {% endblock %}
