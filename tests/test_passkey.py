@@ -41,6 +41,7 @@ def test_repo_webauthn_crud():
 
     repo.update_webauthn_sign_count("cred-a", 9)
     got = repo.get_webauthn_credential("cred-a")
+    assert got is not None
     assert got.sign_count == 9 and got.last_used_at is not None
 
     assert len(repo.list_webauthn_credentials("passkey:u")) == 1
