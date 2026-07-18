@@ -2413,3 +2413,23 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   .agent-card.lead { grid-column: auto; }
   .page-report main.container { padding-left: 1.25rem; padding-right: 1.25rem; }
 }
+
+/* ==========================================================================
+   TALA — Passkey sign-in (login page)
+   ========================================================================== */
+.passkey-form { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.1rem; }
+.passkey-form input {
+  padding: 0.72rem 0.9rem; border: 1px solid var(--divider); border-radius: var(--radius);
+  background: var(--bg-surface); font-family: var(--font-sans); font-size: 0.95rem; color: var(--text);
+}
+.passkey-form input::placeholder { color: var(--text-muted); }
+.passkey-form input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-100); }
+.passkey-btn { background: var(--accent); color: #fff; border: 1px solid var(--accent); justify-content: center; }
+.passkey-btn:hover { background: var(--accent-600); border-color: var(--accent-600); }
+.passkey-btn:disabled { opacity: 0.7; cursor: default; }
+.passkey-link {
+  background: none; border: 0; color: var(--accent-700); font-family: var(--font-sans);
+  font-size: 0.82rem; cursor: pointer; padding: 0.25rem; text-align: center;
+}
+.passkey-link:hover { color: var(--accent-800); text-decoration: underline; }
+#pk-error { margin-top: 0.2rem; }

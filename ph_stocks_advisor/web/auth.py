@@ -162,6 +162,7 @@ def login():
         "login.html",
         entra_enabled=settings.entra_enabled,
         google_enabled=settings.google_enabled,
+        passkey_enabled=settings.passkey_enabled,
     )
 
 

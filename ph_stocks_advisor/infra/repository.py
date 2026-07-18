@@ -60,6 +60,44 @@ class UserRecord:
         )
 
 
+class WebAuthnCredentialRecord:
+    """A registered passkey (WebAuthn credential) bound to a user.
+
+    Binary fields (``credential_id``, ``public_key``) are stored as
+    base64url-encoded strings so the same schema works on SQLite and
+    Postgres without blob-handling differences; the auth layer encodes
+    and decodes at its boundary.
+    """
+
+    def __init__(
+        self,
+        credential_id: str,
+        user_oid: str,
+        public_key: str,
+        sign_count: int = 0,
+        transports: list[str] | None = None,
+        aaguid: str | None = None,
+        nickname: str | None = None,
+        created_at: datetime | None = None,
+        last_used_at: datetime | None = None,
+    ) -> None:
+        self.credential_id = credential_id  # base64url
+        self.user_oid = user_oid
+        self.public_key = public_key  # base64url of the COSE key bytes
+        self.sign_count = sign_count
+        self.transports = transports or []
+        self.aaguid = aaguid
+        self.nickname = nickname
+        self.created_at = created_at or datetime.now(tz=UTC)
+        self.last_used_at = last_used_at
+
+    def __repr__(self) -> str:
+        return (
+            f"WebAuthnCredentialRecord(user_oid={self.user_oid!r}, "
+            f"nickname={self.nickname!r}, sign_count={self.sign_count})"
+        )
+
+
 class HoldingRecord:
     """A user's stock holding (shares held + average cost)."""
 
@@ -239,6 +277,30 @@ class AbstractReportRepository(abc.ABC):
     @abc.abstractmethod
     def get_user_by_email(self, email: str) -> UserRecord | None:
         """Retrieve a user by their email address, or ``None``."""
+
+    # ------------------------------------------------------------------
+    # WebAuthn / passkey credentials
+    # ------------------------------------------------------------------
+
+    @abc.abstractmethod
+    def add_webauthn_credential(self, cred: WebAuthnCredentialRecord) -> None:
+        """Persist a newly-registered passkey."""
+
+    @abc.abstractmethod
+    def get_webauthn_credential(self, credential_id: str) -> WebAuthnCredentialRecord | None:
+        """Look up a passkey by its base64url credential id, or ``None``."""
+
+    @abc.abstractmethod
+    def list_webauthn_credentials(self, user_oid: str) -> list[WebAuthnCredentialRecord]:
+        """Return all passkeys registered to a user (newest first)."""
+
+    @abc.abstractmethod
+    def update_webauthn_sign_count(self, credential_id: str, sign_count: int) -> None:
+        """Update a passkey's signature counter and last-used timestamp after a login."""
+
+    @abc.abstractmethod
+    def delete_webauthn_credential(self, credential_id: str, user_oid: str) -> None:
+        """Remove a passkey. Scoped to ``user_oid`` so a user can only delete their own."""
 
     # ------------------------------------------------------------------
     # Holdings
