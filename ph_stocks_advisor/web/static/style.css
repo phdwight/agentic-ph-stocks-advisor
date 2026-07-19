@@ -2254,7 +2254,14 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 .nav-type-toggle.normal { background: transparent; color: var(--text-muted); border: 1px solid var(--divider); }
 
 /* -- Cards flattened by tokens: give tracker/modal a clean hairline frame -- */
-.tracker-panel, .modal-card { background: transparent; box-shadow: none; }
+.tracker-panel { background: transparent; box-shadow: none; }
+/* Modals float over page content — they need a SOLID ground (the blueprint
+   transparent-card treatment is for inline cards only). */
+.modal-card {
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  box-shadow: var(--shadow-lg);
+}
 
 /* ==========================================================================
    TALA — Home compaction (cut the excess whitespace)
