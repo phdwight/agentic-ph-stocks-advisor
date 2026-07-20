@@ -1022,3 +1022,30 @@ class TestPortfolioInflight:
         assert "Fresh portfolio analysis content" in html
         # The spinner should NOT be present.
         assert "portfolio-inline-progress" not in html
+
+
+def test_report_page_exposes_symbol_for_portfolio_js(client):
+    """portfolio.js reads the symbol from #portfolio-btn's data-symbol —
+    a stable contract (scraping the old heading broke with 404s when the
+    report layout was redesigned)."""
+    _set_elevated_user(client)
+
+    from ph_stocks_advisor.data.models import FinalReport, Verdict
+    from ph_stocks_advisor.infra.config import get_repository
+    from ph_stocks_advisor.infra.repository import ReportRecord
+
+    report = FinalReport(
+        symbol="VREIT",
+        verdict=Verdict.BUY,
+        summary="Good stock.",
+        price_section="ok",
+        dividend_section="ok",
+        movement_section="ok",
+        valuation_section="ok",
+        controversy_section="ok",
+    )
+    get_repository().save(ReportRecord.from_final_report(report))
+
+    html = client.get("/report/VREIT").get_data(as_text=True)
+    assert 'id="portfolio-btn"' in html
+    assert 'data-symbol="VREIT"' in html
