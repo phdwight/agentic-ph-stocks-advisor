@@ -23,11 +23,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (!portfolioBtn || !modal) return;
 
-  // Extract symbol from the page heading.
-  const symbolEl = document.querySelector(".report-header-title h1");
-  const symbol = symbolEl
-    ? symbolEl.textContent.replace("Stock Analysis", "").trim()
-    : "";
+  // Symbol comes from an explicit data attribute on the button (stable
+  // contract — never scrape heading text, which broke when the report
+  // layout was redesigned), with the rail header and URL as fallbacks.
+  const symbol = (portfolioBtn.dataset.symbol || "").trim()
+    || (document.querySelector(".rail-sym")?.textContent || "").trim()
+    || decodeURIComponent((window.location.pathname.match(/\/report\/([^/]+)/) || [])[1] || "").toUpperCase();
+  if (!symbol) return; // no symbol, no portfolio actions
 
   /* ================================================================ */
   /*  Resume polling for an in-flight portfolio analysis              */
