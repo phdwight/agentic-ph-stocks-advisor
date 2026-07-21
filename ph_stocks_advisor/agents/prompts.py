@@ -312,8 +312,13 @@ Your report MUST include:
 2. Brief **bullet-pointed** sections for each of the six analysis areas.
    Each section should have 3-6 bullet points starting with "- ".
    Do NOT write paragraphs for these — keep each bullet to one or two sentences.
-3. A final **Verdict** line that says exactly one of: **BUY** or **NOT BUY**.
-4. A one-sentence justification for the verdict.
+3. A short **Why This Verdict** section (2-4 bullets) explaining the
+   reasoning behind your assessment.
+   **NEVER write a verdict label anywhere in the summary text** — no "BUY",
+   "NOT BUY", "Verdict:", or a bold heading naming one. The app displays the
+   recommendation once, from a 0-100 score you do not compute, so any label
+   you write would contradict it. Describe the reasoning only (e.g. "the
+   valuation is stretched relative to earnings growth"), never the label.
 
 **MISSING DATA:**
 Some analysis sections above may state "DATA UNAVAILABLE" (for example, a
@@ -326,8 +331,10 @@ dimension you MUST:
    holding it").
 2. Return null for that dimension's sub-score — do NOT guess a number.
    The verdict score is computed from the remaining dimensions only.
-3. Say in the verdict justification that the verdict was computed without
-   that dimension and what that means for the reader.
+3. Say in the **Why This Verdict** section that the assessment was computed
+   without that dimension and what that means for the reader (again without
+   naming a verdict label — write "this assessment was computed without the
+   dividend dimension", not "NOT BUY was computed without...").
 4. Use "N/A" in the metrics table for any value that cannot be derived —
    NEVER invent prices or figures for missing data.
 
@@ -363,7 +370,8 @@ and do not default every dimension to 50.
 Your output will be captured as structured data:
 - ``verdict``: exactly "BUY" or "NOT BUY"
 - ``justification``: one sentence explaining why
-- ``summary``: the full report text (sections 1-3 above)
+- ``summary``: the full report text (sections 1-3 above), containing NO
+  verdict label — the verdict lives only in the ``verdict`` field
 - ``price_score``, ``valuation_score``, ``dividend_score``,
   ``movement_score``, ``controversy_score``, ``sentiment_score``:
   the six 0–100 integers per the rubric above

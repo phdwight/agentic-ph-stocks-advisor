@@ -426,3 +426,74 @@ def test_gap_dimensions_are_excluded_from_score_even_if_llm_scored_them(_fresh_s
     # not 49 (which would include the bogus dividend 100).
     assert report.score == 40
     assert score_band(report.score) == "WAIT"
+
+
+@pytest.mark.parametrize(
+    "heading",
+    [
+        "**NOT BUY**",
+        "**BUY**",
+        "**DON'T BUY**",
+        "**WAIT**",
+        "**AVOID**",
+        "**STRONG BUY**",
+        "**Verdict**",
+        "**Final Verdict:**",
+        "### NOT BUY",
+    ],
+)
+def test_verdict_shaped_headings_never_become_sections(heading):
+    """The LLM sometimes emits the verdict as its own heading followed by a
+    justification. That would render as an extra card contradicting the score
+    band (a WAIT panel beside a "NOT BUY" card), so such sections are dropped."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = (
+        "**Executive Summary:**\nSolid but pricey.\n\n"
+        "**Price Analysis:**\n- Near the 52-week high.\n\n"
+        f"{heading}\nJustification: computed without the dividend dimension.\n"
+    )
+    titles = [t for t, _ in parse_sections(summary)]
+    # The heading is retitled (never a verdict label) but the reasoning is kept.
+    assert titles == ["Executive Summary", "Price Analysis", "Why This Verdict"]
+
+
+def test_real_analysis_sections_are_not_dropped():
+    """The verdict-title filter must not eat legitimate sections."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = (
+        "**Executive Summary:**\nok\n\n"
+        "**Dividend Analysis:**\n- yield 5%\n\n"
+        "**Sentiment / Global Events Analysis:**\n- neutral\n"
+    )
+    titles = [t for t, _ in parse_sections(summary)]
+    assert titles == [
+        "Executive Summary",
+        "Dividend Analysis",
+        "Sentiment / Global Events Analysis",
+    ]
+
+
+def test_verdict_heading_body_is_kept_and_neutralised():
+    """The justification carries the data-gap explanation, so it survives —
+    with the stale verdict label rewritten to a neutral subject."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = (
+        "**Executive Summary:**\nWeak setup.\n\n"
+        "**NOT BUY**\nJustification: NOT BUY was computed without the "
+        "unavailable dividend dimension, so there is no income case.\n"
+    )
+    sections = dict(parse_sections(summary))
+    body = sections["Why This Verdict"]
+    assert body.startswith("This assessment was computed without")
+    assert "NOT BUY" not in body
+    assert "dividend dimension" in body
+
+
+def test_empty_verdict_heading_is_dropped_entirely():
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    titles = [t for t, _ in parse_sections("**Executive Summary:**\nok\n\n**NOT BUY**\n")]
+    assert titles == ["Executive Summary"]
