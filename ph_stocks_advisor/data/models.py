@@ -402,6 +402,9 @@ class AdvisorState(BaseModel):
     """
 
     symbol: str = ""
+    # State keys of dimensions that produced no real data this run — the
+    # consolidator excludes their sub-scores from the verdict score.
+    data_gaps: list[str] = Field(default_factory=list)
     price_analysis: PriceAnalysis | None = None
     dividend_analysis: DividendAnalysis | None = None
     movement_analysis: MovementAnalysis | None = None

@@ -99,6 +99,10 @@ def client(fake_redis, monkeypatch):
     with (
         patch.object(_app_mod, "get_repository", return_value=mock_repo),
         patch.object(_app_mod, "get_redis", return_value=fake_redis),
+        # Pin the market closed so dispatch paths are deterministic
+        # regardless of when the suite runs (the /analyse market-hours
+        # gate reads the real clock).
+        patch.object(_app_mod.trading_calendar, "is_market_open", return_value=False),
     ):
         app = _app_mod.create_app()
         app.config["TESTING"] = True

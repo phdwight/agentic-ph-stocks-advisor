@@ -36,6 +36,18 @@ logger = logging.getLogger(__name__)
 _FALLBACK_BUY_SCORE = 75
 _FALLBACK_NOT_BUY_SCORE = 25
 
+# GraphState key -> ConsolidationResponse sub-score field, used to force
+# dimensions with no real data out of the weighted score even if the LLM
+# emitted a number for them.
+_GAP_SCORE_FIELDS = {
+    "price_analysis": "price_score",
+    "dividend_analysis": "dividend_score",
+    "movement_analysis": "movement_score",
+    "valuation_analysis": "valuation_score",
+    "controversy_analysis": "controversy_score",
+    "sentiment_analysis": "sentiment_score",
+}
+
 
 class ConsolidatorAgent:
     """Merges all specialist analyses into a single investor-friendly report."""
@@ -55,7 +67,8 @@ class ConsolidatorAgent:
             sentiment_analysis=state.sentiment_analysis.analysis if state.sentiment_analysis else "N/A",
         )
 
-        verdict, summary, score = self._invoke_structured(prompt)
+        gap_fields = {_GAP_SCORE_FIELDS[k] for k in state.data_gaps if k in _GAP_SCORE_FIELDS}
+        verdict, summary, score = self._invoke_structured(prompt, gap_fields=gap_fields)
 
         return FinalReport(
             symbol=state.symbol,
@@ -74,7 +87,7 @@ class ConsolidatorAgent:
     # Structured output (primary) → free-form + regex (fallback)
     # ------------------------------------------------------------------
 
-    def _invoke_structured(self, prompt: str) -> tuple[Verdict, str, int]:
+    def _invoke_structured(self, prompt: str, gap_fields: set[str] | None = None) -> tuple[Verdict, str, int]:
         """Try structured output first; fall back to regex extraction.
 
         Returns ``(verdict, summary, score)`` regardless of which path
@@ -86,6 +99,11 @@ class ConsolidatorAgent:
         try:
             structured_llm = self._llm.with_structured_output(ConsolidationResponse)
             result: ConsolidationResponse = structured_llm.invoke([HumanMessage(content=prompt)])  # type: ignore[assignment]
+            # Dimensions without real data are excluded from the score
+            # deterministically — the weighted average renormalises over
+            # the remaining dimensions (never trust the LLM to skip them).
+            for field in gap_fields or ():
+                setattr(result, field, None)
             score = self._weighted_score(result)
             if score is None:
                 score = _FALLBACK_BUY_SCORE if result.verdict == Verdict.BUY else _FALLBACK_NOT_BUY_SCORE
