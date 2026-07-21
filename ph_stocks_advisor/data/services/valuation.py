@@ -54,6 +54,7 @@ def fetch_fair_value(symbol: str) -> FairValueEstimate:
     valuation = fetch_security_valuation(symbol)
 
     current_price = float(profile.get("price", 0) or 0) if profile else 0.0
+    is_reit = bool(profile.get("isREIT", False)) if profile else False
 
     # Extract from DragonFi valuation
     if not valuation:
@@ -89,7 +90,8 @@ def fetch_fair_value(symbol: str) -> FairValueEstimate:
             forward_pe=0.0,
             estimated_fair_value=estimated_fv,
             discount_pct=discount,
+            is_reit=is_reit,
         )
 
     logger.warning("DragonFi returned no valuation data for %s", symbol)
-    return FairValueEstimate(symbol=symbol)
+    return FairValueEstimate(symbol=symbol, is_reit=is_reit)

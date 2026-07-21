@@ -188,7 +188,14 @@ Fair Value** and write a concise analysis (5-8 sentences) covering:
 - The estimated fair value range versus the current price
 - A **Margin of Safety** entry price (typically ~10% below Fair Value)
 
-**REIT VALUATION SPECIALIST RULES — apply when ``is_reit`` is true:**
+**REIT CLASSIFICATION — read ``is_reit`` in the data, never infer it:**
+The ``is_reit`` field states whether the issuer is a Philippine REIT. When it
+is **false**, the stock is NOT a REIT: do not apply any of the REIT models
+below, do not mention REIT valuation inputs, and never describe the company
+as a REIT — a name, sector, or property holdings are NOT evidence of REIT
+status (many holding firms own real estate without being REITs).
+
+**REIT VALUATION SPECIALIST RULES — apply ONLY when ``is_reit`` is true:**
 
 For REITs, do **NOT** rely solely on historical book value or the Graham
 Number — these systematically undervalue asset-heavy, high-yield entities.
@@ -282,6 +289,9 @@ clear investment report written in plain English for a retail investor.
 {sentiment_analysis}
 
 **IMPORTANT REIT CONTEXT:**
+Treat the stock as a REIT **only** when the specialist analyses above say so.
+If they do not, never describe it as a REIT or apply REIT rules to it — a
+company name, sector, or property holdings are not evidence of REIT status.
 If the dividend analysis mentions the stock is a REIT, keep in mind that
 Philippine REITs are legally required to distribute at least 90% of their
 distributable income. A high payout ratio (90-110%) is **normal and mandated
