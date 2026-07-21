@@ -211,6 +211,14 @@ class FairValueEstimate(BaseModel):
     forward_pe: float = 0.0
     estimated_fair_value: float = 0.0
     discount_pct: float = 0.0  # positive = undervalued
+    is_reit: bool = Field(
+        default=False,
+        description=(
+            "True only when the issuer is a Philippine REIT (DragonFi "
+            "``isREIT``). The valuation prompt keys its REIT-specific models "
+            "on this flag, so it must never be inferred by the LLM."
+        ),
+    )
 
 
 class ControversyInfo(BaseModel):

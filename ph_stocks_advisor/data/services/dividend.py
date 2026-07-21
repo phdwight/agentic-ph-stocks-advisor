@@ -94,6 +94,10 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
     profile = fetch_stock_profile(symbol)
 
     div_yield_raw = float(profile.get("dividendYield", 0) or 0) if profile else 0.0
+    # Resolved before the branch so the no-dividend-data fallback below still
+    # reports REIT status correctly (a REIT whose yield data is missing must
+    # not be silently classified as a non-REIT).
+    is_reit = bool(profile.get("isREIT", False)) if profile else False
 
     if div_yield_raw > 0 and profile:
         # DragonFi dividend yield is a percentage (e.g. 5.54) → normalise to decimal
@@ -101,7 +105,6 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
 
         current_price = float(profile.get("price", 0) or 0)
         shares_outstanding = float(profile.get("sharesOutstanding", 0) or 0)
-        is_reit = bool(profile.get("isREIT", False))
 
         # Compute per-share annual dividend rate from yield × price
         dividend_rate = round(current_price * div_yield, 4) if current_price else 0.0
@@ -172,4 +175,4 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
 
     # No dividend data available from DragonFi
     logger.warning("DragonFi returned no dividend data for %s", symbol)
-    return DividendInfo(symbol=symbol)
+    return DividendInfo(symbol=symbol, is_reit=is_reit)
