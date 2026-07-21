@@ -315,6 +315,22 @@ Your report MUST include:
 3. A final **Verdict** line that says exactly one of: **BUY** or **NOT BUY**.
 4. A one-sentence justification for the verdict.
 
+**MISSING DATA:**
+Some analysis sections above may state "DATA UNAVAILABLE" (for example, a
+stock that has no dividend history because it does not pay dividends, or a
+dimension whose data could not be retrieved this run). For every such
+dimension you MUST:
+1. State the absence plainly in the executive summary AND in that
+   dimension's bullet section (e.g. "{symbol} has no dividend history — it
+   does not currently pay dividends, so income investors get nothing from
+   holding it").
+2. Return null for that dimension's sub-score — do NOT guess a number.
+   The verdict score is computed from the remaining dimensions only.
+3. Say in the verdict justification that the verdict was computed without
+   that dimension and what that means for the reader.
+4. Use "N/A" in the metrics table for any value that cannot be derived —
+   NEVER invent prices or figures for missing data.
+
 **PER-DIMENSION SCORES (0–100 avoid→buy scale):**
 Alongside the report, score each of the six dimensions as an integer from
 0 to 100, framed strictly as a BUY decision (the reader does not own the

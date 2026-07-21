@@ -404,3 +404,25 @@ def test_static_assets_are_content_hash_versioned(page_client):
     m = re.search(r"style\.css\?v=([0-9a-f]{10})", html)
     assert m, "style.css must be versioned with a 10-char content hash"
     assert re.search(r"app\.js\?v=" + m.group(1), html)  # same rev everywhere
+
+
+def test_gap_dimensions_are_excluded_from_score_even_if_llm_scored_them(_fresh_settings):
+    """A dimension in data_gaps is force-nulled before weighting — the LLM
+    can't sneak a number in for data that doesn't exist."""
+    from ph_stocks_advisor.data.models import AdvisorState
+
+    resp = _response(
+        verdict=Verdict.BUY,
+        price_score=40,
+        valuation_score=40,
+        dividend_score=100,  # LLM wrongly scored the missing dimension
+        movement_score=40,
+        controversy_score=40,
+        sentiment_score=40,
+    )
+    state = AdvisorState(symbol="DITO", data_gaps=["dividend_analysis"])
+    report = ConsolidatorAgent(make_structured_mock_llm(resp)).run(state)
+    # dividend excluded -> all remaining sub-scores are 40 -> score 40 (WAIT),
+    # not 49 (which would include the bogus dividend 100).
+    assert report.score == 40
+    assert score_band(report.score) == "WAIT"

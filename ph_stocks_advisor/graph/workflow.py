@@ -14,6 +14,7 @@ closed over in every node, so nodes never call ``get_llm()`` directly.
 from __future__ import annotations
 
 import logging
+import operator
 from collections.abc import Callable
 from typing import Annotated, Any, Required, TypedDict
 
@@ -34,11 +35,17 @@ from ph_stocks_advisor.agents.specialists import (
 from ph_stocks_advisor.data.models import (
     AdvisorState,
     ControversyAnalysis,
+    ControversyInfo,
     DividendAnalysis,
+    DividendInfo,
+    FairValueEstimate,
     FinalReport,
     MovementAnalysis,
     PriceAnalysis,
+    PriceMovement,
     SentimentAnalysis,
+    SentimentInfo,
+    StockPrice,
     ValuationAnalysis,
 )
 from ph_stocks_advisor.data.tools import SymbolNotFoundError, validate_symbol
@@ -90,6 +97,12 @@ def _keep_first_error(existing: str | None, incoming: str | None) -> str | None:
 class GraphState(TypedDict, total=False):
     symbol: Required[str]
     error: Annotated[str | None, _keep_first_error]
+    # State keys of dimensions whose specialist could not produce real
+    # data this run (no data exists, or a transient failure). Appended by
+    # parallel nodes, hence the list reducer. The consolidator excludes
+    # these dimensions from the verdict score and the report must state
+    # the gap; if ALL dimensions are gaps the run aborts.
+    data_gaps: Annotated[list[str], operator.add]
     price_analysis: PriceAnalysis | None
     dividend_analysis: DividendAnalysis | None
     movement_analysis: MovementAnalysis | None
@@ -97,6 +110,55 @@ class GraphState(TypedDict, total=False):
     controversy_analysis: ControversyAnalysis | None
     sentiment_analysis: SentimentAnalysis | None
     final_report: FinalReport | None
+
+
+# ---------------------------------------------------------------------------
+# Fallback analyses — used when a specialist cannot produce real data.
+# A failing dimension must NOT stop the whole run: the pipeline continues,
+# the dimension is excluded from the verdict score, and the report states
+# the gap and its effect (e.g. a ticker that simply pays no dividends).
+# ---------------------------------------------------------------------------
+
+_DIMENSION_LABELS = {
+    "price_analysis": "price",
+    "dividend_analysis": "dividend",
+    "movement_analysis": "price-movement",
+    "valuation_analysis": "valuation",
+    "controversy_analysis": "controversy/risk",
+    "sentiment_analysis": "sentiment/global-events",
+}
+
+
+def _fallback_analysis(state_key: str, symbol: str, *, transient: bool):
+    """Build a placeholder analysis for a dimension without real data.
+
+    The ``analysis`` text flows into the consolidation prompt and the saved
+    section, so it is written for both audiences: it tells the reader what
+    is missing and instructs the consolidator to exclude the dimension.
+    """
+    label = _DIMENSION_LABELS.get(state_key, state_key)
+    if transient:
+        note = (
+            f"DATA UNAVAILABLE: {label.capitalize()} data for {symbol} could not be "
+            "retrieved this run due to a temporary error. This dimension was "
+            "excluded from the verdict score; state this gap and its effect in the report."
+        )
+    else:
+        note = (
+            f"DATA UNAVAILABLE: {symbol} has no {label} history or data on record "
+            "(for dividends this usually means the stock does not pay dividends). "
+            "This dimension was excluded from the verdict score; state this gap "
+            "and its effect plainly in the report."
+        )
+    builders = {
+        "price_analysis": lambda: PriceAnalysis(data=StockPrice(symbol=symbol, current_price=0.0), analysis=note),
+        "dividend_analysis": lambda: DividendAnalysis(data=DividendInfo(symbol=symbol), analysis=note),
+        "movement_analysis": lambda: MovementAnalysis(data=PriceMovement(symbol=symbol), analysis=note),
+        "valuation_analysis": lambda: ValuationAnalysis(data=FairValueEstimate(symbol=symbol), analysis=note),
+        "controversy_analysis": lambda: ControversyAnalysis(data=ControversyInfo(symbol=symbol), analysis=note),
+        "sentiment_analysis": lambda: SentimentAnalysis(data=SentimentInfo(symbol=symbol), analysis=note),
+    }
+    return builders[state_key]()
 
 
 # ---------------------------------------------------------------------------
@@ -113,17 +175,13 @@ def _make_specialist_node(
     """Return a node function that runs *agent_class* and writes *state_key*."""
 
     def _node(state: GraphState) -> GraphState:
-        # If a previous specialist already aborted with an empty-data error,
-        # short-circuit to keep error semantics deterministic and to avoid
-        # wasting LLM calls on a run that will not produce a final report.
+        # If validation already aborted the run (e.g. unknown symbol),
+        # short-circuit to avoid wasting LLM calls.
         if state.get("error"):
             return {}  # type: ignore[return-value]
 
-        try:
-            agent = agent_class(llm)
-            result = agent.run(state["symbol"])
-
-            # Publish per-agent completion to the SSE stream.
+        def _publish_agent_done() -> None:
+            """Publish per-agent completion to the SSE stream."""
             if task_id:
                 from ph_stocks_advisor.web.progress import (
                     STEP_AGENTS,
@@ -136,35 +194,41 @@ def _make_specialist_node(
                     agent=agent_class.__name__,
                 )
 
+        try:
+            agent = agent_class(llm)
+            result = agent.run(state["symbol"])
+            _publish_agent_done()
             return {state_key: result}  # type: ignore[return-value]
-        except EmptyAgentDataError as exc:
-            # Halt the entire pipeline: an empty upstream payload means
-            # any consolidated verdict would be unreliable. Surface the
-            # failure through the shared error channel so the consolidator
-            # is skipped and the caller sees a clear error message.
-            logger.error(
-                "%s returned empty data for %s — aborting analysis.",
+        except EmptyAgentDataError:
+            # No data exists for this dimension (e.g. a stock that pays no
+            # dividends). That is information, not a failure — continue with
+            # a placeholder so the report can state the gap; the dimension
+            # is excluded from the verdict score via ``data_gaps``.
+            logger.warning(
+                "%s has no data for %s — continuing without this dimension.",
                 agent_class.__name__,
                 state["symbol"],
             )
-            return {"error": str(exc)}  # type: ignore[return-value]
+            fallback = _fallback_analysis(state_key, state["symbol"], transient=False)
+            _publish_agent_done()
+            return {state_key: fallback, "data_gaps": [state_key]}  # type: ignore[return-value]
         except Exception as exc:
-            # Any other failure (MCP transport timeout, network error,
-            # upstream API blip — common under concurrent load) must
-            # ALSO abort the pipeline. Silently dropping the analysis
-            # would let the consolidator fabricate a degraded report
-            # from partial data, which then gets persisted/cached and
-            # served to users as junk (e.g. "₱XX.XX" placeholders).
+            # Transient failure (MCP timeout, network blip, upstream API
+            # error). Also non-fatal: continue with a placeholder, exclude
+            # the dimension from the score, and let the report state the
+            # gap. The prompt forbids inventing numbers for gap dimensions,
+            # and a run where EVERY dimension failed still aborts in the
+            # consolidate node (systemic-failure guard).
             logger.error(
-                "%s failed for %s: %s — aborting analysis.",
+                "%s failed for %s: %s — continuing without this dimension.",
                 agent_class.__name__,
                 state["symbol"],
                 exc,
                 exc_info=True,
             )
-            return {  # type: ignore[return-value]
-                "error": f"{agent_class.__name__} failed for {state['symbol']}: {exc}"
-            }
+            fallback = _fallback_analysis(state_key, state["symbol"], transient=True)
+            _publish_agent_done()
+            return {state_key: fallback, "data_gaps": [state_key]}  # type: ignore[return-value]
 
     return _node
 
@@ -201,11 +265,19 @@ def _make_consolidate_node(
     """Return the consolidator node."""
 
     def _consolidate(state: GraphState) -> GraphState:
-        # Honour any upstream error (e.g. an empty-data abort from a
-        # specialist agent): skip consolidation entirely so the caller
-        # receives the original error instead of a fabricated report.
+        # Honour any upstream error (e.g. a failed symbol validation):
+        # skip consolidation so the caller receives the original error.
         if state.get("error"):
             return {}  # type: ignore[return-value]
+
+        # Systemic-failure guard: individual data gaps are tolerated (the
+        # report states them), but if EVERY dimension failed there is
+        # nothing real to consolidate — abort instead of fabricating.
+        gaps = state.get("data_gaps") or []
+        if len(set(gaps)) >= len(AGENT_REGISTRY):
+            return {  # type: ignore[return-value]
+                "error": (f"No specialist agent could produce data for {state['symbol']} — analysis aborted.")
+            }
 
         if task_id:
             from ph_stocks_advisor.web.progress import (
@@ -224,6 +296,7 @@ def _make_consolidate_node(
             valuation_analysis=state.get("valuation_analysis"),
             controversy_analysis=state.get("controversy_analysis"),
             sentiment_analysis=state.get("sentiment_analysis"),
+            data_gaps=sorted(set(gaps)),
         )
         result = agent.run(advisor_state)
         return {"final_report": result}  # type: ignore[return-value]

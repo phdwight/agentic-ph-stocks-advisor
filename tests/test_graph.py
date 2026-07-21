@@ -142,116 +142,121 @@ class TestValidationFailure:
         assert result.get("final_report") is None
 
 
-class TestEmptyAgentDataShortCircuit:
-    """When a specialist returns empty upstream data, the pipeline must abort."""
+class TestGracefulDegradation:
+    """A failing specialist must NOT stop the run: the pipeline continues,
+    the dimension is recorded in ``data_gaps`` (excluded from the score),
+    and the report can state the absence. Only an all-agents failure or an
+    invalid symbol aborts."""
 
-    def test_empty_data_aborts_and_skips_consolidator(self):
-        """An empty PriceAgent payload must surface an error and skip consolidation."""
+    @staticmethod
+    def _ok_agent(name, analysis_cls, data_cls, analysis_text, symbol="TEL"):
+        mock = MagicMock()
+        mock.return_value.run.return_value = analysis_cls(
+            data=data_cls(symbol=symbol),
+            analysis=analysis_text,
+        )
+        mock.__name__ = name
+        return mock
+
+    def _registry_with_failing(self, failing_names, side_effect, symbol="TEL"):
+        entries = [
+            ("price_agent", "price_analysis", PriceAnalysis, None, "PriceAgent"),
+            ("dividend_agent", "dividend_analysis", DividendAnalysis, DividendInfo, "DividendAgent"),
+            ("movement_agent", "movement_analysis", MovementAnalysis, PriceMovement, "MovementAgent"),
+            ("valuation_agent", "valuation_analysis", ValuationAnalysis, FairValueEstimate, "ValuationAgent"),
+            ("controversy_agent", "controversy_analysis", ControversyAnalysis, ControversyInfo, "ControversyAgent"),
+            ("sentiment_agent", "sentiment_analysis", SentimentAnalysis, SentimentInfo, "SentimentAgent"),
+        ]
+        registry = []
+        for node, key, analysis_cls, data_cls, name in entries:
+            if name in failing_names:
+                failing = MagicMock()
+                failing.return_value.run.side_effect = side_effect
+                failing.__name__ = name
+                registry.append((node, key, failing))
+            elif name == "PriceAgent":
+                ok = MagicMock()
+                ok.return_value.run.return_value = PriceAnalysis(
+                    data=StockPrice(symbol=symbol, current_price=100.0), analysis="price ok"
+                )
+                ok.__name__ = name
+                registry.append((node, key, ok))
+            else:
+                registry.append((node, key, self._ok_agent(name, analysis_cls, data_cls, f"{name} ok", symbol)))
+        return registry
+
+    @staticmethod
+    def _consolidator_returning(symbol="TEL"):
+        mock = MagicMock()
+        mock.return_value.run.return_value = FinalReport(
+            symbol=symbol,
+            verdict=Verdict.BUY,
+            summary="**Executive Summary:**\nok",
+            score=70,
+        )
+        return mock
+
+    def test_empty_dividend_data_continues_and_reports_gap(self):
+        """A ticker without dividends completes with the gap recorded."""
         from ph_stocks_advisor.agents.specialists import EmptyAgentDataError
 
-        # PriceAgent fails with empty-data; the other specialists succeed.
-        FailingPriceAgent = MagicMock()
-        FailingPriceAgent.return_value.run.side_effect = EmptyAgentDataError("PriceAgent", "TEL")
-        FailingPriceAgent.__name__ = "PriceAgent"
-
-        def _ok_agent(name, analysis_cls, data_cls, analysis_text):
-            mock = MagicMock()
-            mock.return_value.run.return_value = analysis_cls(
-                data=data_cls(symbol="TEL"),
-                analysis=analysis_text,
-            )
-            mock.__name__ = name
-            return mock
-
-        # StockPrice requires current_price, so build it manually for the
-        # other agents we don't care about here.
-        OkDividendAgent = _ok_agent("DividendAgent", DividendAnalysis, DividendInfo, "div ok")
-        OkMovementAgent = _ok_agent("MovementAgent", MovementAnalysis, PriceMovement, "mov ok")
-        OkValuationAgent = _ok_agent("ValuationAgent", ValuationAnalysis, FairValueEstimate, "val ok")
-        OkControversyAgent = _ok_agent("ControversyAgent", ControversyAnalysis, ControversyInfo, "ctr ok")
-        OkSentimentAgent = _ok_agent("SentimentAgent", SentimentAnalysis, SentimentInfo, "sen ok")
-
-        # Consolidator must NOT run when an error is present.
-        MockConsolidator = MagicMock()
-
-        mock_registry = [
-            ("price_agent", "price_analysis", FailingPriceAgent),
-            ("dividend_agent", "dividend_analysis", OkDividendAgent),
-            ("movement_agent", "movement_analysis", OkMovementAgent),
-            ("valuation_agent", "valuation_analysis", OkValuationAgent),
-            ("controversy_agent", "controversy_analysis", OkControversyAgent),
-            ("sentiment_agent", "sentiment_analysis", OkSentimentAgent),
-        ]
-
+        registry = self._registry_with_failing({"DividendAgent"}, EmptyAgentDataError("DividendAgent", "TEL"))
+        MockConsolidator = self._consolidator_returning()
         mock_llm = MagicMock()
 
         with (
-            patch.object(workflow_mod, "AGENT_REGISTRY", mock_registry),
+            patch.object(workflow_mod, "AGENT_REGISTRY", registry),
             patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
             patch.object(workflow_mod, "validate_symbol", return_value="TEL"),
         ):
             result = run_analysis("TEL", llm=mock_llm, mini_llm=mock_llm)
 
-        # The pipeline must surface the empty-data error and skip the report.
-        assert result.get("final_report") is None
-        assert result.get("error") is not None
-        assert "PriceAgent" in result["error"]
-        assert "TEL" in result["error"]
-        # The consolidator must never have been instantiated/run.
-        MockConsolidator.return_value.run.assert_not_called()
+        assert result.get("error") is None
+        assert result.get("final_report") is not None
+        advisor_state = MockConsolidator.return_value.run.call_args[0][0]
+        assert advisor_state.data_gaps == ["dividend_analysis"]
+        assert "DATA UNAVAILABLE" in advisor_state.dividend_analysis.analysis
+        assert "dividend" in advisor_state.dividend_analysis.analysis
+        # The healthy dimensions flowed through untouched.
+        assert advisor_state.price_analysis.analysis == "price ok"
 
-    def test_transport_error_aborts_and_skips_consolidator(self):
-        """A generic specialist failure (e.g. MCP timeout under concurrent load)
-        must surface as an error and skip the consolidator, so no degraded
-        report can be persisted/cached."""
-        # PriceAgent fails with a generic transport-style error.
-        FailingPriceAgent = MagicMock()
-        FailingPriceAgent.return_value.run.side_effect = RuntimeError(
-            "Timed out after 30.0s waiting for MCP session to initialise"
-        )
-        FailingPriceAgent.__name__ = "PriceAgent"
-
-        def _ok_agent(name, analysis_cls, data_cls, analysis_text):
-            mock = MagicMock()
-            mock.return_value.run.return_value = analysis_cls(
-                data=data_cls(symbol="BDO"),
-                analysis=analysis_text,
-            )
-            mock.__name__ = name
-            return mock
-
-        OkDividendAgent = _ok_agent("DividendAgent", DividendAnalysis, DividendInfo, "div ok")
-        OkMovementAgent = _ok_agent("MovementAgent", MovementAnalysis, PriceMovement, "mov ok")
-        OkValuationAgent = _ok_agent("ValuationAgent", ValuationAnalysis, FairValueEstimate, "val ok")
-        OkControversyAgent = _ok_agent("ControversyAgent", ControversyAnalysis, ControversyInfo, "ctr ok")
-        OkSentimentAgent = _ok_agent("SentimentAgent", SentimentAnalysis, SentimentInfo, "sen ok")
-
-        # Consolidator must NOT run when an error is present — otherwise the
-        # LLM would hallucinate a "₱XX.XX" placeholder report from partial data
-        # and that junk would get cached.
-        MockConsolidator = MagicMock()
-
-        mock_registry = [
-            ("price_agent", "price_analysis", FailingPriceAgent),
-            ("dividend_agent", "dividend_analysis", OkDividendAgent),
-            ("movement_agent", "movement_analysis", OkMovementAgent),
-            ("valuation_agent", "valuation_analysis", OkValuationAgent),
-            ("controversy_agent", "controversy_analysis", OkControversyAgent),
-            ("sentiment_agent", "sentiment_analysis", OkSentimentAgent),
-        ]
-
+    def test_transport_error_continues_with_gap(self):
+        """A transient failure (MCP timeout) degrades instead of aborting."""
+        registry = self._registry_with_failing({"MovementAgent"}, RuntimeError("Timed out waiting for MCP session"))
+        MockConsolidator = self._consolidator_returning()
         mock_llm = MagicMock()
 
         with (
-            patch.object(workflow_mod, "AGENT_REGISTRY", mock_registry),
+            patch.object(workflow_mod, "AGENT_REGISTRY", registry),
             patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
-            patch.object(workflow_mod, "validate_symbol", return_value="BDO"),
+            patch.object(workflow_mod, "validate_symbol", return_value="TEL"),
         ):
-            result = run_analysis("BDO", llm=mock_llm, mini_llm=mock_llm)
+            result = run_analysis("TEL", llm=mock_llm, mini_llm=mock_llm)
+
+        assert result.get("error") is None
+        assert result.get("final_report") is not None
+        advisor_state = MockConsolidator.return_value.run.call_args[0][0]
+        assert advisor_state.data_gaps == ["movement_analysis"]
+        assert "temporary error" in advisor_state.movement_analysis.analysis
+
+    def test_all_agents_failing_aborts(self):
+        """Systemic failure (every dimension gone) must still abort — there
+        is nothing real to consolidate."""
+        registry = self._registry_with_failing(
+            {"PriceAgent", "DividendAgent", "MovementAgent", "ValuationAgent", "ControversyAgent", "SentimentAgent"},
+            RuntimeError("everything is down"),
+        )
+        MockConsolidator = MagicMock()
+        mock_llm = MagicMock()
+
+        with (
+            patch.object(workflow_mod, "AGENT_REGISTRY", registry),
+            patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
+            patch.object(workflow_mod, "validate_symbol", return_value="TEL"),
+        ):
+            result = run_analysis("TEL", llm=mock_llm, mini_llm=mock_llm)
 
         assert result.get("final_report") is None
         assert result.get("error") is not None
-        assert "PriceAgent" in result["error"]
-        assert "BDO" in result["error"]
-        assert "Timed out" in result["error"]
+        assert "No specialist agent could produce data" in result["error"]
         MockConsolidator.return_value.run.assert_not_called()
