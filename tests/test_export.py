@@ -74,9 +74,12 @@ class TestParseSections:
         assert "Company Overview" in titles
         assert "Financial Health" in titles
 
-    def test_verdict_section_captured(self):
+    def test_verdict_section_dropped(self):
+        """The verdict is rendered once from ``record.verdict`` (panel / badge),
+        never as a section — a binary verdict card can contradict the score
+        band (a WAIT panel beside a "NOT BUY" card)."""
         titles = [t for t, _ in parse_sections(_SAMPLE_SUMMARY)]
-        assert "Verdict" in titles
+        assert "Verdict" not in titles
 
     def test_executive_summary_first(self):
         sections = parse_sections(_SAMPLE_SUMMARY)

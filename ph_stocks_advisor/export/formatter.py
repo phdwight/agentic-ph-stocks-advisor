@@ -196,7 +196,44 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
     if current_lines:
         sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
 
-    return sections
+    return [s for s in (_neutralise_verdict_section(t, b) for t, b in sections) if s is not None]
+
+
+# A section title that is really a verdict label (older prompts asked the LLM
+# for a "**NOT BUY**" heading). Such a heading renders as its own card and can
+# contradict the score band shown in the verdict panel (a WAIT panel beside a
+# "NOT BUY" card), so the title is replaced — but the body is kept, because it
+# carries the reasoning, including which dimensions were missing.
+_VERDICT_TITLE = re.compile(
+    r"^(?:final\s+)?(?:verdict|(?:strong\s+)?buy|not\s+buy|don'?t\s+buy|wait|avoid)$",
+    re.IGNORECASE,
+)
+
+# "Justification: NOT BUY was computed without ..." -> "This assessment was
+# computed without ...". Only fires on a leading label + was/is, so ordinary
+# prose is untouched.
+_LEADING_VERDICT_SUBJECT = re.compile(
+    r"^\s*(?:\**\s*Justification:?\s*\**\s*)?"
+    r"\**\s*(?:(?:strong\s+)?buy|not\s+buy|don'?t\s+buy|wait|avoid)\s*\**\s+"
+    r"(was|is)\b",
+    re.IGNORECASE,
+)
+
+_RATIONALE_TITLE = "Why This Verdict"
+
+
+def _neutralise_verdict_section(title: str, body: str) -> tuple[str, str] | None:
+    """Retitle a verdict-labelled section; drop it when it has no content.
+
+    The verdict itself is displayed exactly once (verdict panel / badge),
+    never as a section heading.
+    """
+    if not _VERDICT_TITLE.fullmatch(title.strip()):
+        return (title, body)
+    cleaned = _LEADING_VERDICT_SUBJECT.sub(r"This assessment \1", body).strip()
+    if not cleaned:
+        return None
+    return (_RATIONALE_TITLE, cleaned)
 
 
 # ---------------------------------------------------------------------------
