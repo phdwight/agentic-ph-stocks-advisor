@@ -45,7 +45,7 @@ The data layer cascades through multiple sources for resilience:
 
 - **S**ingle Responsibility – each domain service (`price_service`, `dividend_service`, etc.) handles one data concern; `tools.py` is a thin re-export façade
 - **O**pen/Closed – new agents are added via `AGENT_REGISTRY` in `workflow.py`; new export formats are added by subclassing `OutputFormatter` and registering in `FORMATTER_REGISTRY`; existing code needs no changes
-- **L**iskov Substitution – `get_llm()` returns `BaseChatModel`; any LangChain-compatible LLM provider works. `PdfFormatter` and `HtmlFormatter` are drop-in replacements for `OutputFormatter`
+- **L**iskov Substitution – `build_chat_model(spec)` returns `BaseChatModel` for either OpenAI or Anthropic; agents depend only on the abstract type, so any LangChain-compatible provider works. `PdfFormatter` and `HtmlFormatter` are drop-in replacements for `OutputFormatter`
 - **I**nterface Segregation – tool functions return narrow, typed Pydantic models; `OutputFormatter` exposes only `render()`, `write()`, and metadata properties
 - **D**ependency Inversion – LLM is injected into `build_graph(llm=...)` and closed over in nodes; repository layer uses an ABC with SQLite/Postgres implementations; export uses `OutputFormatter` ABC; data tools depend on the `data/tools.py` façade which transparently swaps the in-process service for a remote MCP client based on configuration
 
@@ -62,7 +62,7 @@ pip install -e ".[dev]"
 
 # 3. Configure environment
 cp .env.example .env
-# Edit .env — at minimum set OPENAI_API_KEY
+# Edit .env — set OPENAI_API_KEY (or ANTHROPIC_API_KEY if LLM_PROVIDER=anthropic)
 ```
 
 For PostgreSQL support:
@@ -87,7 +87,7 @@ The project ships with a multi-stage `Dockerfile` and a Compose v2 file with fiv
 ```bash
 # 1. Configure environment
 cp .env.example .env
-# Edit .env — set at least OPENAI_API_KEY
+# Edit .env — set OPENAI_API_KEY (or ANTHROPIC_API_KEY if LLM_PROVIDER=anthropic)
 
 # 2. Start the web UI + worker + database + redis
 docker compose up --build -d web worker
@@ -644,14 +644,24 @@ After this, every push to `main` will automatically pull new images and restart 
 
 ## Environment Variables
 
-All settings live in `.env` (see [.env.example](.env.example)). Only `OPENAI_API_KEY` is required.
+All settings live in `.env` (see [.env.example](.env.example)). At least one LLM key is required — `OPENAI_API_KEY` for the default provider, or `ANTHROPIC_API_KEY` when any agent uses an `anthropic` spec.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | **Yes** | — | OpenAI API key |
-| `OPENAI_MODEL` | No | `gpt-4o-mini` | Primary (heavy) LLM model used by the consolidator agent |
-| `OPENAI_MINI_MODEL` | No | `gpt-4o-mini` | Lighter LLM model used by the five specialist agents |
-| `OPENAI_TEMPERATURE` | No | `0.2` | LLM temperature |
+| `OPENAI_API_KEY` | Cond. | — | OpenAI API key. Required when any agent uses an `openai` spec (the default) |
+| `ANTHROPIC_API_KEY` | Cond. | — | Anthropic API key. Required only when any agent uses an `anthropic` spec |
+| `LLM_PROVIDER` | No | `openai` | Default provider (`openai` or `anthropic`) when an agent spec omits one |
+| `LLM_TEMPERATURE` | No | `0.2` | Sampling temperature (sent to OpenAI; **omitted for Anthropic** — Opus 4.8 / Sonnet 5 reject a caller-set temperature). Alias: `OPENAI_TEMPERATURE` |
+| `LLM_MAX_TOKENS` | No | `4096` | Max output tokens applied to Anthropic models (OpenAI ignores) |
+| `OPENAI_MODEL_LARGE` | No | `gpt-4o` | OpenAI large tier (falls back to `OPENAI_MODEL` if set) |
+| `OPENAI_MODEL_MEDIUM` | No | `gpt-4o-mini` | OpenAI medium tier |
+| `OPENAI_MODEL_SMALL` | No | `gpt-4o-mini` | OpenAI small tier (falls back to `OPENAI_MINI_MODEL` if set) |
+| `ANTHROPIC_MODEL_LARGE` | No | `claude-opus-4-8` | Anthropic large tier |
+| `ANTHROPIC_MODEL_MEDIUM` | No | `claude-sonnet-5` | Anthropic medium tier |
+| `ANTHROPIC_MODEL_SMALL` | No | `claude-haiku-4-5` | Anthropic small tier |
+| `LLM_CONSOLIDATOR` | No | `large` | Consolidator agent spec — `[provider:]tier` (e.g. `anthropic:large`, `openai:small`, `medium`) |
+| `LLM_PORTFOLIO` | No | `large` | Portfolio agent spec |
+| `LLM_PRICE_AGENT` … `LLM_SENTIMENT_AGENT` | No | `small` | Per-specialist specs (`LLM_PRICE_AGENT`, `LLM_DIVIDEND_AGENT`, `LLM_MOVEMENT_AGENT`, `LLM_VALUATION_AGENT`, `LLM_CONTROVERSY_AGENT`, `LLM_SENTIMENT_AGENT`) |
 | `TAVILY_API_KEY` | No | — | Tavily web search key (graceful degradation when absent) |
 | `TAVILY_MAX_RESULTS` | No | `5` | Max results per Tavily search call |
 | `TAVILY_SEARCH_DEPTH` | No | `basic` | Tavily search depth (`basic` or `advanced`) |
