@@ -9,6 +9,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install runtime deps from the pip-compile-locked requirements.txt
+# NOTE: regenerate requirements.txt with `--extra=postgres`, e.g.
+#   uv pip compile --extra=postgres --upgrade -o requirements.txt pyproject.toml
+# A bare compile silently drops psycopg2-binary (it lives in the postgres extra)
+# and breaks the Postgres save path in the image.
 # for fully reproducible builds. The lock includes the postgres extra
 # (psycopg2-binary), so a single install covers everything we need.
 COPY pyproject.toml requirements.txt ./
