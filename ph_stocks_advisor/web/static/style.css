@@ -62,6 +62,13 @@
   --teal:           #1f9e96;
   --teal-dark:      #137a72;
   --blue:           #137a72;               /* repurpose "info" to teal */
+  /* -- Verdict semantics: GREEN = buy (good), RED = avoid (bad).
+     Reuse the positive/negative stat-highlight colors so verdicts, chips,
+     and the meter agree with the inline ↑/↓ percentages. -- */
+  --buy:            #3d8a7e;               /* green — BUY / STRONG BUY */
+  --buy-tint:       rgba(61, 138, 126, 0.14);
+  --sell:           #d85e52;               /* red — DON'T BUY / AVOID */
+  --sell-tint:      rgba(216, 94, 82, 0.14);
   --blue-bg:        rgba(31, 158, 150, 0.10);
 
   /* -- Neutrals (grey ramp) -- */
@@ -2214,9 +2221,9 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   stroke: var(--accent) !important;
 }
 
-/* -- Verdict badges: BUY = orange, NOT BUY = neutral -- */
-.badge.buy, .badge-sm.buy { background: var(--accent-100); color: var(--accent-800); }
-.badge.not-buy, .badge-sm.not-buy { background: rgba(29,31,32,0.06); color: var(--n-800); }
+/* -- Verdict badges: BUY = green, NOT BUY = red -- */
+.badge.buy, .badge-sm.buy { background: var(--buy-tint); color: var(--buy); }
+.badge.not-buy, .badge-sm.not-buy { background: var(--sell-tint); color: var(--sell); }
 
 /* -- Inputs: orange caret + orange focus -- */
 .input-group input, .modal-field input {
@@ -2353,12 +2360,12 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   font-family: var(--font-serif); font-weight: 600; font-size: 2.4rem;
   line-height: 0.9; letter-spacing: 0.005em;
 }
-.verdict-word.buy { color: var(--accent-500); }
-.verdict-word.nb  { color: var(--n-800); }
+.verdict-word.buy { color: var(--buy); }
+.verdict-word.nb  { color: var(--sell); }
 .verdict-meter { display: flex; flex-direction: column; gap: 0.5rem; }
 .meter-track {
   position: relative; height: 8px; border-radius: 100px;
-  background: linear-gradient(90deg, var(--teal) 0%, var(--n-200) 50%, var(--accent-500) 100%);
+  background: linear-gradient(90deg, var(--sell) 0%, var(--n-200) 50%, var(--buy) 100%);
 }
 .meter-mk {
   position: absolute; top: 50%; width: 15px; height: 15px; border-radius: 50%;
@@ -2461,28 +2468,32 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
    quantitative — mirrors the meter's sell/buy ends). */
 .verdict-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.75rem; }
 .verdict-word.wait { color: var(--n-800); }
-.verdict-word.avoid { color: var(--teal-dark); }
+.verdict-word.avoid { color: var(--sell); }
 .verdict-score { text-align: right; line-height: 1; }
 .verdict-score b {
   font-family: var(--font-serif); font-weight: 600; font-size: 1.9rem;
-  color: var(--teal-dark); font-variant-numeric: tabular-nums;
+  color: var(--n-800); font-variant-numeric: tabular-nums;
 }
+/* Band-colour the score number so it agrees with the word + meter. */
+.verdict-score.buy b   { color: var(--buy); }
+.verdict-score.avoid b { color: var(--sell); }
+.verdict-score.nb b    { color: var(--sell); }
+.verdict-score.wait b  { color: var(--n-800); }
 .verdict-score span {
   display: block; font-family: var(--font-serif); text-transform: uppercase;
   letter-spacing: 0.08em; font-size: 0.62rem; color: var(--text-muted); margin-top: 2px;
 }
 
-/* Verdict chips: score-band states. Buy-side reuses .buy (orange tint);
-   WAIT = outlined neutral; NOT BUY / AVOID = teal tint (avoid side of the
-   meter). Legacy .not-buy (grey) stays for pre-scoring reports. */
+/* Verdict chips: score-band states. BUY-side = green tint;
+   WAIT = outlined neutral; DON'T BUY / AVOID = red tint. */
 .badge-sm.wait {
   background: transparent;
   border: 1px solid var(--divider);
   color: var(--n-800);
 }
 .badge-sm.avoid {
-  background: rgba(31, 158, 150, 0.12);
-  color: var(--teal-dark);
+  background: var(--sell-tint);
+  color: var(--sell);
 }
 
 /* Defence: badge text must never fall back to the base white-on-light —
