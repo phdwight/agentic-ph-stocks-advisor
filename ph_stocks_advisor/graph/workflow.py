@@ -343,10 +343,11 @@ def _build_graph_impl(
 
         llm = get_llm()
 
-    if mini_llm is None:
-        from ph_stocks_advisor.infra.config import get_mini_llm
-
-        mini_llm = get_mini_llm()
+    # ``mini_llm``, when explicitly supplied (tests), overrides every
+    # specialist. Left as ``None``, each specialist resolves its own
+    # per-agent model from ``AGENT_LLM_SPECS`` so agents can run on
+    # different providers/tiers.
+    specialist_override = mini_llm
 
     workflow = StateGraph(GraphState)
 
@@ -356,7 +357,13 @@ def _build_graph_impl(
     # Dynamically register specialist nodes from the registry
     specialist_names: list[str] = []
     for node_name, state_key, agent_class in AGENT_REGISTRY:
-        node_fn = _make_specialist_node(agent_class, state_key, mini_llm, task_id=task_id)
+        if specialist_override is not None:
+            node_llm: BaseChatModel = specialist_override
+        else:
+            from ph_stocks_advisor.infra.config import get_agent_llm
+
+            node_llm = get_agent_llm(node_name)
+        node_fn = _make_specialist_node(agent_class, state_key, node_llm, task_id=task_id)
         workflow.add_node(node_name, node_fn)  # type: ignore[arg-type]
         specialist_names.append(node_name)
 

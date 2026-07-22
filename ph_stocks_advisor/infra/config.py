@@ -32,8 +32,31 @@ class Settings:
     with just ``OPENAI_API_KEY`` set.
     """
 
-    # -- LLM -------------------------------------------------------------------
+    # -- LLM (provider-agnostic) ------------------------------------------------
+    # Two providers (openai, anthropic) × three tiers (large, medium, small).
+    # ``llm_provider`` is the default provider; each agent is assigned a spec
+    # ``[provider:]tier`` (see AGENT_LLM_SPECS below) so individual agents can
+    # run on different providers and tiers. ``build_chat_model`` resolves a
+    # spec to a concrete LangChain model.
+    llm_provider: str = os.getenv("LLM_PROVIDER", "openai").lower()
+    llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", os.getenv("OPENAI_TEMPERATURE", "0.2")))
+    # Anthropic models reject a caller-set max_tokens default of 1024 for long
+    # structured output — give the consolidator room. OpenAI ignores this.
+    llm_max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "4096"))
+
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+
+    # Six model IDs. The OpenAI tiers fall back to the legacy OPENAI_MODEL /
+    # OPENAI_MINI_MODEL vars so existing deployments keep their pinned models.
+    openai_model_large: str = os.getenv("OPENAI_MODEL_LARGE", os.getenv("OPENAI_MODEL", "gpt-4o"))
+    openai_model_medium: str = os.getenv("OPENAI_MODEL_MEDIUM", "gpt-4o-mini")
+    openai_model_small: str = os.getenv("OPENAI_MODEL_SMALL", os.getenv("OPENAI_MINI_MODEL", "gpt-4o-mini"))
+    anthropic_model_large: str = os.getenv("ANTHROPIC_MODEL_LARGE", "claude-opus-4-8")
+    anthropic_model_medium: str = os.getenv("ANTHROPIC_MODEL_MEDIUM", "claude-sonnet-5")
+    anthropic_model_small: str = os.getenv("ANTHROPIC_MODEL_SMALL", "claude-haiku-4-5")
+
+    # Legacy aliases kept so any external reference still resolves.
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     openai_mini_model: str = os.getenv("OPENAI_MINI_MODEL", "gpt-4o-mini")
     temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
@@ -239,34 +262,96 @@ def get_today() -> dt.date:
     return dt.datetime.now(tz=tz).date()
 
 
-def get_llm(settings: Settings | None = None) -> BaseChatModel:
-    """Return the *primary* (heavy) LLM instance.
+# Valid provider / tier tokens for an agent spec.
+_LLM_PROVIDERS = ("openai", "anthropic")
+_LLM_TIERS = ("large", "medium", "small")
 
-    Use this for tasks that require deep reasoning such as the
-    consolidator agent.  Returns the abstract ``BaseChatModel`` so
-    callers never depend on a concrete provider (Liskov Substitution
-    Principle).
+# Default agent → spec assignment. Each value is a ``[provider:]tier`` string;
+# the provider defaults to ``settings.llm_provider`` when omitted. Consolidation
+# and portfolio advice want the strongest tier; the six specialists run small.
+# Override any of these with the matching ``LLM_<AGENT>`` env var.
+AGENT_LLM_SPECS: dict[str, str] = {
+    "consolidator": os.getenv("LLM_CONSOLIDATOR", "large"),
+    "portfolio": os.getenv("LLM_PORTFOLIO", "large"),
+    "price_agent": os.getenv("LLM_PRICE_AGENT", "small"),
+    "dividend_agent": os.getenv("LLM_DIVIDEND_AGENT", "small"),
+    "movement_agent": os.getenv("LLM_MOVEMENT_AGENT", "small"),
+    "valuation_agent": os.getenv("LLM_VALUATION_AGENT", "small"),
+    "controversy_agent": os.getenv("LLM_CONTROVERSY_AGENT", "small"),
+    "sentiment_agent": os.getenv("LLM_SENTIMENT_AGENT", "small"),
+}
+
+
+def _resolve_spec(spec: str, settings: Settings) -> tuple[str, str]:
+    """Parse a ``[provider:]tier`` spec into ``(provider, tier)``.
+
+    A bare tier inherits ``settings.llm_provider``. Raises ``ValueError`` on an
+    unknown provider or tier so a typo fails fast instead of silently picking a
+    wrong model.
+    """
+    raw = (spec or "").strip().lower()
+    if ":" in raw:
+        provider, tier = raw.split(":", 1)
+    else:
+        provider, tier = settings.llm_provider, raw
+    if provider not in _LLM_PROVIDERS:
+        raise ValueError(f"Unknown LLM provider {provider!r} (expected one of {_LLM_PROVIDERS})")
+    if tier not in _LLM_TIERS:
+        raise ValueError(f"Unknown LLM tier {tier!r} (expected one of {_LLM_TIERS})")
+    return provider, tier
+
+
+def build_chat_model(spec: str, settings: Settings | None = None) -> BaseChatModel:
+    """Build a LangChain chat model from a ``[provider:]tier`` spec.
+
+    Returns the abstract ``BaseChatModel`` so callers never depend on a
+    concrete provider (Liskov Substitution Principle). Fails fast with a
+    clear error when the chosen provider's API key is unset.
     """
     s = settings or get_settings()
-    return ChatOpenAI(
-        model=s.openai_model,
-        temperature=s.temperature,
-        api_key=s.openai_api_key,  # type: ignore[arg-type]
-    )
+    provider, tier = _resolve_spec(spec, s)
+
+    if provider == "openai":
+        if not s.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required for an OpenAI LLM spec but is not set.")
+        model = {"large": s.openai_model_large, "medium": s.openai_model_medium, "small": s.openai_model_small}[tier]
+        return ChatOpenAI(model=model, temperature=s.llm_temperature, api_key=s.openai_api_key)  # type: ignore[arg-type]
+
+    # anthropic
+    if not s.anthropic_api_key:
+        raise ValueError("ANTHROPIC_API_KEY is required for an Anthropic LLM spec but is not set.")
+    from langchain_anthropic import ChatAnthropic
+
+    model = {"large": s.anthropic_model_large, "medium": s.anthropic_model_medium, "small": s.anthropic_model_small}[
+        tier
+    ]
+    # Deliberately omit ``temperature``: current Claude models (Opus 4.8,
+    # Sonnet 5, …) reject a caller-set temperature with a 400.
+    return ChatAnthropic(model=model, max_tokens=s.llm_max_tokens, api_key=s.anthropic_api_key)  # type: ignore[call-arg]
+
+
+def get_agent_llm(agent: str, settings: Settings | None = None) -> BaseChatModel:
+    """Build the chat model assigned to *agent* via ``AGENT_LLM_SPECS``."""
+    spec = AGENT_LLM_SPECS.get(agent, "medium")
+    return build_chat_model(spec, settings)
+
+
+def get_llm(settings: Settings | None = None) -> BaseChatModel:
+    """Return the primary (heavy) LLM — the consolidator's assigned model.
+
+    Back-compat shim over :func:`get_agent_llm`; used for consolidation and
+    portfolio advice.
+    """
+    return get_agent_llm("consolidator", settings)
 
 
 def get_mini_llm(settings: Settings | None = None) -> BaseChatModel:
-    """Return a *lighter* LLM for simpler specialist tasks.
+    """Return a lighter LLM (the active provider's ``small`` tier).
 
-    Configured via ``OPENAI_MINI_MODEL``.  Falls back to the primary
-    model when the env var is not set.
+    Back-compat shim; specialist nodes now resolve their own per-agent model
+    via :func:`get_agent_llm`.
     """
-    s = settings or get_settings()
-    return ChatOpenAI(
-        model=s.openai_mini_model,
-        temperature=s.temperature,
-        api_key=s.openai_api_key,  # type: ignore[arg-type]
-    )
+    return build_chat_model("small", settings)
 
 
 _repository: AbstractReportRepository | None = None

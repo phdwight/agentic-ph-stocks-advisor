@@ -142,7 +142,7 @@ def portfolio_analyse_stock(
     provided explicitly.
     """
     from ph_stocks_advisor.agents.portfolio import PortfolioAgent
-    from ph_stocks_advisor.infra.config import get_llm, get_repository
+    from ph_stocks_advisor.infra.config import get_agent_llm, get_repository
     from ph_stocks_advisor.infra.repository import PortfolioReportRecord
 
     # Resolve symbol / base_report_id from the preceding chain result
@@ -185,7 +185,7 @@ def portfolio_analyse_stock(
             # Fallback: try to parse from the report
             current_price = avg_cost  # conservative fallback
 
-        llm = get_llm()
+        llm = get_agent_llm("portfolio")
         agent = PortfolioAgent(llm)
         analysis = agent.run(
             symbol=symbol,
