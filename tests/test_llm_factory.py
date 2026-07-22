@@ -15,7 +15,7 @@ from ph_stocks_advisor.infra import config as cfg
 
 def _model_id(model) -> str:
     """Provider-agnostic model id (OpenAI uses ``model_name``, Anthropic ``model``)."""
-    return getattr(model, "model_name", None) or getattr(model, "model", None)
+    return str(getattr(model, "model_name", None) or getattr(model, "model", None) or "")
 
 
 @pytest.fixture
