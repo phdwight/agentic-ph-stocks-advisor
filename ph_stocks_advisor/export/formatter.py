@@ -196,7 +196,20 @@ def parse_sections(summary: str) -> list[tuple[str, str]]:
     if current_lines:
         sections.append((current_title, "\n".join(_strip_title_from_body(current_title, current_lines))))
 
-    return [s for s in (_neutralise_verdict_section(t, b) for t, b in sections) if s is not None]
+    # Drop sections with an empty body. The LLM sometimes prepends a document
+    # title (e.g. "**BDO Unibank — Investment Report**") before the Executive
+    # Summary; that title parses as a heading with no content and would render
+    # as a spurious empty card (mislabelled "Market mood"). A real section
+    # always carries text — even a data gap writes "DATA UNAVAILABLE" — so an
+    # empty body is always noise. Render-time filtering also cleans cached
+    # reports and is provider-agnostic (OpenAI vs Anthropic format differently).
+    out: list[tuple[str, str]] = []
+    for title, body in sections:
+        section = _neutralise_verdict_section(title, body)
+        if section is None or not section[1].strip():
+            continue
+        out.append(section)
+    return out
 
 
 # A section title that is really a verdict label (older prompts asked the LLM
