@@ -81,8 +81,32 @@ services:
     ports:
       - "${WEB_PORT:-5180}:5000"
     environment: &shared-env
-      # ── LLM (required) ────────────────────────────────────────────────────
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      # ── LLM (provider-agnostic: openai + anthropic) ───────────────────────
+      # At least one provider key is required; the app fails fast if the
+      # chosen provider's key is missing (so neither is hard-required here).
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-}
+      # Per-provider tier model IDs (empty → code defaults; OpenAI tiers also
+      # fall back to OPENAI_MODEL / OPENAI_MINI_MODEL below)
+      OPENAI_MODEL_LARGE: ${OPENAI_MODEL_LARGE:-}
+      OPENAI_MODEL_MEDIUM: ${OPENAI_MODEL_MEDIUM:-}
+      OPENAI_MODEL_SMALL: ${OPENAI_MODEL_SMALL:-}
+      ANTHROPIC_MODEL_LARGE: ${ANTHROPIC_MODEL_LARGE:-}
+      ANTHROPIC_MODEL_MEDIUM: ${ANTHROPIC_MODEL_MEDIUM:-}
+      ANTHROPIC_MODEL_SMALL: ${ANTHROPIC_MODEL_SMALL:-}
+      # Per-agent overrides — each a [provider:]tier spec
+      LLM_CONSOLIDATOR: ${LLM_CONSOLIDATOR:-}
+      LLM_PORTFOLIO: ${LLM_PORTFOLIO:-}
+      LLM_PRICE_AGENT: ${LLM_PRICE_AGENT:-}
+      LLM_DIVIDEND_AGENT: ${LLM_DIVIDEND_AGENT:-}
+      LLM_MOVEMENT_AGENT: ${LLM_MOVEMENT_AGENT:-}
+      LLM_VALUATION_AGENT: ${LLM_VALUATION_AGENT:-}
+      LLM_CONTROVERSY_AGENT: ${LLM_CONTROVERSY_AGENT:-}
+      LLM_SENTIMENT_AGENT: ${LLM_SENTIMENT_AGENT:-}
+      # Legacy aliases (fallbacks for the OpenAI tiers above)
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_MINI_MODEL: ${OPENAI_MINI_MODEL:-gpt-4o-mini}
       OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.0}

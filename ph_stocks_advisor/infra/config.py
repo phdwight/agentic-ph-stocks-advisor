@@ -25,6 +25,21 @@ from ph_stocks_advisor.infra.repository import AbstractReportRepository
 load_dotenv()
 
 
+def _env(name: str, *fallbacks: str) -> str:
+    """Read an env var, treating unset OR empty/whitespace as absent.
+
+    Docker Compose forwards allow-listed vars as empty strings when the host
+    hasn't set them (``${VAR:-}``), and ``os.getenv`` returns that ``""``
+    instead of the default. This walks ``name`` then each fallback and returns
+    the first non-empty value (the last fallback is the literal default).
+    """
+    for key in (name, *fallbacks[:-1]):
+        val = os.getenv(key, "").strip()
+        if val:
+            return val
+    return fallbacks[-1] if fallbacks else ""
+
+
 class Settings:
     """Application settings read from environment variables.
 
@@ -38,23 +53,26 @@ class Settings:
     # ``[provider:]tier`` (see AGENT_LLM_SPECS below) so individual agents can
     # run on different providers and tiers. ``build_chat_model`` resolves a
     # spec to a concrete LangChain model.
-    llm_provider: str = os.getenv("LLM_PROVIDER", "openai").lower()
-    llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", os.getenv("OPENAI_TEMPERATURE", "0.2")))
+    # NB: use ``_env`` (not ``os.getenv``) for every LLM var — Compose forwards
+    # unset allow-listed vars as empty strings, which ``os.getenv`` would treat
+    # as a real value and blank out the model name / provider.
+    llm_provider: str = _env("LLM_PROVIDER", "openai").lower()
+    llm_temperature: float = float(_env("LLM_TEMPERATURE", "OPENAI_TEMPERATURE", "0.2"))
     # Anthropic models reject a caller-set max_tokens default of 1024 for long
     # structured output — give the consolidator room. OpenAI ignores this.
-    llm_max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "4096"))
+    llm_max_tokens: int = int(_env("LLM_MAX_TOKENS", "4096"))
 
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
 
     # Six model IDs. The OpenAI tiers fall back to the legacy OPENAI_MODEL /
     # OPENAI_MINI_MODEL vars so existing deployments keep their pinned models.
-    openai_model_large: str = os.getenv("OPENAI_MODEL_LARGE", os.getenv("OPENAI_MODEL", "gpt-4o"))
-    openai_model_medium: str = os.getenv("OPENAI_MODEL_MEDIUM", "gpt-4o-mini")
-    openai_model_small: str = os.getenv("OPENAI_MODEL_SMALL", os.getenv("OPENAI_MINI_MODEL", "gpt-4o-mini"))
-    anthropic_model_large: str = os.getenv("ANTHROPIC_MODEL_LARGE", "claude-opus-4-8")
-    anthropic_model_medium: str = os.getenv("ANTHROPIC_MODEL_MEDIUM", "claude-sonnet-5")
-    anthropic_model_small: str = os.getenv("ANTHROPIC_MODEL_SMALL", "claude-haiku-4-5")
+    openai_model_large: str = _env("OPENAI_MODEL_LARGE", "OPENAI_MODEL", "gpt-4o")
+    openai_model_medium: str = _env("OPENAI_MODEL_MEDIUM", "gpt-4o-mini")
+    openai_model_small: str = _env("OPENAI_MODEL_SMALL", "OPENAI_MINI_MODEL", "gpt-4o-mini")
+    anthropic_model_large: str = _env("ANTHROPIC_MODEL_LARGE", "claude-opus-4-8")
+    anthropic_model_medium: str = _env("ANTHROPIC_MODEL_MEDIUM", "claude-sonnet-5")
+    anthropic_model_small: str = _env("ANTHROPIC_MODEL_SMALL", "claude-haiku-4-5")
 
     # Legacy aliases kept so any external reference still resolves.
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -271,14 +289,14 @@ _LLM_TIERS = ("large", "medium", "small")
 # and portfolio advice want the strongest tier; the six specialists run small.
 # Override any of these with the matching ``LLM_<AGENT>`` env var.
 AGENT_LLM_SPECS: dict[str, str] = {
-    "consolidator": os.getenv("LLM_CONSOLIDATOR", "large"),
-    "portfolio": os.getenv("LLM_PORTFOLIO", "large"),
-    "price_agent": os.getenv("LLM_PRICE_AGENT", "small"),
-    "dividend_agent": os.getenv("LLM_DIVIDEND_AGENT", "small"),
-    "movement_agent": os.getenv("LLM_MOVEMENT_AGENT", "small"),
-    "valuation_agent": os.getenv("LLM_VALUATION_AGENT", "small"),
-    "controversy_agent": os.getenv("LLM_CONTROVERSY_AGENT", "small"),
-    "sentiment_agent": os.getenv("LLM_SENTIMENT_AGENT", "small"),
+    "consolidator": _env("LLM_CONSOLIDATOR", "large"),
+    "portfolio": _env("LLM_PORTFOLIO", "large"),
+    "price_agent": _env("LLM_PRICE_AGENT", "small"),
+    "dividend_agent": _env("LLM_DIVIDEND_AGENT", "small"),
+    "movement_agent": _env("LLM_MOVEMENT_AGENT", "small"),
+    "valuation_agent": _env("LLM_VALUATION_AGENT", "small"),
+    "controversy_agent": _env("LLM_CONTROVERSY_AGENT", "small"),
+    "sentiment_agent": _env("LLM_SENTIMENT_AGENT", "small"),
 }
 
 
