@@ -497,3 +497,34 @@ def test_empty_verdict_heading_is_dropped_entirely():
 
     titles = [t for t, _ in parse_sections("**Executive Summary:**\nok\n\n**NOT BUY**\n")]
     assert titles == ["Executive Summary"]
+
+
+def test_leading_document_title_is_dropped():
+    """The consolidator (esp. Anthropic) sometimes prepends a report title
+    before the Executive Summary; it parses as an empty-body heading and would
+    render as a spurious 'Market mood' card. Empty-body sections are dropped."""
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = (
+        "**BDO Unibank — Investment Report (as of 2026-07-22)**\n\n"
+        "**Executive Summary:**\nBDO is trading at P122.90.\n\n"
+        "**Price Analysis:**\n- Near the low end of its range.\n"
+    )
+    titles = [t for t, _ in parse_sections(summary)]
+    assert "BDO Unibank — Investment Report (as of 2026-07-22)" not in titles
+    assert titles == ["Executive Summary", "Price Analysis"]
+
+
+def test_real_sections_with_content_are_never_dropped():
+    from ph_stocks_advisor.export.formatter import parse_sections
+
+    summary = (
+        "**Executive Summary:**\nok\n\n"
+        "**Dividend Analysis:**\n- yield 5%\n\n"
+        "**Sentiment / Global Events Analysis:**\n- neutral\n"
+    )
+    assert [t for t, _ in parse_sections(summary)] == [
+        "Executive Summary",
+        "Dividend Analysis",
+        "Sentiment / Global Events Analysis",
+    ]

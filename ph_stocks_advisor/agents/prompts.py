@@ -299,6 +299,11 @@ by law** for REITs — do NOT cite it as a risk or concern. Instead, evaluate
 the REIT's dividend sustainability based on whether its income and revenue
 are growing over time.
 
+Start the report directly with the Executive Summary. Do NOT add a document
+title, report header, dateline, or any preamble before it (no "**<Company> —
+Investment Report**" line) — the app renders the ticker and date in its own
+header, and an extra title becomes a stray empty card.
+
 Your report MUST include:
 1. A one-paragraph executive summary (this is the ONLY section written as prose).
    End the executive summary with a compact Markdown table of key price
