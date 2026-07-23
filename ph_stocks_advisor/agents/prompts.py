@@ -42,13 +42,24 @@ If ``is_reit`` is true, the stock is a Philippine Real Estate Investment Trust.
 Philippine REITs are **legally required** by the REIT Act of 2009 (RA 9856) to
 distribute at least 90% of their distributable income as dividends every year.
 Therefore:
-  • A payout ratio of 90-110% is **normal and expected** for a REIT — it is
-    NOT a concern or red flag.
-  • Do NOT say the high payout ratio "raises concerns" or is "unsustainable"
-    for a REIT. That would be factually wrong.
-  • Instead, evaluate sustainability by checking whether net income and
-    revenue are growing (which means the dividend base is growing).
-  • A REIT with growing income is a **strong** dividend stock, not a risky one.
+  • ``payout_ratio`` here is NET-INCOME-based. REIT net income is depressed
+    by large non-cash depreciation charges, so an NI-based payout of
+    90-110% is **normal and expected** for a REIT — NOT a red flag by
+    itself. Do NOT extend this rule beyond ~110%: an NI-based payout
+    meaningfully above 110% is not automatically "normal" and deserves a
+    closer look at cash generation.
+  • The decisive check is CASH-based: ``fcf_payout_ratio`` (total dividends
+    ÷ latest free cash flow, an FFO proxy). If it is ≤ 1.0, cash generation
+    covers the dividend even when the NI payout exceeds 100% — say so
+    explicitly. If it is > 1.0, the REIT is paying out more cash than it
+    generates — flag this as a genuine sustainability concern, REIT or not.
+    If it is 0.0 it could not be computed — say the cash-based check was
+    not possible rather than implying safety.
+  • ALWAYS distinguish the NI-based figure from the cash-based figure in
+    your analysis — never present a >100% NI payout as safe without citing
+    the cash-based coverage.
+  • A REIT with growing income AND cash-covered dividends is a **strong**
+    dividend stock, not a risky one.
 
 Use the ``dividend_sustainability_note`` field for additional context.
 A growing net income and positive free cash flow strongly indicate the
@@ -166,7 +177,16 @@ Given the following global-events data, write a concise analysis
    Niña effects. These are recurring risks for Philippine agriculture
    and infrastructure stocks.
 
-5. **Net sentiment assessment** — summarise the overall global-events
+5. **Interest-rate environment** — use the ``bsp_rate`` field (BSP policy
+   rate and PH bond-yield context). If ``is_reit`` is true, this is
+   CRITICAL: REITs trade as bond proxies — when risk-free yields are high,
+   investors demand higher REIT yields, which pushes REIT prices DOWN.
+   Relate the current rate environment to the stock's yield
+   attractiveness. Never describe a dividend stock's price weakness as
+   pure "momentum" without first considering competing yields. If
+   ``bsp_rate`` is empty, say the rate environment could not be checked.
+
+6. **Net sentiment assessment** — summarise the overall global-events
    sentiment as **Positive**, **Neutral**, or **Negative** for the
    Philippine market and for **{symbol}** specifically. Explain why.
 
@@ -187,6 +207,18 @@ Fair Value** and write a concise analysis (5-8 sentences) covering:
 - How the PE and PB ratios compare to PSE sector averages
 - The estimated fair value range versus the current price
 - A **Margin of Safety** entry price (typically ~10% below Fair Value)
+
+**PRECISION MUST MATCH CONFIDENCE:**
+When any input to your fair-value estimate is missing, assumed, or
+approximated (common for REITs — NAV inputs and discount rates are often
+unavailable), do NOT present a precise point estimate. Instead:
+  • Give the fair value as a ROUNDED RANGE (whole pesos, roughly ±5-10%
+    around your midpoint), e.g. "about ₱41-46", never "₱43.71".
+  • Describe the discount the same way: "roughly 15% below the midpoint",
+    never a decimal like "14.8% below fair value".
+  • LEAD with the confidence caveat (which inputs were missing) BEFORE the
+    numbers — do not state a confident figure and caveat it afterwards.
+A precise point estimate is only appropriate when every input is real data.
 
 **REIT CLASSIFICATION — read ``is_reit`` in the data, never infer it:**
 The ``is_reit`` field states whether the issuer is a Philippine REIT. When it
@@ -294,8 +326,19 @@ If they do not, never describe it as a REIT or apply REIT rules to it — a
 company name, sector, or property holdings are not evidence of REIT status.
 If the dividend analysis mentions the stock is a REIT, keep in mind that
 Philippine REITs are legally required to distribute at least 90% of their
-distributable income. A high payout ratio (90-110%) is **normal and mandated
-by law** for REITs — do NOT cite it as a risk or concern. Instead, evaluate
+distributable income. A NET-INCOME payout ratio of 90-110% is **normal and
+mandated by law** for REITs — do NOT cite it as a risk on its own — but
+defer to the dividend analysis's CASH-based coverage judgement for anything
+above that; never call a >110% payout "normal and expected".
+For REITs, also:
+  • State plainly that property-level fundamentals — occupancy rates, WALE
+    (weighted average lease expiry), and tenant mix — were NOT assessed
+    (that data is not available to this analysis), so the dividend-safety
+    view rests on income and cash-flow trends only.
+  • When explaining price weakness, consider the interest-rate environment
+    from the sentiment analysis (REITs trade as bond proxies) before
+    attributing the move to "momentum" or "sentiment".
+Beyond that, evaluate
 the REIT's dividend sustainability based on whether its income and revenue
 are growing over time.
 

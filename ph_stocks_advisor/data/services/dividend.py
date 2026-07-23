@@ -126,6 +126,18 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
                 total_dividends = dividend_rate * shares_outstanding
                 payout_ratio = round(total_dividends / latest_ni, 4)
 
+        # CASH-based coverage (FFO proxy): total dividends / latest FCF.
+        # Net income understates REIT earning power (heavy depreciation), so
+        # an NI payout >100% can still be fine — but paying out more cash
+        # than the business generates (>1.0 here) is a genuine concern.
+        # Computed deterministically: the LLM judges, never does arithmetic.
+        fcf_payout_ratio = 0.0
+        if dividend_rate > 0 and shares_outstanding > 0 and fcf_trend:
+            latest_fcf_year = max(fcf_trend.keys())
+            latest_fcf = fcf_trend[latest_fcf_year]
+            if latest_fcf > 0:
+                fcf_payout_ratio = round((dividend_rate * shares_outstanding) / latest_fcf, 4)
+
         sustainability_note = _build_sustainability_note(
             is_reit=is_reit,
             payout_ratio=payout_ratio,
@@ -161,6 +173,7 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             dividend_rate=dividend_rate,
             dividend_yield=div_yield,
             payout_ratio=payout_ratio,
+            fcf_payout_ratio=fcf_payout_ratio,
             ex_dividend_date=ex_dividend_date_str if "ex_dividend_date_str" in dir() else None,
             five_year_avg_yield=0.0,
             is_reit=is_reit,

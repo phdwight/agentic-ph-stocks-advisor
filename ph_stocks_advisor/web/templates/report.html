@@ -41,7 +41,8 @@
         <div class="meter-track"><span class="meter-mk" style="left: {{ marker_pct }}%;"></span></div>
         <div class="meter-labels"><span>Avoid</span><span>Wait</span><span>Buy</span></div>
       </div>
-      <p class="verdict-why">Consolidated from six specialist analyses of {{ record.symbol }}.</p>
+      <p class="verdict-why">Consolidated from six specialist analyses of {{ record.symbol }}.
+        Assumes a new position — not advice for an existing holding{% if is_elevated %}; use <b>My Position</b> for that{% endif %}.</p>
     </section>
 
     <div class="rail-actions">

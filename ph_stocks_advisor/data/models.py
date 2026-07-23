@@ -124,6 +124,18 @@ class DividendInfo(BaseModel):
         description="Annual free cash flow (PHP) keyed by year",
     )
 
+    fcf_payout_ratio: float = Field(
+        default=0.0,
+        description=(
+            "Total dividends ÷ latest free cash flow — CASH-based coverage "
+            "(an FFO proxy). Values ≤1.0 mean cash generation covers the "
+            "dividend even when the net-income payout ratio exceeds 100% "
+            "(REIT depreciation depresses net income). Values >1.0 mean "
+            "dividends exceed cash generated — a genuine sustainability "
+            "concern regardless of REIT status. 0.0 = not computable."
+        ),
+    )
+
     # -- External context (computed notes + web news) --------------------------
     dividend_sustainability_note: str = ""
     recent_dividend_news: str = Field(
@@ -259,7 +271,18 @@ class SentimentInfo(BaseModel):
     )
     bsp_rate: str = Field(
         default="",
-        description="Latest Bangko Sentral ng Pilipinas (BSP) policy rate context.",
+        description=(
+            "Latest Bangko Sentral ng Pilipinas (BSP) policy rate and PH "
+            "bond-yield context from web search. For REITs this is the "
+            "competing risk-free yield."
+        ),
+    )
+    is_reit: bool = Field(
+        default=False,
+        description=(
+            "True only when the issuer is a Philippine REIT (DragonFi "
+            "``isREIT``). REITs trade as bond proxies — never infer this."
+        ),
     )
 
 

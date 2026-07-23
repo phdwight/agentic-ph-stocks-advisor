@@ -85,6 +85,24 @@ def _search(
 # ---------------------------------------------------------------------------
 
 
+def search_bsp_rate() -> str:
+    """Search for the current BSP policy rate and PH bond-yield environment.
+
+    REITs trade as bond proxies — the risk-free yield is the competing
+    return that drives their pricing — but the rate environment matters
+    to every PSE stock. Returns a formatted string (empty-safe fallback).
+    """
+    year = get_today().year
+    query = (
+        f"Bangko Sentral ng Pilipinas BSP policy interest rate {year} Philippine 10-year government bond yield current"
+    )
+    results = _search(query, max_results=3, search_depth="basic")
+    return _format_results(
+        results,
+        fallback="No BSP policy-rate context found via web search.",
+    )
+
+
 def search_global_events(symbol: str, company_name: str = "") -> str:
     """Search the web for global events that may impact the Philippine market.
 
