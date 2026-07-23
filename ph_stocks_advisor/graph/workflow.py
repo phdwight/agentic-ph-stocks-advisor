@@ -254,6 +254,18 @@ def _make_validate_node(
             return {}  # type: ignore[return-value]
         except SymbolNotFoundError as exc:
             return {"error": str(exc)}  # type: ignore[return-value]
+        except Exception as exc:
+            # Validation infrastructure failure (MCP transport, DragonFi
+            # outage, …). Surface a clean, retryable error instead of
+            # letting the exception crash the Celery task — and never let
+            # it read as a definitive "not listed".
+            logger.error("Symbol validation failed for %s: %s", symbol, exc, exc_info=True)
+            return {  # type: ignore[return-value]
+                "error": (
+                    f"Could not verify '{symbol}' right now — the market data "
+                    f"source is temporarily unavailable. Please try again in a moment."
+                )
+            }
 
     return _validate
 

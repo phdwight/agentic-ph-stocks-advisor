@@ -404,7 +404,10 @@ class TestValidatePseSymbolDragonFi:
     @patch("ph_stocks_advisor.data.clients.dragonfi._get")
     @patch("ph_stocks_advisor.data.clients.dragonfi._fetch_all_stock_codes")
     def test_not_found_raises(self, mock_codes, mock_get):
-        mock_codes.return_value = frozenset()
+        """A definitive not-found requires the listing universe to be
+        AVAILABLE — an empty universe is a transient outage instead
+        (see test_symbol_validation.py)."""
+        mock_codes.return_value = frozenset({"TEL", "BDO"})
         mock_get.return_value = None
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
 

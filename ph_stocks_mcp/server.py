@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ph_stocks_advisor.data.clients.dragonfi import (
     SymbolNotFoundError,
+    SymbolValidationUnavailableError,
     validate_pse_symbol,
 )
 from ph_stocks_advisor.data.models import (
@@ -76,6 +77,11 @@ def build_server() -> FastMCP:
         except SymbolNotFoundError as exc:
             logger.info("MCP tool validate_symbol rejected symbol=%r: %s", symbol, exc)
             raise ValueError(f"{_SYMBOL_NOT_FOUND_PREFIX}{exc}") from exc
+        except SymbolValidationUnavailableError as exc:
+            # Transient upstream failure — NO not-found marker, so the client
+            # surfaces a retryable error instead of "not listed".
+            logger.warning("MCP tool validate_symbol unavailable for %r: %s", symbol, exc)
+            raise ValueError(str(exc)) from exc
         logger.info("MCP tool validate_symbol resolved symbol=%r -> %s", symbol, result)
         return result
 
