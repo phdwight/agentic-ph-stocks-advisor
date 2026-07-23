@@ -105,5 +105,32 @@ def fetch_stock_price(symbol: str) -> StockPrice:
             price_catalysts=catalysts,
         )
 
-    logger.warning("DragonFi returned no price data for %s", symbol)
+    # DragonFi could not provide a price — fall back to the PSE EDGE
+    # stockData page (independent source; kept the price dimension alive
+    # during DragonFi's 2026-07-23 HTTP 515 outage). The snapshot is
+    # reshaped like a DragonFi profile so catalyst detection still works
+    # (dividend catalysts skip — no yield data — but the near-52-week-high
+    # catalyst only needs prices).
+    logger.warning("DragonFi returned no price data for %s — trying PSE EDGE", symbol)
+    from ph_stocks_advisor.data.clients.pse_edge import fetch_stock_snapshot
+
+    snapshot = fetch_stock_snapshot(symbol)
+    if snapshot:
+        pseudo_profile = {
+            "price": snapshot["price"],
+            "weekHigh52": snapshot["week_high"],
+            "weekLow52": snapshot["week_low"],
+            "prevDayClosePrice": snapshot["previous_close"],
+        }
+        return StockPrice(
+            symbol=symbol,
+            current_price=snapshot["price"],
+            currency="PHP",
+            fifty_two_week_high=snapshot["week_high"],
+            fifty_two_week_low=snapshot["week_low"],
+            previous_close=snapshot["previous_close"],
+            price_catalysts=detect_price_catalysts(pseudo_profile),
+        )
+
+    logger.warning("No price data for %s from DragonFi or PSE EDGE", symbol)
     return StockPrice(symbol=symbol, current_price=0.0, currency="PHP")

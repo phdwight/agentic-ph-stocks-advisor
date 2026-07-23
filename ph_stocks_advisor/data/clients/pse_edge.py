@@ -106,6 +106,60 @@ def symbol_exists(symbol: str) -> bool | None:
         return None
 
 
+_SNAPSHOT_FIELDS = {
+    "Last Traded Price": "price",
+    "Previous Close and Date": "previous_close",
+    "52-Week High": "week_high",
+    "52-Week Low": "week_low",
+    "Outstanding Shares": "shares_outstanding",
+}
+
+
+def fetch_stock_snapshot(symbol: str) -> dict[str, float] | None:
+    """Scrape a market-data snapshot from the PSE EDGE stockData page.
+
+    Fallback price source for when DragonFi is down (its 2026-07-23 HTTP 515
+    outage left the price dimension with no data at all). Returns a dict with
+    ``price``, ``previous_close``, ``week_high``, ``week_low`` and
+    ``shares_outstanding`` (0.0 when a field is blank), or ``None`` when the
+    page or the company lookup is unreachable. Valuation fields (P/E, Book
+    Value) are deliberately NOT scraped — EDGE frequently leaves them blank,
+    so they cannot be a reliable fallback.
+    """
+    clean = symbol.upper().replace(".PS", "")
+    cmpy_id = _resolve_cmpy_id(clean)
+    if not cmpy_id:
+        return None
+    try:
+        resp = requests.get(
+            f"{_base_url()}/companyPage/stockData.do",
+            params={"cmpy_id": cmpy_id},
+            headers={"Referer": _base_url()},
+            timeout=_timeout(),
+        )
+        if resp.status_code != 200:
+            logger.warning("PSE EDGE stockData returned %s for %s", resp.status_code, clean)
+            return None
+        snapshot: dict[str, float] = {}
+        for label, key in _SNAPSHOT_FIELDS.items():
+            m = re.search(
+                rf"<th[^>]*>\s*{re.escape(label)}\s*</th>\s*<td[^>]*>(.*?)</td>",
+                resp.text,
+                re.S,
+            )
+            raw = re.sub(r"<[^>]+>", "", m.group(1)).strip() if m else ""
+            num = re.search(r"[\d,]+(?:\.\d+)?", raw)
+            snapshot[key] = float(num.group(0).replace(",", "")) if num else 0.0
+        if snapshot.get("price", 0.0) <= 0:
+            logger.warning("PSE EDGE stockData had no traded price for %s", clean)
+            return None
+        logger.info("PSE EDGE snapshot for %s: price=%s", clean, snapshot["price"])
+        return snapshot
+    except Exception as exc:
+        logger.warning("PSE EDGE stockData fetch failed for %s: %s", clean, exc)
+        return None
+
+
 def _resolve_security_id(cmpy_id: str) -> str | None:
     """Scrape the stockData page to get the ``security_id`` of common shares.
 

@@ -79,8 +79,11 @@ class TestFetchStockPrice:
         assert result.fifty_two_week_high == 1400.0
         assert result.fifty_two_week_low == 1100.0
 
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=None)
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_profile")
-    def test_empty_dragonfi_returns_minimal(self, mock_profile):
+    def test_empty_dragonfi_returns_minimal(self, mock_profile, _mock_edge):
+        """Both DragonFi AND the PSE EDGE fallback empty -> minimal object
+        (the price agent then degrades to a data gap)."""
         mock_profile.return_value = {}
         result = fetch_stock_price("JFC")
         assert result.current_price == 0.0

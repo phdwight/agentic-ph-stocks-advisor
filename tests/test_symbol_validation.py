@@ -182,3 +182,81 @@ def test_validate_node_still_rejects_unknown_symbols_cleanly():
     with patch.object(wf, "validate_symbol", side_effect=SymbolNotFoundError("Symbol 'ZZZZZ' is not listed")):
         out = node({"symbol": "ZZZZZ"})
     assert "not listed" in (out.get("error") or "")
+
+
+# ---------------------------------------------------------------------------
+# 5. PSE EDGE price-snapshot fallback (DragonFi down)
+# ---------------------------------------------------------------------------
+
+_EDGE_STOCKDATA_HTML = """
+<table>
+<tr><th>Last Traded Price</th><td>37.05</td></tr>
+<tr><th>Previous Close and Date</th><td>37.25<br/>(Jul 22, 2026)</td></tr>
+<tr><th>52-Week High</th><td>45.50</td></tr>
+<tr><th>52-Week Low</th><td>36.10</td></tr>
+<tr><th>Outstanding Shares</th><td>4,156,887,818</td></tr>
+<tr><th>P/E Ratio</th><td></td></tr>
+</table>
+"""
+
+
+def test_edge_snapshot_parses_stockdata_page():
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    resp = MagicMock(status_code=200, text=_EDGE_STOCKDATA_HTML)
+    with (
+        patch.object(pse_edge, "_resolve_cmpy_id", return_value="679"),
+        patch.object(pse_edge.requests, "get", return_value=resp),
+    ):
+        snap = pse_edge.fetch_stock_snapshot("AREIT")
+    assert snap == {
+        "price": 37.05,
+        "previous_close": 37.25,
+        "week_high": 45.5,
+        "week_low": 36.1,
+        "shares_outstanding": 4_156_887_818.0,
+    }
+
+
+def test_edge_snapshot_none_when_company_unresolvable():
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    with patch.object(pse_edge, "_resolve_cmpy_id", return_value=None):
+        assert pse_edge.fetch_stock_snapshot("AREIT") is None
+
+
+def test_price_service_falls_back_to_edge_when_dragonfi_down():
+    from ph_stocks_advisor.data.services import price as price_mod
+
+    snap = {
+        "price": 37.05,
+        "previous_close": 37.25,
+        "week_high": 45.5,
+        "week_low": 36.1,
+        "shares_outstanding": 4e9,
+    }
+    with (
+        patch.object(price_mod, "fetch_stock_profile", return_value={}),
+        patch(
+            "ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot",
+            return_value=snap,
+        ),
+    ):
+        sp = price_mod.fetch_stock_price("AREIT")
+    assert sp.current_price == 37.05
+    assert sp.previous_close == 37.25
+    assert sp.fifty_two_week_high == 45.5
+
+
+def test_price_service_minimal_when_both_sources_down():
+    from ph_stocks_advisor.data.services import price as price_mod
+
+    with (
+        patch.object(price_mod, "fetch_stock_profile", return_value={}),
+        patch(
+            "ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot",
+            return_value=None,
+        ),
+    ):
+        sp = price_mod.fetch_stock_price("AREIT")
+    assert sp.current_price == 0.0  # empty -> price agent degrades to a data gap
