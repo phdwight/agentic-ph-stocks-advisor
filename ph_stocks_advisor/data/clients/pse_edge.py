@@ -48,11 +48,20 @@ _ID_CACHE: dict[str, tuple[str, str]] = {}
 # ---------------------------------------------------------------------------
 
 
+# symbol → cmpy_id memo (stable mappings; only successes are cached).
+_CMPY_ID_CACHE: dict[str, str] = {}
+
+
 def _resolve_cmpy_id(symbol: str) -> str | None:
     """Look up the PSE EDGE ``cmpy_id`` for a ticker symbol.
 
     Uses the autocomplete endpoint and returns the first exact match.
+    Successful lookups are memoised — one analysis touches this from the
+    price, valuation, and dividend fallbacks, and the mapping never changes.
     """
+    cached = _CMPY_ID_CACHE.get(symbol.upper())
+    if cached:
+        return cached
     try:
         resp = requests.get(
             f"{_base_url()}/autoComplete/searchCompanyNameSymbol.ax",
@@ -67,7 +76,9 @@ def _resolve_cmpy_id(symbol: str) -> str | None:
         results: list[dict[str, Any]] = resp.json()
         for item in results:
             if item.get("symbol", "").upper() == symbol.upper():
-                return str(item["cmpyId"])
+                cmpy_id = str(item["cmpyId"])
+                _CMPY_ID_CACHE[symbol.upper()] = cmpy_id
+                return cmpy_id
 
         logger.debug("PSE EDGE autocomplete: no exact match for %s in %s", symbol, results)
         return None
@@ -161,14 +172,18 @@ def fetch_stock_snapshot(symbol: str) -> dict[str, float] | None:
 
 
 def _num(raw: str) -> float:
-    """Parse an EDGE financial figure ("12,959,780,593", "(123)" = negative)."""
+    """Parse an EDGE financial figure.
+
+    Handles both negative conventions: parenthesised "(123)" (the PSE
+    filing style) and a leading minus "-123".
+    """
     raw = raw.strip()
     neg = raw.startswith("(") and raw.endswith(")")
-    m = re.search(r"[\d,]+(?:\.\d+)?", raw)
+    m = re.search(r"-?[\d,]+(?:\.\d+)?", raw)
     if not m:
         return 0.0
     val = float(m.group(0).replace(",", ""))
-    return -val if neg else val
+    return -abs(val) if neg else val
 
 
 def _parse_two_col_table(table_html: str) -> dict[str, tuple[float, float]]:
@@ -219,8 +234,15 @@ def fetch_annual_financials(symbol: str) -> dict[str, object] | None:
         if not income:
             return None
         # The audited fiscal-year end is the earliest full date on the page
-        # (interim period-ends are always later than or equal to it).
-        years = [int(y) for y in re.findall(r"[A-Z][a-z]{2,8}\.? \d{1,2},? (\d{4})", resp.text)]
+        # (interim period-ends are always later than or equal to it). Only
+        # consider recent years so a stray old date elsewhere in the HTML
+        # (footer, disclosure reference) cannot mislabel the trend.
+        this_year = datetime.now().year
+        years = [
+            int(y)
+            for y in re.findall(r"[A-Z][a-z]{2,8}\.? \d{1,2},? (\d{4})", resp.text)
+            if this_year - 3 <= int(y) <= this_year + 1
+        ]
         fiscal_year = min(years) if years else None
         bvps = (balance or {}).get("Book Value Per Share", (0.0, 0.0))
         eps = income.get("Earnings/(Loss) Per Share (Basic)", (0.0, 0.0))

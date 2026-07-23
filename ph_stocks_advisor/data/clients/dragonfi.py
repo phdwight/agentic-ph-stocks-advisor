@@ -128,10 +128,13 @@ def validate_pse_symbol(symbol: str) -> str:
         logger.info("Symbol %s verified via PSE EDGE fallback (DragonFi could not confirm)", clean)
         return clean
 
-    if all_codes or edge is False:
-        # At least one source answered definitively: either DragonFi's full
-        # listing universe is loaded (and the symbol is absent from it), or
-        # PSE EDGE searched successfully and found no match.
+    if all_codes:
+        # DragonFi's full listing universe is loaded, the symbol is absent
+        # from it, and neither the profile probe nor PSE EDGE could produce
+        # it — a definitive rejection. NB: an EDGE no-match alone is NOT
+        # definitive: its autocomplete omits preferred shares (GTPPB/SMC2I
+        # return [] despite being listed), so during a DragonFi outage an
+        # EDGE miss must fail transiently, never as "not listed".
         raise SymbolNotFoundError(
             f"Symbol '{clean}' is not listed on the Philippine Stock Exchange. "
             f"Please verify the ticker at https://dragonfi.ph/market/stocks/"

@@ -28,9 +28,13 @@ from ph_stocks_advisor.data.clients.dragonfi import (
 
 @pytest.fixture(autouse=True)
 def _fresh_code_cache():
+    from ph_stocks_advisor.data.clients import pse_edge
+
     dragonfi._STOCK_CODES_CACHE = None
+    pse_edge._CMPY_ID_CACHE.clear()
     yield
     dragonfi._STOCK_CODES_CACHE = None
+    pse_edge._CMPY_ID_CACHE.clear()
 
 
 def _edge(result):
@@ -61,11 +65,16 @@ def test_dragonfi_down_but_edge_confirms_symbol():
         assert dragonfi.validate_pse_symbol("AREIT") == "AREIT"
 
 
-def test_dragonfi_down_but_edge_definitively_rejects():
-    """EDGE searched successfully and found no match → real not-found even
-    while DragonFi is down."""
-    with patch.object(dragonfi, "_get", return_value=None), _edge(False), pytest.raises(SymbolNotFoundError):
-        dragonfi.validate_pse_symbol("ZZZZZ")
+def test_dragonfi_down_edge_no_match_is_transient_not_rejected():
+    """Outage + EDGE no-match must fail TRANSIENTLY: EDGE's autocomplete
+    omits preferred shares (GTPPB/SMC2I return [] despite being listed), so
+    its miss alone can never justify a definitive "not listed"."""
+    with (
+        patch.object(dragonfi, "_get", return_value=None),
+        _edge(False),
+        pytest.raises(SymbolValidationUnavailableError),
+    ):
+        dragonfi.validate_pse_symbol("GTPPB")
 
 
 def test_newly_listed_symbol_absent_from_dragonfi_universe():
@@ -352,3 +361,56 @@ def test_no_dividend_stock_with_live_profile_stays_a_clean_gap():
     with patch.object(div_mod, "fetch_stock_profile", return_value={"dividendYield": 0, "price": 1.0}):
         info = div_mod.fetch_dividend_info("DITO")
     assert _is_empty_dividend_info(info)  # -> dividend agent degrades to a gap
+
+
+# ---------------------------------------------------------------------------
+# 7. Review hardening: negatives, fiscal-year window, cmpy_id memo
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("12,959,780,593", 12_959_780_593.0),
+        ("(1,234.56)", -1234.56),  # PSE filing convention
+        ("-1,234.56", -1234.56),  # minus-sign convention
+        ("", 0.0),
+    ],
+)
+def test_num_parses_both_negative_conventions(raw, expected):
+    from ph_stocks_advisor.data.clients.pse_edge import _num
+
+    assert _num(raw) == expected
+
+
+def test_fiscal_year_ignores_stray_old_dates():
+    """A footer/disclosure date years in the past must not become the
+    fiscal-year label for the trend dict."""
+    from datetime import datetime
+
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    this_year = datetime.now().year
+    html = _EDGE_FIN_HTML.replace(
+        "<p>Dec 31, 2025</p>",
+        f"<p>Copyright Jan 01, 2010</p><p>Dec 31, {this_year - 1}</p>",
+    ).replace("<p>Mar 31, 2026</p>", f"<p>Mar 31, {this_year}</p>")
+    resp = MagicMock(status_code=200, text=html)
+    with (
+        patch.object(pse_edge, "_resolve_cmpy_id", return_value="679"),
+        patch.object(pse_edge.requests, "get", return_value=resp),
+    ):
+        fin = pse_edge.fetch_annual_financials("AREIT")
+    assert fin is not None
+    assert fin["fiscal_year"] == this_year - 1  # not 2010
+
+
+def test_cmpy_id_lookup_is_memoised():
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = [{"cmpyId": "679", "cmpyNm": "AREIT, Inc.", "symbol": "AREIT"}]
+    with patch.object(pse_edge.requests, "get", return_value=resp) as mock_get:
+        assert pse_edge._resolve_cmpy_id("AREIT") == "679"
+        assert pse_edge._resolve_cmpy_id("AREIT") == "679"
+    assert mock_get.call_count == 1  # second call served from the memo
