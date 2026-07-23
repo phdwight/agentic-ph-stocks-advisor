@@ -297,9 +297,11 @@ class TestFetchFairValue:
         assert result.pe_ratio == 10.0
         assert result.pb_ratio == 2.0
 
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=None)
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=None)
     @patch("ph_stocks_advisor.data.services.valuation.fetch_security_valuation")
     @patch("ph_stocks_advisor.data.services.valuation.fetch_stock_profile")
-    def test_empty_dragonfi_returns_minimal(self, mock_profile, mock_valuation):
+    def test_empty_dragonfi_returns_minimal(self, mock_profile, mock_valuation, _snap, _fin):
         mock_profile.return_value = {"price": 0}
         mock_valuation.return_value = {}
         result = fetch_fair_value("ACEN")

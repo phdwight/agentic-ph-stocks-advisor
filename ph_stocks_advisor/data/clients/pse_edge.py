@@ -160,6 +160,94 @@ def fetch_stock_snapshot(symbol: str) -> dict[str, float] | None:
         return None
 
 
+def _num(raw: str) -> float:
+    """Parse an EDGE financial figure ("12,959,780,593", "(123)" = negative)."""
+    raw = raw.strip()
+    neg = raw.startswith("(") and raw.endswith(")")
+    m = re.search(r"[\d,]+(?:\.\d+)?", raw)
+    if not m:
+        return 0.0
+    val = float(m.group(0).replace(",", ""))
+    return -val if neg else val
+
+
+def _parse_two_col_table(table_html: str) -> dict[str, tuple[float, float]]:
+    """Parse an EDGE annual table: row-label THs each paired with two TDs
+    (Current Year, Previous Year). The first three THs are column headers."""
+    ths = [re.sub(r"<[^>]+>", "", x).strip() for x in re.findall(r"<th[^>]*>(.*?)</th>", table_html, re.S)]
+    tds = [re.sub(r"<[^>]+>", "", x).strip() for x in re.findall(r"<td[^>]*>(.*?)</td>", table_html, re.S)]
+    labels = ths[3:]  # skip Item / Current Year / Previous Year
+    out: dict[str, tuple[float, float]] = {}
+    for i, label in enumerate(labels):
+        cur, prev = tds[2 * i : 2 * i + 2] + [""] * (2 - len(tds[2 * i : 2 * i + 2]))
+        out[label] = (_num(cur), _num(prev))
+    return out
+
+
+def fetch_annual_financials(symbol: str) -> dict[str, object] | None:
+    """Scrape audited annual fundamentals from the EDGE financial-reports page.
+
+    Fallback source for when DragonFi's financial endpoints are down: the
+    page renders the latest 17-A figures as structured HTML — revenue, net
+    income, EPS and book value per share for the current and previous
+    fiscal year. Returns ``None`` when the page or company lookup fails.
+    Quarterly tables are ignored (annual audited figures only).
+    """
+    clean = symbol.upper().replace(".PS", "")
+    cmpy_id = _resolve_cmpy_id(clean)
+    if not cmpy_id:
+        return None
+    try:
+        resp = requests.get(
+            f"{_base_url()}/companyPage/financial_reports_view.do",
+            params={"cmpy_id": cmpy_id},
+            headers={"Referer": _base_url()},
+            timeout=_timeout(),
+        )
+        if resp.status_code != 200:
+            logger.warning("PSE EDGE financial reports returned %s for %s", resp.status_code, clean)
+            return None
+        tables = re.findall(r"<table[^>]*>(.*?)</table>", resp.text, re.S)
+        balance = income = None
+        for tb in tables:
+            if ">Current Year<" not in tb:
+                continue  # quarterly tables use different column headers
+            if "Book Value Per Share" in tb and balance is None:
+                balance = _parse_two_col_table(tb)
+            elif "Gross Revenue" in tb and income is None:
+                income = _parse_two_col_table(tb)
+        if not income:
+            return None
+        # The audited fiscal-year end is the earliest full date on the page
+        # (interim period-ends are always later than or equal to it).
+        years = [int(y) for y in re.findall(r"[A-Z][a-z]{2,8}\.? \d{1,2},? (\d{4})", resp.text)]
+        fiscal_year = min(years) if years else None
+        bvps = (balance or {}).get("Book Value Per Share", (0.0, 0.0))
+        eps = income.get("Earnings/(Loss) Per Share (Basic)", (0.0, 0.0))
+        revenue = income.get("Gross Revenue", (0.0, 0.0))
+        net_income = income.get("Net Income/(Loss) After Tax", (0.0, 0.0))
+        result = {
+            "fiscal_year": fiscal_year,
+            "revenue": revenue,
+            "net_income": net_income,
+            "eps": eps[0],
+            "eps_previous": eps[1],
+            "book_value_per_share": bvps[0],
+            "bvps_previous": bvps[1],
+        }
+        logger.info(
+            "PSE EDGE annual financials for %s: FY%s eps=%s bvps=%s",
+            clean,
+            fiscal_year,
+            eps[0],
+            bvps[0],
+        )
+        return result
+    except Exception as exc:
+        logger.warning("PSE EDGE financial reports fetch failed for %s: %s", clean, exc)
+        return None
+
+
 def _resolve_security_id(cmpy_id: str) -> str | None:
     """Scrape the stockData page to get the ``security_id`` of common shares.
 

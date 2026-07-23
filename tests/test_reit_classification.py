@@ -38,6 +38,8 @@ def test_fair_value_keeps_reit_flag_when_valuation_data_missing():
     with (
         patch.object(val_mod, "fetch_stock_profile", return_value={"isREIT": True, "price": 0}),
         patch.object(val_mod, "fetch_security_valuation", return_value={}),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=None),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=None),
     ):
         assert val_mod.fetch_fair_value("SYM").is_reit is True
 

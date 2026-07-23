@@ -260,3 +260,95 @@ def test_price_service_minimal_when_both_sources_down():
     ):
         sp = price_mod.fetch_stock_price("AREIT")
     assert sp.current_price == 0.0  # empty -> price agent degrades to a data gap
+
+
+# ---------------------------------------------------------------------------
+# 6. PSE EDGE annual-financials fallback (valuation + dividend enrichment)
+# ---------------------------------------------------------------------------
+
+_EDGE_FIN_HTML = """
+<h3>Annual</h3>
+<table><tr><th>Item</th><th>Current Year</th><th>Previous Year</th></tr>
+<tr><th>Current Assets</th><td>7,288,692,975</td><td>4,557,171,311</td></tr>
+<tr><th>Book Value Per Share</th><td>36.57</td><td>35.32</td></tr></table>
+<table><tr><th>Item</th><th>Current Year</th><th>Previous Year</th></tr>
+<tr><th>Gross Revenue</th><td>12,959,780,593</td><td>10,259,166,947</td></tr>
+<tr><th>Net Income/(Loss) After Tax</th><td>9,539,219,827</td><td>7,317,064,621</td></tr>
+<tr><th>Earnings/(Loss) Per Share (Basic)</th><td>2.75</td><td>2.62</td></tr></table>
+<h3>Quarterly</h3>
+<table><tr><th>Item</th><th>Period Ended</th><th>Fiscal Year Ended(Audited)</th></tr>
+<tr><th>Gross Revenue</th><td>3,544,796,053</td><td>2,920,729,793</td></tr></table>
+<p>Dec 31, 2025</p><p>Mar 31, 2026</p>
+"""
+
+_FIN = {
+    "fiscal_year": 2025,
+    "revenue": (12_959_780_593.0, 10_259_166_947.0),
+    "net_income": (9_539_219_827.0, 7_317_064_621.0),
+    "eps": 2.75,
+    "eps_previous": 2.62,
+    "book_value_per_share": 36.57,
+    "bvps_previous": 35.32,
+}
+
+
+def test_edge_annual_financials_parser():
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    resp = MagicMock(status_code=200, text=_EDGE_FIN_HTML)
+    with (
+        patch.object(pse_edge, "_resolve_cmpy_id", return_value="679"),
+        patch.object(pse_edge.requests, "get", return_value=resp),
+    ):
+        fin = pse_edge.fetch_annual_financials("AREIT")
+    assert fin is not None
+    assert fin["fiscal_year"] == 2025  # earliest date = audited FY end
+    assert fin["eps"] == 2.75
+    assert fin["book_value_per_share"] == 36.57
+    assert fin["net_income"] == (9_539_219_827.0, 7_317_064_621.0)
+    revenue = fin["revenue"]
+    assert isinstance(revenue, tuple)
+    assert revenue[0] == 12_959_780_593.0  # annual, not the quarterly 3.5B
+
+
+def test_valuation_falls_back_to_edge_graham():
+    from ph_stocks_advisor.data.services import valuation as val_mod
+
+    snap = {"price": 37.05, "previous_close": 37.25, "week_high": 45.5, "week_low": 36.1, "shares_outstanding": 4e9}
+    with (
+        patch.object(val_mod, "fetch_stock_profile", return_value={}),
+        patch.object(val_mod, "fetch_security_valuation", return_value={}),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=snap),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=dict(_FIN)),
+    ):
+        fv = val_mod.fetch_fair_value("AREIT")
+    assert fv.current_price == 37.05
+    assert fv.pe_ratio == round(37.05 / 2.75, 2)
+    assert fv.pb_ratio == round(37.05 / 36.57, 2)
+    assert fv.estimated_fair_value > 0  # Graham number from EPS + BVPS
+    assert fv.is_reit is False  # unknown during an outage — never inferred
+
+
+def test_dividend_outage_enrichment_from_edge():
+    from ph_stocks_advisor.data.services import dividend as div_mod
+
+    with (
+        patch.object(div_mod, "fetch_stock_profile", return_value={}),  # OUTAGE
+        patch.object(div_mod, "fetch_company_dividend_announcements", return_value=[]),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=dict(_FIN)),
+    ):
+        info = div_mod.fetch_dividend_info("AREIT")
+    assert info.net_income_trend == {"2024": 7_317_064_621.0, "2025": 9_539_219_827.0}
+    assert info.revenue_trend["2025"] == 12_959_780_593.0
+    assert "unavailable" in info.dividend_sustainability_note.lower()
+
+
+def test_no_dividend_stock_with_live_profile_stays_a_clean_gap():
+    """A live DragonFi profile with zero yield must NOT be EDGE-enriched —
+    a pays-no-dividend stock keeps its clean "no dividend history" gap."""
+    from ph_stocks_advisor.agents.specialists import _is_empty_dividend_info
+    from ph_stocks_advisor.data.services import dividend as div_mod
+
+    with patch.object(div_mod, "fetch_stock_profile", return_value={"dividendYield": 0, "price": 1.0}):
+        info = div_mod.fetch_dividend_info("DITO")
+    assert _is_empty_dividend_info(info)  # -> dividend agent degrades to a gap
