@@ -77,6 +77,35 @@ def _resolve_cmpy_id(symbol: str) -> str | None:
         return None
 
 
+def symbol_exists(symbol: str) -> bool | None:
+    """Tri-state PSE EDGE listing check via the autocomplete endpoint.
+
+    Returns ``True`` when an exact symbol match exists, ``False`` when the
+    endpoint answered but had no match (definitively not listed), and
+    ``None`` when the endpoint could not be reached — callers must treat
+    ``None`` as "unknown", never as "not listed". Used as the validation
+    fallback when DragonFi is down (e.g. its 2026-07-23 HTTP 515 outage).
+    """
+    clean = symbol.upper().replace(".PS", "")
+    try:
+        resp = requests.get(
+            f"{_base_url()}/autoComplete/searchCompanyNameSymbol.ax",
+            params={"term": clean},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=_timeout(),
+        )
+        if resp.status_code != 200:
+            logger.warning("PSE EDGE symbol_exists: HTTP %s for %s", resp.status_code, clean)
+            return None
+        results = resp.json()
+        if not isinstance(results, list):
+            return None
+        return any(isinstance(item, dict) and item.get("symbol", "").upper() == clean for item in results)
+    except Exception as exc:
+        logger.warning("PSE EDGE symbol_exists failed for %s: %s", clean, exc)
+        return None
+
+
 def _resolve_security_id(cmpy_id: str) -> str | None:
     """Scrape the stockData page to get the ``security_id`` of common shares.
 

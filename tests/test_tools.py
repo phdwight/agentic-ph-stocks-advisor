@@ -411,7 +411,10 @@ class TestValidatePseSymbolDragonFi:
         mock_get.return_value = None
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
 
-        with pytest.raises(SymbolNotFoundError, match="not listed"):
+        with (
+            patch("ph_stocks_advisor.data.clients.pse_edge.symbol_exists", return_value=False),
+            pytest.raises(SymbolNotFoundError, match="not listed"),
+        ):
             validate_pse_symbol("DOESNOTEXIST")
 
 

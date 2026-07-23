@@ -33,16 +33,51 @@ def _fresh_code_cache():
     dragonfi._STOCK_CODES_CACHE = None
 
 
+def _edge(result):
+    """Patch the PSE EDGE fallback (imported inside validate_pse_symbol)."""
+    return patch("ph_stocks_advisor.data.clients.pse_edge.symbol_exists", return_value=result)
+
+
 # ---------------------------------------------------------------------------
 # 1 + 2. DragonFi validation semantics
 # ---------------------------------------------------------------------------
 
 
-def test_outage_raises_unavailable_not_notfound():
-    """List fetch fails AND profile probe fails → transient error, never
-    a definitive "not listed"."""
-    with patch.object(dragonfi, "_get", return_value=None), pytest.raises(SymbolValidationUnavailableError):
+def test_total_outage_raises_unavailable_not_notfound():
+    """DragonFi down AND PSE EDGE down → transient error, never a
+    definitive "not listed"."""
+    with (
+        patch.object(dragonfi, "_get", return_value=None),
+        _edge(None),
+        pytest.raises(SymbolValidationUnavailableError),
+    ):
         dragonfi.validate_pse_symbol("AREIT")
+
+
+def test_dragonfi_down_but_edge_confirms_symbol():
+    """The 2026-07-23 incident: DragonFi 515s, PSE EDGE up — a listed
+    symbol must validate via the exchange's own registry."""
+    with patch.object(dragonfi, "_get", return_value=None), _edge(True):
+        assert dragonfi.validate_pse_symbol("AREIT") == "AREIT"
+
+
+def test_dragonfi_down_but_edge_definitively_rejects():
+    """EDGE searched successfully and found no match → real not-found even
+    while DragonFi is down."""
+    with patch.object(dragonfi, "_get", return_value=None), _edge(False), pytest.raises(SymbolNotFoundError):
+        dragonfi.validate_pse_symbol("ZZZZZ")
+
+
+def test_newly_listed_symbol_absent_from_dragonfi_universe():
+    """Universe loaded but stale (symbol missing) + EDGE confirms → valid."""
+
+    def fake_get(path, params=None):
+        if "GetStockProfileList" in path:
+            return [{"stockCode": "TEL"}]
+        return None
+
+    with patch.object(dragonfi, "_get", side_effect=fake_get), _edge(True):
+        assert dragonfi.validate_pse_symbol("NEWIPO") == "NEWIPO"
 
 
 def test_genuinely_unknown_symbol_still_rejected():
@@ -54,7 +89,7 @@ def test_genuinely_unknown_symbol_still_rejected():
             return [{"stockCode": "TEL"}, {"stockCode": "AREIT"}]
         return None  # profile probe: 204 for unknown
 
-    with patch.object(dragonfi, "_get", side_effect=fake_get):
+    with patch.object(dragonfi, "_get", side_effect=fake_get), _edge(None):
         assert dragonfi.validate_pse_symbol("AREIT") == "AREIT"
         with pytest.raises(SymbolNotFoundError):
             dragonfi.validate_pse_symbol("ZZZZZ")
@@ -71,7 +106,7 @@ def test_empty_code_list_is_not_cached():
             return None if calls["n"] == 1 else [{"stockCode": "AREIT"}]
         return None
 
-    with patch.object(dragonfi, "_get", side_effect=flaky_get):
+    with patch.object(dragonfi, "_get", side_effect=flaky_get), _edge(None):
         with pytest.raises(SymbolValidationUnavailableError):
             dragonfi.validate_pse_symbol("AREIT")  # outage
         assert dragonfi.validate_pse_symbol("AREIT") == "AREIT"  # recovered

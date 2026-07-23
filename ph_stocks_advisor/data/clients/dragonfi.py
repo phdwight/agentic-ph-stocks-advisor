@@ -117,18 +117,30 @@ def validate_pse_symbol(symbol: str) -> str:
     if profile and isinstance(profile, dict) and profile.get("stockCode"):
         return profile["stockCode"].upper()
 
-    if not all_codes:
-        # We could not load the listing universe AND the profile probe came
-        # back empty — DragonFi is unreachable or degraded, so we cannot
-        # distinguish "not listed" from "upstream down". Fail transiently.
-        raise SymbolValidationUnavailableError(
-            f"Could not verify '{clean}' right now — the market data source "
-            f"is temporarily unavailable. Please try again in a moment."
+    # DragonFi could not confirm the symbol. Before rejecting, ask the
+    # exchange's own registry: PSE EDGE's company search is authoritative
+    # for listing status and independent of DragonFi (which was fully down
+    # with HTTP 515s on 2026-07-23 while EDGE stayed up).
+    from ph_stocks_advisor.data.clients.pse_edge import symbol_exists
+
+    edge = symbol_exists(clean)
+    if edge is True:
+        logger.info("Symbol %s verified via PSE EDGE fallback (DragonFi could not confirm)", clean)
+        return clean
+
+    if all_codes or edge is False:
+        # At least one source answered definitively: either DragonFi's full
+        # listing universe is loaded (and the symbol is absent from it), or
+        # PSE EDGE searched successfully and found no match.
+        raise SymbolNotFoundError(
+            f"Symbol '{clean}' is not listed on the Philippine Stock Exchange. "
+            f"Please verify the ticker at https://dragonfi.ph/market/stocks/"
         )
 
-    raise SymbolNotFoundError(
-        f"Symbol '{clean}' is not listed on the Philippine Stock Exchange. "
-        f"Please verify the ticker at https://dragonfi.ph/market/stocks/"
+    # Neither source could answer — fail transiently, never definitively.
+    raise SymbolValidationUnavailableError(
+        f"Could not verify '{clean}' right now — the market data source "
+        f"is temporarily unavailable. Please try again in a moment."
     )
 
 
