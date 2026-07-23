@@ -14,14 +14,31 @@ from ph_stocks_advisor.data.models import SentimentInfo
 logger = logging.getLogger(__name__)
 
 
-def _fetch_sector(symbol: str) -> str:
-    """Best-effort sector lookup via DragonFi."""
+def _fetch_profile_context(symbol: str) -> tuple[str, bool]:
+    """Best-effort (sector, is_reit) lookup via DragonFi — one profile call.
+
+    ``is_reit`` must reach the agent payload explicitly (never inferred by
+    the LLM — see the REIT-classification contract).
+    """
     try:
         from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_profile
 
         profile = fetch_stock_profile(symbol)
-        return str(profile.get("sector", "")) if profile else ""
+        if not profile:
+            return "", False
+        return str(profile.get("sector", "")), bool(profile.get("isREIT", False))
     except Exception:
+        return "", False
+
+
+def _fetch_bsp_rate() -> str:
+    """Fetch BSP policy-rate / bond-yield context from Tavily (empty-safe)."""
+    try:
+        from ph_stocks_advisor.data.clients.tavily_search import search_bsp_rate
+
+        return search_bsp_rate()
+    except Exception as exc:
+        logger.debug("BSP rate search unavailable: %s", exc)
         return ""
 
 
@@ -49,11 +66,14 @@ def fetch_sentiment_info(symbol: str) -> SentimentInfo:
     enrich the data via its tool-calling capability.
     """
     symbol = symbol.upper().replace(".PS", "")
-    sector = _fetch_sector(symbol)
+    sector, is_reit = _fetch_profile_context(symbol)
     global_news = _fetch_global_events_news(symbol)
+    bsp_rate = _fetch_bsp_rate()
 
     return SentimentInfo(
         symbol=symbol,
         global_events_news=global_news,
         sector=sector,
+        bsp_rate=bsp_rate,
+        is_reit=is_reit,
     )

@@ -528,3 +528,13 @@ def test_real_sections_with_content_are_never_dropped():
         "Dividend Analysis",
         "Sentiment / Global Events Analysis",
     ]
+
+
+def test_verdict_panel_states_new_position_scope(page_client):
+    """The verdict explicitly says it assumes a NEW position (an external
+    review flagged that a generic BUY reads as advice for existing holders)."""
+    from ph_stocks_advisor.infra.config import get_repository
+
+    get_repository().save(_record(score=63))
+    html = page_client.get("/report/TEL").get_data(as_text=True)
+    assert "Assumes a new position" in html
