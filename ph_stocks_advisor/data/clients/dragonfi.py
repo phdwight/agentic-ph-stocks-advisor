@@ -14,7 +14,6 @@ This module serves two purposes:
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from typing import Any
 
 import requests
@@ -62,21 +61,38 @@ def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any] | li
 # ---------------------------------------------------------------------------
 
 
+class SymbolValidationUnavailableError(Exception):
+    """Raised when listing status COULD NOT BE VERIFIED (transient upstream
+    failure) — deliberately distinct from :class:`SymbolNotFoundError`, which
+    is a definitive "not listed". A DragonFi outage must never be reported to
+    the user as "this symbol is not on the PSE"."""
+
+
 class SymbolNotFoundError(Exception):
     """Raised when a ticker cannot be found on PSE via DragonFi."""
 
 
-@lru_cache(maxsize=1)
+_STOCK_CODES_CACHE: frozenset[str] | None = None
+
+
 def _fetch_all_stock_codes() -> frozenset[str]:
     """Return the set of all common-stock codes listed on DragonFi.
 
-    The result is cached for the lifetime of the process so that repeated
-    validations don't hit the network.
+    A NON-EMPTY result is cached for the lifetime of the process. An empty
+    result (DragonFi outage / bad response) is deliberately NOT cached —
+    an @lru_cache here once pinned an empty list for the whole process
+    lifetime, making every later validation depend on a single profile
+    probe and misreporting listed symbols as "not on the PSE".
     """
+    global _STOCK_CODES_CACHE
+    if _STOCK_CODES_CACHE:
+        return _STOCK_CODES_CACHE
     data = _get("Securities/GetStockProfileList", {"isPreferredStock": "false"})
     if data and isinstance(data, list):
         codes = frozenset(item["stockCode"].upper() for item in data if isinstance(item, dict) and "stockCode" in item)
         logger.info("Loaded %d PSE stock codes from DragonFi", len(codes))
+        if codes:
+            _STOCK_CODES_CACHE = codes
         return codes
     return frozenset()
 
@@ -101,9 +117,33 @@ def validate_pse_symbol(symbol: str) -> str:
     if profile and isinstance(profile, dict) and profile.get("stockCode"):
         return profile["stockCode"].upper()
 
-    raise SymbolNotFoundError(
-        f"Symbol '{clean}' is not listed on the Philippine Stock Exchange. "
-        f"Please verify the ticker at https://dragonfi.ph/market/stocks/"
+    # DragonFi could not confirm the symbol. Before rejecting, ask the
+    # exchange's own registry: PSE EDGE's company search is authoritative
+    # for listing status and independent of DragonFi (which was fully down
+    # with HTTP 515s on 2026-07-23 while EDGE stayed up).
+    from ph_stocks_advisor.data.clients.pse_edge import symbol_exists
+
+    edge = symbol_exists(clean)
+    if edge is True:
+        logger.info("Symbol %s verified via PSE EDGE fallback (DragonFi could not confirm)", clean)
+        return clean
+
+    if all_codes:
+        # DragonFi's full listing universe is loaded, the symbol is absent
+        # from it, and neither the profile probe nor PSE EDGE could produce
+        # it — a definitive rejection. NB: an EDGE no-match alone is NOT
+        # definitive: its autocomplete omits preferred shares (GTPPB/SMC2I
+        # return [] despite being listed), so during a DragonFi outage an
+        # EDGE miss must fail transiently, never as "not listed".
+        raise SymbolNotFoundError(
+            f"Symbol '{clean}' is not listed on the Philippine Stock Exchange. "
+            f"Please verify the ticker at https://dragonfi.ph/market/stocks/"
+        )
+
+    # Neither source could answer — fail transiently, never definitively.
+    raise SymbolValidationUnavailableError(
+        f"Could not verify '{clean}' right now — the market data source "
+        f"is temporarily unavailable. Please try again in a moment."
     )
 
 

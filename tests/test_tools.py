@@ -79,8 +79,11 @@ class TestFetchStockPrice:
         assert result.fifty_two_week_high == 1400.0
         assert result.fifty_two_week_low == 1100.0
 
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=None)
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_profile")
-    def test_empty_dragonfi_returns_minimal(self, mock_profile):
+    def test_empty_dragonfi_returns_minimal(self, mock_profile, _mock_edge):
+        """Both DragonFi AND the PSE EDGE fallback empty -> minimal object
+        (the price agent then degrades to a data gap)."""
         mock_profile.return_value = {}
         result = fetch_stock_price("JFC")
         assert result.current_price == 0.0
@@ -294,9 +297,11 @@ class TestFetchFairValue:
         assert result.pe_ratio == 10.0
         assert result.pb_ratio == 2.0
 
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=None)
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=None)
     @patch("ph_stocks_advisor.data.services.valuation.fetch_security_valuation")
     @patch("ph_stocks_advisor.data.services.valuation.fetch_stock_profile")
-    def test_empty_dragonfi_returns_minimal(self, mock_profile, mock_valuation):
+    def test_empty_dragonfi_returns_minimal(self, mock_profile, mock_valuation, _snap, _fin):
         mock_profile.return_value = {"price": 0}
         mock_valuation.return_value = {}
         result = fetch_fair_value("ACEN")
@@ -404,11 +409,17 @@ class TestValidatePseSymbolDragonFi:
     @patch("ph_stocks_advisor.data.clients.dragonfi._get")
     @patch("ph_stocks_advisor.data.clients.dragonfi._fetch_all_stock_codes")
     def test_not_found_raises(self, mock_codes, mock_get):
-        mock_codes.return_value = frozenset()
+        """A definitive not-found requires the listing universe to be
+        AVAILABLE — an empty universe is a transient outage instead
+        (see test_symbol_validation.py)."""
+        mock_codes.return_value = frozenset({"TEL", "BDO"})
         mock_get.return_value = None
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
 
-        with pytest.raises(SymbolNotFoundError, match="not listed"):
+        with (
+            patch("ph_stocks_advisor.data.clients.pse_edge.symbol_exists", return_value=False),
+            pytest.raises(SymbolNotFoundError, match="not listed"),
+        ):
             validate_pse_symbol("DOESNOTEXIST")
 
 

@@ -186,6 +186,48 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             dividend_announcements=dividend_announcements,
         )
 
+    if not profile:
+        # DragonFi OUTAGE (no profile at all) — enrich from PSE EDGE so the
+        # dividend agent still sees declared dividends and audited income
+        # trends. Yield/payout stay unset (they need DragonFi pricing data);
+        # the prompt states what could not be computed. This branch is only
+        # for outages: a live profile with zero yield keeps the minimal
+        # return below so a pays-no-dividend stock still reads as a clean
+        # "no dividend history" data gap.
+        logger.warning("DragonFi profile unavailable for %s — trying PSE EDGE enrichment", symbol)
+        from ph_stocks_advisor.data.clients.pse_edge import fetch_annual_financials
+
+        announcements = []
+        try:
+            announcements = fetch_company_dividend_announcements(symbol)
+        except Exception as exc:
+            logger.warning("PSE EDGE dividend announcements failed for %s: %s", symbol, exc)
+        ni_trend: dict[str, float] = {}
+        rev_trend: dict[str, float] = {}
+        fin = fetch_annual_financials(symbol)
+        if fin:
+            fy = fin.get("fiscal_year")
+            cur_key, prev_key = (str(fy), str(int(fy) - 1)) if fy else ("latest", "prior")  # type: ignore[arg-type]
+            ni = fin.get("net_income") or (0.0, 0.0)
+            rev = fin.get("revenue") or (0.0, 0.0)
+            if ni[0]:  # type: ignore[index]
+                ni_trend = {prev_key: float(ni[1]), cur_key: float(ni[0])}  # type: ignore[index]
+            if rev[0]:  # type: ignore[index]
+                rev_trend = {prev_key: float(rev[1]), cur_key: float(rev[0])}  # type: ignore[index]
+        if announcements or ni_trend:
+            return DividendInfo(
+                symbol=symbol,
+                is_reit=is_reit,
+                net_income_trend=ni_trend,
+                revenue_trend=rev_trend,
+                dividend_announcements=announcements,
+                dividend_sustainability_note=(
+                    "Market data source unavailable — yield and payout ratios could "
+                    "not be computed this run. Declared dividends and audited income "
+                    "trends below are sourced from PSE EDGE."
+                ),
+            )
+
     # No dividend data available from DragonFi
     logger.warning("DragonFi returned no dividend data for %s", symbol)
     return DividendInfo(symbol=symbol, is_reit=is_reit)

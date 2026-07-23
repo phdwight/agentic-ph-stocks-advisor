@@ -253,8 +253,14 @@ class _SyncMCPClient:
 
         if result.isError:
             message = _extract_text(result)
-            if message.startswith(_SYMBOL_NOT_FOUND_PREFIX):
-                raise SymbolNotFoundError(message[len(_SYMBOL_NOT_FOUND_PREFIX) :])
+            # The marker may not be at position 0: the MCP framework wraps
+            # tool errors (mcp>=1.28 prefixes "Error executing tool <name>: "),
+            # so search for the marker anywhere. A startswith() check here
+            # silently broke not-found handling after the 1.28 upgrade —
+            # rejections crashed the worker instead of raising
+            # SymbolNotFoundError.
+            if _SYMBOL_NOT_FOUND_PREFIX in message:
+                raise SymbolNotFoundError(message.split(_SYMBOL_NOT_FOUND_PREFIX, 1)[1])
             raise MCPClientError(f"MCP tool {tool_name!r} failed: {message}")
 
         # FastMCP returns Pydantic models / dicts as ``structuredContent``.
