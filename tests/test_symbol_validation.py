@@ -32,9 +32,11 @@ def _fresh_code_cache():
 
     dragonfi._STOCK_CODES_CACHE = None
     pse_edge._CMPY_ID_CACHE.clear()
+    pse_edge._IS_REIT_CACHE.clear()
     yield
     dragonfi._STOCK_CODES_CACHE = None
     pse_edge._CMPY_ID_CACHE.clear()
+    pse_edge._IS_REIT_CACHE.clear()
 
 
 def _edge(result):
@@ -329,13 +331,14 @@ def test_valuation_falls_back_to_edge_graham():
         patch.object(val_mod, "fetch_security_valuation", return_value={}),
         patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=snap),
         patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=dict(_FIN)),
+        patch("ph_stocks_advisor.data.clients.pse_edge.is_reit_from_edge", return_value=False),
     ):
         fv = val_mod.fetch_fair_value("AREIT")
     assert fv.current_price == 37.05
     assert fv.pe_ratio == round(37.05 / 2.75, 2)
     assert fv.pb_ratio == round(37.05 / 36.57, 2)
     assert fv.estimated_fair_value > 0  # Graham number from EPS + BVPS
-    assert fv.is_reit is False  # unknown during an outage — never inferred
+    assert fv.is_reit is False  # EDGE registry answered non-REIT
 
 
 def test_dividend_outage_enrichment_from_edge():
@@ -414,3 +417,113 @@ def test_cmpy_id_lookup_is_memoised():
         assert pse_edge._resolve_cmpy_id("AREIT") == "679"
         assert pse_edge._resolve_cmpy_id("AREIT") == "679"
     assert mock_get.call_count == 1  # second call served from the memo
+
+
+# ---------------------------------------------------------------------------
+# 8. REIT status from the EDGE company registry (outage fallback)
+# ---------------------------------------------------------------------------
+
+
+def _edge_reit(result):
+    return patch("ph_stocks_advisor.data.clients.pse_edge.is_reit_from_edge", return_value=result)
+
+
+def test_is_reit_from_edge_name_signal():
+    """A company name containing REIT is definitive — no page fetch needed."""
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    pse_edge._IS_REIT_CACHE.clear()
+    ac = MagicMock(status_code=200)
+    ac.json.return_value = [{"cmpyId": "691", "cmpyNm": "Citicore Energy REIT Corp.", "symbol": "CREIT"}]
+    with patch.object(pse_edge.requests, "get", return_value=ac) as mock_get:
+        assert pse_edge.is_reit_from_edge("CREIT") is True
+    assert mock_get.call_count == 1  # autocomplete only
+
+
+def test_is_reit_from_edge_description_signal_and_sponsor_negative():
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    pse_edge._IS_REIT_CACHE.clear()
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        params = params or {}
+        if "autoComplete" in url:
+            resp = MagicMock(status_code=200)
+            resp.json.return_value = [
+                {"cmpyId": "679", "cmpyNm": "AREIT, Inc.", "symbol": "AREIT"},
+                {"cmpyId": "180", "cmpyNm": "Ayala Land, Inc.", "symbol": "ALI"},
+            ]
+            return resp
+        page = MagicMock(status_code=200)
+        if params["cmpy_id"] == "679":
+            page.text = "<b>Company Description</b> AREIT is a commercial Real Estate Investment Trust <b>Sector</b>"
+        else:
+            page.text = "<b>Company Description</b> Ayala Land is a property developer <b>Sector</b>"
+        return page
+
+    with patch.object(pse_edge.requests, "get", side_effect=fake_get):
+        assert pse_edge.is_reit_from_edge("AREIT") is True
+        assert pse_edge.is_reit_from_edge("ALI") is False
+    pse_edge._IS_REIT_CACHE.clear()
+
+
+def test_is_reit_from_edge_unreachable_is_unknown():
+    from ph_stocks_advisor.data.clients import pse_edge
+
+    pse_edge._IS_REIT_CACHE.clear()
+    with patch.object(pse_edge.requests, "get", side_effect=OSError("down")):
+        assert pse_edge.is_reit_from_edge("AREIT") is None
+
+
+def test_valuation_fallback_gets_reit_status_from_edge():
+    from ph_stocks_advisor.data.services import valuation as val_mod
+
+    snap = {"price": 37.05, "previous_close": 37.25, "week_high": 45.5, "week_low": 36.1, "shares_outstanding": 4e9}
+    with (
+        patch.object(val_mod, "fetch_stock_profile", return_value={}),
+        patch.object(val_mod, "fetch_security_valuation", return_value={}),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=snap),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=dict(_FIN)),
+        _edge_reit(True),
+    ):
+        assert val_mod.fetch_fair_value("AREIT").is_reit is True
+
+
+def test_sentiment_outage_gets_reit_status_from_edge():
+    from ph_stocks_advisor.data.services import sentiment as sent_mod
+
+    with (
+        patch("ph_stocks_advisor.data.clients.dragonfi.fetch_stock_profile", return_value={}),
+        patch("ph_stocks_advisor.data.clients.tavily_search.search_global_events", return_value=""),
+        patch("ph_stocks_advisor.data.clients.tavily_search.search_bsp_rate", return_value=""),
+        _edge_reit(True),
+    ):
+        info = sent_mod.fetch_sentiment_info("AREIT")
+    assert info.is_reit is True
+
+
+def test_dividend_outage_gets_reit_status_from_edge():
+    from ph_stocks_advisor.data.services import dividend as div_mod
+
+    with (
+        patch.object(div_mod, "fetch_stock_profile", return_value={}),
+        patch.object(div_mod, "fetch_company_dividend_announcements", return_value=[]),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=dict(_FIN)),
+        _edge_reit(True),
+    ):
+        info = div_mod.fetch_dividend_info("AREIT")
+    assert info.is_reit is True
+
+
+def test_unknown_reit_status_maps_to_false_never_true():
+    from ph_stocks_advisor.data.services import valuation as val_mod
+
+    snap = {"price": 37.05, "previous_close": 37.25, "week_high": 45.5, "week_low": 36.1, "shares_outstanding": 4e9}
+    with (
+        patch.object(val_mod, "fetch_stock_profile", return_value={}),
+        patch.object(val_mod, "fetch_security_valuation", return_value={}),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=snap),
+        patch("ph_stocks_advisor.data.clients.pse_edge.fetch_annual_financials", return_value=dict(_FIN)),
+        _edge_reit(None),  # EDGE unreachable -> unknown
+    ):
+        assert val_mod.fetch_fair_value("AREIT").is_reit is False

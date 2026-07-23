@@ -117,6 +117,65 @@ def symbol_exists(symbol: str) -> bool | None:
         return None
 
 
+# symbol → REIT status memo (definitive answers only; mappings are stable).
+_IS_REIT_CACHE: dict[str, bool] = {}
+
+
+def is_reit_from_edge(symbol: str) -> bool | None:
+    """Tri-state REIT check from the PSE EDGE company registry.
+
+    Two deterministic signals, validated against all listed REITs and their
+    sponsor companies (2026-07-23 probe):
+      1. The registered company name contains "REIT" (CREIT, MREIT, RCR,
+         FILRT, VistaREIT, DDMP REIT, AREIT, ...).
+      2. The Company Description declares "real estate investment trust"
+         (AREIT). Sponsors (MEG, DD, VLL) do NOT use the phrase in their
+         own descriptions, so this does not false-positive on them.
+    Returns ``None`` when EDGE could not be reached — callers must treat
+    that as "unknown", never as "not a REIT". This is registry DATA, not an
+    LLM inference, so the never-infer-REIT-status contract holds.
+    """
+    clean = symbol.upper().replace(".PS", "")
+    cached = _IS_REIT_CACHE.get(clean)
+    if cached is not None:
+        return cached
+    try:
+        resp = requests.get(
+            f"{_base_url()}/autoComplete/searchCompanyNameSymbol.ax",
+            params={"term": clean},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=_timeout(),
+        )
+        if resp.status_code != 200:
+            return None
+        item = next(
+            (i for i in resp.json() if isinstance(i, dict) and i.get("symbol", "").upper() == clean),
+            None,
+        )
+        if item is None:
+            return None
+        if "REIT" in str(item.get("cmpyNm", "")).upper():
+            _IS_REIT_CACHE[clean] = True
+            return True
+        page = requests.get(
+            f"{_base_url()}/companyInformation/form.do",
+            params={"cmpy_id": str(item["cmpyId"])},
+            headers={"Referer": _base_url()},
+            timeout=_timeout(),
+        )
+        if page.status_code != 200:
+            return None
+        text = " ".join(re.sub(r"<[^>]+>", " ", page.text).split())
+        m = re.search(r"Company Description(.*?)(?:Sector|Subsector|$)", text, re.S)
+        desc = m.group(1) if m else text
+        result = bool(re.search(r"(?i)real estate investment trust", desc))
+        _IS_REIT_CACHE[clean] = result
+        return result
+    except Exception as exc:
+        logger.warning("PSE EDGE REIT check failed for %s: %s", clean, exc)
+        return None
+
+
 _SNAPSHOT_FIELDS = {
     "Last Traded Price": "price",
     "Previous Close and Date": "previous_close",

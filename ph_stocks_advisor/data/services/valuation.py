@@ -97,14 +97,15 @@ def fetch_fair_value(symbol: str) -> FairValueEstimate:
     # stockData page gives the price, and the financial-reports page gives
     # audited EPS + book value per share, which is everything the Graham
     # estimate needs (kept the valuation dimension alive during DragonFi's
-    # 2026-07-23 HTTP 515 outage). REIT status is UNKNOWN on this path
-    # (EDGE's subsector says only "Property") — is_reit stays False, so the
-    # standard model applies and the prompt's precision-vs-confidence rule
-    # covers the uncertainty.
+    # 2026-07-23 HTTP 515 outage). REIT status comes from the EDGE company
+    # registry (name/description — registry data, never LLM-inferred);
+    # unknown (None) maps to False so REIT rules are only applied on a
+    # definitive signal.
     logger.warning("DragonFi returned no valuation data for %s — trying PSE EDGE", symbol)
     from ph_stocks_advisor.data.clients.pse_edge import (
         fetch_annual_financials,
         fetch_stock_snapshot,
+        is_reit_from_edge,
     )
 
     snapshot = fetch_stock_snapshot(symbol)
@@ -127,7 +128,7 @@ def fetch_fair_value(symbol: str) -> FairValueEstimate:
                 forward_pe=0.0,
                 estimated_fair_value=estimated_fv,
                 discount_pct=_discount_pct(estimated_fv, price),
-                is_reit=False,  # unknown during a DragonFi outage — never inferred
+                is_reit=is_reit_from_edge(symbol) is True,
             )
 
     logger.warning("No valuation data for %s from DragonFi or PSE EDGE", symbol)

@@ -7,6 +7,7 @@ Single Responsibility: only handles global-events and sentiment data.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from ph_stocks_advisor.data.models import SentimentInfo
@@ -20,13 +21,18 @@ def _fetch_profile_context(symbol: str) -> tuple[str, bool]:
     ``is_reit`` must reach the agent payload explicitly (never inferred by
     the LLM — see the REIT-classification contract).
     """
-    try:
+    with contextlib.suppress(Exception):
         from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_profile
 
         profile = fetch_stock_profile(symbol)
-        if not profile:
-            return "", False
-        return str(profile.get("sector", "")), bool(profile.get("isREIT", False))
+        if profile:
+            return str(profile.get("sector", "")), bool(profile.get("isREIT", False))
+    # DragonFi outage — REIT status from the PSE EDGE company registry
+    # (registry data, never LLM-inferred); unknown maps to False.
+    try:
+        from ph_stocks_advisor.data.clients.pse_edge import is_reit_from_edge
+
+        return "", is_reit_from_edge(symbol) is True
     except Exception:
         return "", False
 
