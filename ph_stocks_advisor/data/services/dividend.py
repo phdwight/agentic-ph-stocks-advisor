@@ -195,7 +195,14 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
         # return below so a pays-no-dividend stock still reads as a clean
         # "no dividend history" data gap.
         logger.warning("DragonFi profile unavailable for %s — trying PSE EDGE enrichment", symbol)
-        from ph_stocks_advisor.data.clients.pse_edge import fetch_annual_financials
+        from ph_stocks_advisor.data.clients.pse_edge import (
+            fetch_annual_financials,
+            is_reit_from_edge,
+        )
+
+        # REIT status from the EDGE registry (DragonFi's isREIT is gone with
+        # the profile); unknown maps to False, never inferred by the LLM.
+        is_reit = is_reit_from_edge(symbol) is True
 
         announcements = []
         try:
