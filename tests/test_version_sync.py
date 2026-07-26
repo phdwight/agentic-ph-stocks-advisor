@@ -43,8 +43,12 @@ def test_app_version_matches_pyproject():
 
 
 def test_version_endpoint_reports_the_running_version(client):
-    """CI pulls the published image and asserts this value equals the tag."""
-    resp = client.get("/version")
+    """CI pulls the published image and asserts this value equals the tag.
+
+    Bare clients (curl, monitoring) get JSON from /version — the negotiation
+    must never break that scripted contract.
+    """
+    resp = client.get("/version", headers={"Accept": "*/*"})
     assert resp.status_code == 200
     body = resp.get_json()
     assert _VERSION_RE.fullmatch(body["version"]), body
@@ -54,6 +58,49 @@ def test_version_endpoint_reports_the_running_version(client):
 def test_version_endpoint_is_public(client):
     """Must not sit behind auth — deploy smoke-checks call it unauthenticated."""
     assert client.get("/version").status_code == 200
+    assert client.get("/version.json").status_code == 200
+
+
+def test_version_json_alias_matches(client):
+    """/version.json is the explicit machine endpoint."""
+    assert (
+        client.get("/version.json").get_json()
+        == client.get("/version", headers={"Accept": "application/json"}).get_json()
+    )
+
+
+def test_version_page_renders_for_browsers(client):
+    """A browser (Accept: text/html) gets the human-readable page."""
+    resp = client.get("/version", headers={"Accept": "text/html,*/*;q=0.8"})
+    assert resp.status_code == 200
+    assert resp.content_type.startswith("text/html")
+    html = resp.get_data(as_text=True)
+    assert f"v{_app_version()}" in html
+
+
+def test_disclaimer_page_is_public_and_states_the_essentials(client):
+    """The disclaimer must be readable without signing in, and must actually
+    say the things that protect both the user and the project."""
+    resp = client.get("/disclaimer")
+    assert resp.status_code == 200
+    # Normalise whitespace: HTML line-wrapping must not decide whether a
+    # required phrase "exists".
+    text = " ".join(resp.get_data(as_text=True).lower().split())
+    for phrase in (
+        "not financial advice",
+        "educational",
+        "at your own risk",
+        "licensed",
+        "apache license",
+        "as is",
+        "past performance",
+    ):
+        assert phrase in text, f"disclaimer is missing: {phrase!r}"
+
+
+def test_footer_links_to_disclaimer(client):
+    """Every page must expose the disclaimer."""
+    assert "/disclaimer" in client.get("/").get_data(as_text=True)
 
 
 def test_footer_renders_the_same_version(client):

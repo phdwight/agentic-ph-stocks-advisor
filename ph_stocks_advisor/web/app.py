@@ -116,6 +116,9 @@ def _asset_rev() -> str:
     return rev
 
 
+# Last substantive revision of the disclaimer page — update when the text changes.
+_DISCLAIMER_UPDATED = "26 July 2026"
+
 # Philippine Stock Exchange timezone (UTC+8).
 _PHT = timezone(timedelta(hours=8))
 # Daily cutoff hour in PHT — reports generated before this are stale.
@@ -372,16 +375,49 @@ def create_app() -> Flask:
     # Health check
     # ------------------------------------------------------------------
 
-    @app.route("/version")
-    def version():
-        """Report the running build's version.
+    def _version_payload() -> dict[str, str]:
+        return {"version": _app_version(), "asset_rev": _asset_rev()}
+
+    @app.route("/version.json")
+    def version_json():
+        """Machine-readable version (monitoring, CI, deploy smoke-checks).
 
         Single source at runtime: the same ``_app_version()`` the footer
         renders, read from the shipped ``pyproject.toml``. CI verifies that
         this matches the image tag and the git tag after every publish, so
         the three can never drift.
         """
-        return jsonify({"version": _app_version(), "asset_rev": _asset_rev()})
+        return jsonify(_version_payload())
+
+    @app.route("/version")
+    def version():
+        """Version page — HTML for browsers, JSON for API clients.
+
+        Content-negotiated so one URL serves both: a browser (which asks for
+        ``text/html``) gets the readable page; ``curl``/monitoring gets JSON,
+        preserving the existing machine contract.
+        """
+        # HTML only when the client EXPLICITLY prefers it over JSON. A browser
+        # sends "text/html,...,*/*;q=0.8" (html 1.0 > json 0.8) and gets the
+        # page; bare `curl` sends "*/*" (both 1.0, not strictly greater) and
+        # keeps getting JSON, so scripted checks and monitoring never break.
+        accept = request.accept_mimetypes
+        if accept.quality("text/html") <= accept.quality("application/json"):
+            return jsonify(_version_payload())
+        return render_template(
+            "version.html",
+            asset_rev=_asset_rev(),
+            image_ref=f"ghcr.io/phdwight/agentic-ph-stocks-advisor:{_app_version()}",
+        )
+
+    @app.route("/disclaimer")
+    def disclaimer():
+        """Public disclaimer / terms-of-use page.
+
+        Deliberately reachable without authentication — a user must be able to
+        read the terms before signing in or running anything.
+        """
+        return render_template("disclaimer.html", disclaimer_updated=_DISCLAIMER_UPDATED)
 
     @app.route("/healthz")
     def healthz():

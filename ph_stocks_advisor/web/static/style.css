@@ -2499,3 +2499,36 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 /* Defence: badge text must never fall back to the base white-on-light —
    if a variant class is missing (e.g. stale CSS), stay readable. */
 .badge-sm { color: var(--n-800); }
+
+/* ---------- Static document pages (disclaimer, version) ---------- */
+.doc-page { max-width: 760px; margin: 0 auto; padding: 1.5rem 0 3rem; }
+.doc-title {
+  font-family: var(--font-serif); font-weight: 600; font-size: 2rem;
+  line-height: 1.1; margin: 0 0 0.35rem;
+}
+.doc-meta {
+  font-family: var(--font-serif); text-transform: uppercase;
+  letter-spacing: 0.08em; font-size: 0.68rem; color: var(--text-muted);
+  margin: 0 0 1.5rem;
+}
+.doc-callout {
+  border: 1px solid var(--accent-300); background: var(--accent-100);
+  border-radius: 10px; padding: 0.9rem 1.1rem; margin-bottom: 1.5rem;
+}
+.doc-callout p { margin: 0; font-size: 0.95rem; line-height: 1.55; }
+.doc-page .report-section { margin-bottom: 1rem; }
+.doc-footnote {
+  margin-top: 1.75rem; font-size: 0.85rem; color: var(--text-muted);
+  text-align: center;
+}
+.doc-version-hero {
+  border: 1px solid var(--divider); border-radius: 12px;
+  padding: 1.25rem 1.4rem; margin-bottom: 1.25rem; background: var(--bg);
+}
+.doc-version-number {
+  font-family: var(--font-serif); font-weight: 600; font-size: 2.6rem;
+  line-height: 1; color: var(--buy); margin: 0.35rem 0 0.6rem;
+}
+.doc-version-note { margin: 0; font-size: 0.88rem; color: var(--text-sec); }
+.footer .version a { color: inherit; text-decoration: none; }
+.footer .version a:hover { text-decoration: underline; }
