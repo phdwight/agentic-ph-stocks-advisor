@@ -738,7 +738,11 @@ class TestPortfolioAutoChain:
         import sqlite3
 
         conn = sqlite3.connect(repo._db_path)  # type: ignore[attr-defined]
-        old_ts = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+        # Backdate well past any trading-day cutoff. 2 days is NOT enough:
+        # run on a Sunday, last_trading_close() rolls back to Friday 3 PM PHT,
+        # so a 2-day-old report is still fresh and nothing chains (this test
+        # failed only on weekends).
+        old_ts = (datetime.now(UTC) - timedelta(days=30)).isoformat()
         conn.execute("UPDATE reports SET created_at = ? WHERE symbol = ?", (old_ts, "TEL"))
         conn.commit()
         conn.close()

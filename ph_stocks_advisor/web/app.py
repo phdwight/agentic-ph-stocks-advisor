@@ -372,6 +372,17 @@ def create_app() -> Flask:
     # Health check
     # ------------------------------------------------------------------
 
+    @app.route("/version")
+    def version():
+        """Report the running build's version.
+
+        Single source at runtime: the same ``_app_version()`` the footer
+        renders, read from the shipped ``pyproject.toml``. CI verifies that
+        this matches the image tag and the git tag after every publish, so
+        the three can never drift.
+        """
+        return jsonify({"version": _app_version(), "asset_rev": _asset_rev()})
+
     @app.route("/healthz")
     def healthz():
         """Heartbeat endpoint for liveness / readiness probes.

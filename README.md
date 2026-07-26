@@ -436,7 +436,6 @@ langgraph-flow.drawio              # Draw.io diagram of the LangGraph flow, MCP 
 └── workflows/
     ├── develop-ci.yml             # CI — lint, type-check, test (develop branch)
     ├── main-ci-cd.yml             # CI/CD — same checks + deploy to Azure / SSH (main branch)
-    └── sync-version.yml           # Sync pyproject.toml version with the published GitHub Release tag
 admin/                             # SQLAdmin database panel
 ├── app.py                     #   Flask + SQLAdmin wiring & model views
 ├── Dockerfile                 #   Container image for admin panel
@@ -558,8 +557,7 @@ Two GitHub Actions workflows follow a **develop → main** promotion strategy:
 | Workflow | Branch / Trigger | Jobs | Deploys? |
 |----------|------------------|------|----------|
 | `develop-ci.yml` | push to `develop` | Lint, type-check, unit tests, integration tests | No |
-| `main-ci-cd.yml` | push to `main` | Same CI checks + build & push GHCR images + deploy | Yes |
-| `sync-version.yml` | GitHub Release published | Rewrite `pyproject.toml` version to match the release tag and re-tag the commit | No |
+| `main-ci-cd.yml` | push to `main` (+ manual dispatch) | Same CI checks → **auto version bump & tag** → build & push GHCR images → deploy | Yes |
 
 Both use `uv` for fast dependency installation and share the same quality gates:
 
@@ -567,6 +565,56 @@ Both use `uv` for fast dependency installation and share the same quality gates:
 2. **Pyright** — type checking in basic mode
 3. **Unit tests** — all `pytest` tests except `@pytest.mark.integration` (no secrets needed)
 4. **Integration tests** — real LLM calls (only when `OPENAI_API_KEY` secret is available)
+
+#### Automatic Versioning & Releases
+
+Three things stay in lockstep automatically on every merge to `main` — **the
+version the running app reports**, **the git tag**, and **the published image
+tag**. There is no manual version bump.
+
+**Source of truth: git tags (`vX.Y.Z`).** `pyproject.toml` keeps a committed
+version that acts as the *floor* (and seeds the very first release, and lets
+local/offline builds work).
+
+The `bump` job in `main-ci-cd.yml` runs after the tests on a push to `main`:
+
+```
+next = max( latest vX.Y.Z tag with the patch incremented ,
+            pyproject.toml version (floor) )
+```
+
+It creates an **annotated tag on the merge commit and pushes only the tag** —
+never a commit to `main`. Tags aren't branch-protected, so this works with the
+stock `GITHUB_TOKEN` + `contents: write`, with no protection changes and no
+bot PAT. The job is idempotent (an existing tag is skipped, so re-runs are
+safe).
+
+`build-images` then **bakes that version into `pyproject.toml` before building**
+— so the image carries the version its tag claims — and tags the image
+`latest` **and** `X.Y.Z` from the bump job's output (not from a tag-push
+event). After pushing, CI **pulls the published `:X.Y.Z` and `:latest` images
+and asserts the version reported inside equals the tag**, failing the build on
+any drift.
+
+At runtime the app reads that shipped `pyproject.toml`, renders it in the
+footer, and exposes it at **`GET /version`** (public, no auth):
+
+```bash
+curl -s https://<host>/version
+# {"version":"2.1.8","asset_rev":"9f39825ba8"}
+```
+
+**Bump policy**
+
+| You want | Do this |
+|---|---|
+| Patch release (default) | Nothing — merge to `main`, get `vX.Y.Z+1` |
+| Minor / major release | Raise the floor in `pyproject.toml` (e.g. `2.2.0`) **before** merging; the floor wins over patch+1 |
+| A GitHub Release | The tag already exists — `gh release create vX.Y.Z --verify-tag --notes "…"` (never let it create a new tag) |
+
+**Note:** the bump is gated on the same path filter as the app image, so a
+docs-only merge creates neither a tag nor an image — every `vX.Y.Z` tag always
+has a matching `:X.Y.Z` image in GHCR.
 
 #### Deployment Targets
 

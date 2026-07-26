@@ -252,8 +252,12 @@ overlay (collector + Jaeger + Prometheus + Grafana) exists for deep dives.
 - **Pipeline:** `develop` → CI (ruff, pyright, unit + integration tests) → merge-commit-only
   promotion to `main` → path-gated multi-arch image builds (app image rebuilds only when its
   build inputs change; admin separately) → GHCR push → optional Azure/SSH deploys.
-- **Versioning:** app version bumps on GitHub Releases (`sync-version.yml`); static-asset
-  cache keys are content hashes, decoupled from releases.
+- **Versioning:** fully automatic and **tag-driven** — every merge to `main` that rebuilds the
+  app image mints an annotated `vX.Y.Z` tag (patch+1, floored by the committed
+  `pyproject.toml` version), bakes it into the build, tags the image `latest` + `X.Y.Z`, and
+  verifies the published artifact reports that version. App version, git tag, and image tag
+  cannot drift; `GET /version` reports the running build. Static-asset cache keys remain
+  content hashes, independent of version.
 - **Dependency locking:** `uv pip compile --extra=postgres` produces `requirements.txt`
   (the `postgres` extra carries psycopg2 and is mandatory).
 

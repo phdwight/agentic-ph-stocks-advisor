@@ -10,6 +10,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:   # manual re-run (bump is skipped; build still publishes)
 
 concurrency:
   group: cicd-main-${{ github.ref }}
@@ -136,6 +137,91 @@ jobs:
             deploy:
               - 'docker-compose.prod.yml'
 
+  # ── Auto version bump (tag-driven) ────────────────────────────────────────
+  # Version source of truth is GIT TAGS (vX.Y.Z). On every push to main that
+  # will actually rebuild the app image, compute:
+  #     next = max(latest vX.Y.Z with patch+1, pyproject.toml version as floor)
+  # and push ONLY an annotated tag — never a commit. Tags are not branch-
+  # protected, so this works with the stock GITHUB_TOKEN + contents: write.
+  #
+  # Gated on `changes.app` so every tag has a matching :X.Y.Z image in GHCR
+  # (a docs-only merge rebuilds nothing, so it must not mint a phantom tag).
+  #
+  # For a minor/major release, raise the floor in pyproject.toml (e.g. 2.2.0)
+  # before merging — the floor wins over patch+1.
+  bump:
+    name: Bump Version & Tag
+    runs-on: ubuntu-latest
+    needs: [quality, unit-tests, integration-tests, changes]
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.changes.outputs.app == 'true'
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+      sha: ${{ steps.next.outputs.sha }}
+      created: ${{ steps.tag.outputs.created }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # need full history + tags to find the latest version
+          fetch-tags: true
+
+      - name: Compute next version
+        id: next
+        run: |
+          set -euo pipefail
+          # Floor: the committed pyproject.toml version (seeds the first
+          # release, and lets a human request a minor/major bump).
+          floor=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' pyproject.toml)
+          if ! [[ "$floor" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::pyproject.toml version '$floor' is not X.Y.Z"
+            exit 1
+          fi
+
+          # Latest existing vX.Y.Z tag, patch incremented.
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' \
+                   | sed 's/^v//' \
+                   | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+                   | sort -V | tail -1 || true)
+          if [ -n "$latest" ]; then
+            IFS=. read -r ma mi pa <<< "$latest"
+            candidate="$ma.$mi.$((pa + 1))"
+          else
+            candidate="$floor"   # no tags yet: seed from the version file
+          fi
+
+          # next = max(candidate, floor)
+          version=$(printf '%s\n%s\n' "$candidate" "$floor" | sort -V | tail -1)
+
+          echo "floor=$floor  latest_tag=${latest:-none}  candidate=$candidate  -> next=$version"
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "sha=${{ github.sha }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create and push annotated tag
+        id: tag
+        run: |
+          set -euo pipefail
+          tag="${{ steps.next.outputs.tag }}"
+          # Idempotent: never fail a re-run if the tag already exists.
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null \
+             || git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::Tag $tag already exists — skipping tag creation"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag" "${{ github.sha }}"
+          git push origin "$tag"     # ONLY the tag — no commit to main
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Created and pushed $tag at ${{ github.sha }}"
+
   # ── Build & push Docker images to GHCR ────────────────────────────────────
   # The job runs only if at least one image's inputs changed; within it, the
   # app and admin builds are each gated independently so only the changed
@@ -143,9 +229,15 @@ jobs:
   build-images:
     name: Build & Push Images
     runs-on: ubuntu-latest
-    needs: [quality, unit-tests, integration-tests, changes]
+    needs: [quality, unit-tests, integration-tests, changes, bump]
+    # Runs when the tests passed and bump either succeeded or was skipped
+    # (admin-only change, PR, manual dispatch) — never blocked by a skipped bump.
     if: >
-      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      !cancelled()
+      && needs.quality.result == 'success'
+      && needs.unit-tests.result == 'success'
+      && (needs.bump.result == 'success' || needs.bump.result == 'skipped')
+      && github.event_name == 'push' && github.ref == 'refs/heads/main'
       && (needs.changes.outputs.app == 'true' || needs.changes.outputs.admin == 'true')
     permissions:
       contents: read
@@ -169,6 +261,32 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Bake the bumped version into the artifact's version source BEFORE
+      # building, so the image reports exactly the version its tag claims.
+      # (The app reads pyproject.toml at runtime — see web/app.py.)
+      - name: Bake version into pyproject.toml
+        if: needs.bump.outputs.version != ''
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          target = os.environ["VERSION"]
+          path = Path("pyproject.toml")
+          text, n = re.subn(
+              r'^(version\s*=\s*)"[^"]+"',
+              lambda m: f'{m.group(1)}"{target}"',
+              path.read_text(), count=1, flags=re.MULTILINE,
+          )
+          if n != 1:
+              raise SystemExit("Failed to locate the version line in pyproject.toml")
+          path.write_text(text)
+          PY
+          echo "Baked version into pyproject.toml:"
+          grep -m1 '^version' pyproject.toml
+        env:
+          VERSION: ${{ needs.bump.outputs.version }}
+
       - name: Docker meta (app)
         id: meta-app
         if: needs.changes.outputs.app == 'true'
@@ -178,6 +296,7 @@ jobs:
           tags: |
             type=sha
             type=raw,value=latest
+            type=raw,value=${{ needs.bump.outputs.version }},enable=${{ needs.bump.outputs.version != '' }}
 
       - name: Build & push app image
         if: needs.changes.outputs.app == 'true'
@@ -201,6 +320,7 @@ jobs:
           tags: |
             type=sha
             type=raw,value=latest
+            type=raw,value=${{ needs.bump.outputs.version }},enable=${{ needs.bump.outputs.version != '' }}
 
       - name: Build & push admin image
         if: needs.changes.outputs.admin == 'true'
@@ -216,6 +336,40 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ── Deploy to Azure Container Apps ────────────────────────────────────────
+      # ── Verify the published artifact carries the version its tag claims ──
+      # Pulls the freshly pushed :X.Y.Z image and asks the app for the version
+      # it reports at runtime. Catches bake/off-by-one regressions immediately.
+      - name: Verify published image version matches the tag
+        if: needs.changes.outputs.app == 'true' && needs.bump.outputs.version != ''
+        run: |
+          set -euo pipefail
+          version="${{ needs.bump.outputs.version }}"
+          image="${{ env.IMAGE_BASE }}:$version"
+          echo "Pulling $image ..."
+          docker pull --platform linux/amd64 "$image"
+          reported=$(docker run --rm --entrypoint python "$image" -c \
+            'from ph_stocks_advisor.web.app import _app_version; print(_app_version())')
+          echo "tag=$version  image_reports=$reported"
+          if [ "$reported" != "$version" ]; then
+            echo "::error::Version drift — image :$version reports '$reported'"
+            exit 1
+          fi
+          echo "::notice::Verified $image reports version $reported"
+
+      - name: Verify :latest reports the same version
+        if: needs.changes.outputs.app == 'true' && needs.bump.outputs.version != ''
+        run: |
+          set -euo pipefail
+          version="${{ needs.bump.outputs.version }}"
+          docker pull --platform linux/amd64 "${{ env.IMAGE_BASE }}:latest"
+          reported=$(docker run --rm --entrypoint python "${{ env.IMAGE_BASE }}:latest" -c \
+            'from ph_stocks_advisor.web.app import _app_version; print(_app_version())')
+          echo "latest reports=$reported (expected $version)"
+          if [ "$reported" != "$version" ]; then
+            echo "::error:::latest reports '$reported' but the tag is $version"
+            exit 1
+          fi
+
   deploy-azure:
     name: Deploy to Azure
     runs-on: ubuntu-latest
