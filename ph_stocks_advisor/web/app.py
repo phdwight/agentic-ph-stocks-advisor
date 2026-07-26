@@ -245,6 +245,7 @@ def create_app() -> Flask:
 
     # Verdict chips (sidebar / marquee / history) prefer the score band.
     app.jinja_env.globals["verdict_chip"] = _verdict_chip
+    app.jinja_env.globals["disclaimer_updated"] = _DISCLAIMER_UPDATED
 
     # Register the Entra ID authentication blueprint.
     app.register_blueprint(auth_bp)
@@ -417,7 +418,7 @@ def create_app() -> Flask:
         Deliberately reachable without authentication — a user must be able to
         read the terms before signing in or running anything.
         """
-        return render_template("disclaimer.html", disclaimer_updated=_DISCLAIMER_UPDATED)
+        return render_template("disclaimer.html")
 
     @app.route("/healthz")
     def healthz():

@@ -102,6 +102,12 @@ _MIGRATIONS_SQL = [
     ALTER TABLE users
         ADD COLUMN IF NOT EXISTS user_type INTEGER NOT NULL DEFAULT 0;
     """,
+    # Added in v4 — sign-up consent: which disclaimer version was accepted, when
+    """
+    ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS disclaimer_version VARCHAR(32),
+        ADD COLUMN IF NOT EXISTS disclaimer_accepted_at TIMESTAMPTZ;
+    """,
     # Added in v3 — holdings table for elevated-user stock positions
     """
     CREATE TABLE IF NOT EXISTS holdings (
@@ -392,13 +398,18 @@ class PostgresReportRepository(AbstractReportRepository):
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO users (oid, name, email, provider, user_type, created_at, last_login_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO users (oid, name, email, provider, user_type, created_at, last_login_at,
+                                       disclaimer_version, disclaimer_accepted_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (oid) DO UPDATE SET
                         name          = EXCLUDED.name,
                         email         = EXCLUDED.email,
                         provider      = EXCLUDED.provider,
-                        last_login_at = EXCLUDED.last_login_at
+                        last_login_at = EXCLUDED.last_login_at,
+                        -- Consent is write-once: a later sign-in must never
+                        -- erase the record of what the user originally accepted.
+                        disclaimer_version     = COALESCE(users.disclaimer_version, EXCLUDED.disclaimer_version),
+                        disclaimer_accepted_at = COALESCE(users.disclaimer_accepted_at, EXCLUDED.disclaimer_accepted_at)
                     """,
                     (
                         user.oid,
@@ -408,6 +419,8 @@ class PostgresReportRepository(AbstractReportRepository):
                         user.user_type,
                         user.created_at,
                         user.last_login_at or datetime.now(tz=UTC),
+                        user.disclaimer_version,
+                        user.disclaimer_accepted_at,
                     ),
                 )
             conn.commit()
@@ -425,6 +438,8 @@ class PostgresReportRepository(AbstractReportRepository):
                 email=row["email"],
                 provider=row["provider"],
                 user_type=row["user_type"],
+                disclaimer_version=row.get("disclaimer_version"),
+                disclaimer_accepted_at=row.get("disclaimer_accepted_at"),
                 created_at=row["created_at"],
                 last_login_at=row["last_login_at"],
             )
@@ -442,6 +457,8 @@ class PostgresReportRepository(AbstractReportRepository):
                 email=row["email"],
                 provider=row["provider"],
                 user_type=row["user_type"],
+                disclaimer_version=row.get("disclaimer_version"),
+                disclaimer_accepted_at=row.get("disclaimer_accepted_at"),
                 created_at=row["created_at"],
                 last_login_at=row["last_login_at"],
             )

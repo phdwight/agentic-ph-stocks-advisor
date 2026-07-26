@@ -187,7 +187,9 @@ def test_login_complete_unknown_credential_is_generic_401(pk_client):
 def test_register_begin_new_email_returns_options(pk_client):
     hdr = _csrf(pk_client)
     resp = pk_client.post(
-        "/auth/passkey/register/begin", json={"email": "new@example.com", "name": "New User"}, headers=hdr
+        "/auth/passkey/register/begin",
+        json={"email": "new@example.com", "name": "New User", "accept_disclaimer": True},
+        headers=hdr,
     )
     assert resp.status_code == 200
     data = resp.get_json()
@@ -200,7 +202,9 @@ def test_register_begin_existing_email_is_generic(pk_client):
     _seed_user_with_credential("taken@example.com")
     hdr = _csrf(pk_client)
     resp = pk_client.post(
-        "/auth/passkey/register/begin", json={"email": "taken@example.com", "name": "Imposter"}, headers=hdr
+        "/auth/passkey/register/begin",
+        json={"email": "taken@example.com", "name": "Imposter", "accept_disclaimer": True},
+        headers=hdr,
     )
     assert resp.status_code == 400
     # The generic message must NOT reveal that the email is already registered.
@@ -222,7 +226,9 @@ def test_manage_endpoints_require_auth(pk_client):
 )
 def test_register_and_login_reject_malformed_email(pk_client, bad_email):
     hdr = _csrf(pk_client)
-    reg = pk_client.post("/auth/passkey/register/begin", json={"email": bad_email, "name": "X"}, headers=hdr)
+    reg = pk_client.post(
+        "/auth/passkey/register/begin", json={"email": bad_email, "name": "X", "accept_disclaimer": True}, headers=hdr
+    )
     assert reg.status_code == 400
     assert reg.get_json()["error"] == "Enter a valid email address."
 
@@ -234,5 +240,62 @@ def test_register_and_login_reject_malformed_email(pk_client, bad_email):
 def test_valid_email_forms_are_accepted(pk_client):
     hdr = _csrf(pk_client)
     for ok in ["a@b.co", "first.last@sub.example.com", "user+tag@example.io"]:
-        reg = pk_client.post("/auth/passkey/register/begin", json={"email": ok, "name": "X"}, headers=hdr)
+        reg = pk_client.post(
+            "/auth/passkey/register/begin", json={"email": ok, "name": "X", "accept_disclaimer": True}, headers=hdr
+        )
         assert reg.status_code == 200, ok
+
+
+# ---------------------------------------------------------------------------
+# Sign-up consent — the disclaimer must be accepted to create an account
+# ---------------------------------------------------------------------------
+
+
+def test_registration_requires_disclaimer_consent(pk_client):
+    """The checkbox in the UI is convenience; the server is the real gate."""
+    hdr = _csrf(pk_client)
+    resp = pk_client.post(
+        "/auth/passkey/register/begin",
+        json={"email": "newuser@example.com", "name": "New User"},  # no consent
+        headers=hdr,
+    )
+    assert resp.status_code == 400
+    assert "accept" in resp.get_json()["error"].lower()
+
+
+@pytest.mark.parametrize("value", [False, "true", 1, None, "yes"])
+def test_consent_must_be_boolean_true(pk_client, value):
+    """Only an explicit boolean True counts — no truthy coercion."""
+    hdr = _csrf(pk_client)
+    resp = pk_client.post(
+        "/auth/passkey/register/begin",
+        json={"email": "newuser@example.com", "name": "N", "accept_disclaimer": value},
+        headers=hdr,
+    )
+    assert resp.status_code == 400
+
+
+def test_adding_a_device_to_an_existing_account_needs_no_consent(pk_client):
+    """An authenticated user adding a second passkey already accepted the
+    terms at sign-up — don't re-gate them."""
+    _seed_user_with_credential("member@example.com", oid="passkey:member")
+    with pk_client.session_transaction() as sess:
+        sess["user"] = {
+            "name": "Member",
+            "email": "member@example.com",
+            "oid": "passkey:member",
+            "provider": "passkey",
+            "user_type": 0,
+        }
+    resp = pk_client.post("/auth/passkey/register/begin", json={}, headers=_csrf(pk_client))
+    assert resp.status_code == 200
+
+
+def test_login_page_shows_the_full_disclaimer_and_consent_box(pk_client):
+    """The full terms must be present on the sign-up page itself — not just a
+    link — and the acceptance checkbox must exist."""
+    html = pk_client.get("/auth/login").get_data(as_text=True)
+    assert 'id="pk-accept"' in html
+    body = " ".join(html.lower().split())
+    for phrase in ("not financial advice", "at your own risk", "past performance", "as is"):
+        assert phrase in body, f"login page is missing disclaimer text: {phrase!r}"

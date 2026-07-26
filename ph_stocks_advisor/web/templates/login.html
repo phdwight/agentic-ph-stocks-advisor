@@ -32,6 +32,35 @@
         <span>Sign in with a passkey</span>
       </button>
       <button type="button" id="pk-register" class="passkey-link">New here? Create an account with a passkey</button>
+
+      {# Registration consent — the FULL disclaimer, shown before sign-up.
+         Hidden in login mode; passkey.js reveals it in register mode and
+         blocks submission until the box is ticked. The server independently
+         rejects any registration without consent. #}
+      <div id="pk-consent" class="consent-block" style="display:none;">
+        <p class="consent-heading">Before you create an account, please read and accept:</p>
+        <div class="consent-scroll" id="pk-consent-scroll" tabindex="0" aria-label="Disclaimer and terms of use">
+          <h3 class="consent-title">Disclaimer &amp; Terms of Use</h3>
+          <p class="consent-updated">Last updated {{ disclaimer_updated }}</p>
+          <div class="consent-callout">
+            <strong>This is not financial advice.</strong> PH Stocks Advisor is an
+            educational and informational tool. It is not a financial adviser,
+            broker, dealer, or investment company, and nothing it produces is a
+            recommendation to buy, sell, or hold any security.
+          </div>
+          {% include "_disclaimer_body.html" %}
+        </div>
+        <label class="consent-check">
+          <input type="checkbox" id="pk-accept" name="accept_disclaimer">
+          <span>I have read and agree to the Disclaimer &amp; Terms of Use. I understand
+            this is <strong>not financial advice</strong>, that analysis is AI-generated and
+            may be wrong, and that I use this service voluntarily and at my own risk.</span>
+        </label>
+        <p class="consent-link">
+          You can re-read this any time at <a href="/disclaimer" target="_blank" rel="noopener">/disclaimer</a>.
+        </p>
+      </div>
+
       <p id="pk-error" class="login-error" style="display:none;"><span></span></p>
     </form>
 

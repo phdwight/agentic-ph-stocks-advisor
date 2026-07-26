@@ -23,6 +23,8 @@
   const signinBtn = document.getElementById("pk-signin");
   const registerToggle = document.getElementById("pk-register");
   const errorEl = document.getElementById("pk-error");
+  const consentBlock = document.getElementById("pk-consent");
+  const acceptBox = document.getElementById("pk-accept");
 
   let mode = "login"; // "login" | "register"
 
@@ -101,7 +103,11 @@
   }
 
   async function doRegister(email, name) {
-    const optResp = await postJSON("/auth/passkey/register/begin", { email, name });
+    const optResp = await postJSON("/auth/passkey/register/begin", {
+      email,
+      name,
+      accept_disclaimer: true, // the server re-checks; the UI cannot be the only gate
+    });
     if (!optResp.ok) throw new Error("begin");
     const options = await optResp.json();
     options.challenge = b64urlToBuf(options.challenge);
@@ -162,6 +168,24 @@
     handleSubmit();
   });
 
+  // Registration requires accepting the disclaimer. The button stays disabled
+  // until the box is ticked; the server independently rejects an unaccepted
+  // registration, so this is convenience, not the security boundary.
+  function syncConsentState() {
+    if (!consentBlock || !acceptBox) return;
+    const registering = mode === "register";
+    consentBlock.style.display = registering ? "" : "none";
+    signinBtn.disabled = registering && !acceptBox.checked;
+    signinBtn.classList.toggle("is-disabled", signinBtn.disabled);
+  }
+
+  if (acceptBox) {
+    acceptBox.addEventListener("change", () => {
+      syncConsentState();
+      clearError();
+    });
+  }
+
   registerToggle.addEventListener("click", () => {
     if (mode === "login") {
       mode = "register";
@@ -174,6 +198,7 @@
       signinBtn.querySelector("span").textContent = "Sign in with a passkey";
       registerToggle.textContent = "New here? Create an account with a passkey";
     }
+    syncConsentState();
     clearError();
   });
 })();

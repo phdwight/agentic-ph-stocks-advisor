@@ -2532,3 +2532,49 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 .doc-version-note { margin: 0; font-size: 0.88rem; color: var(--text-sec); }
 .footer .version a { color: inherit; text-decoration: none; }
 .footer .version a:hover { text-decoration: underline; }
+
+/* ---------- Sign-up consent panel (full disclaimer before registration) ---------- */
+.consent-block { margin: 0.75rem 0 0.25rem; text-align: left; }
+.consent-heading {
+  font-size: 0.82rem; font-weight: 600; color: var(--n-800); margin: 0 0 0.4rem;
+}
+.consent-scroll {
+  max-height: 240px; overflow-y: auto; border: 1px solid var(--divider);
+  border-radius: 8px; padding: 0.85rem 1rem; background: var(--n-100);
+  font-size: 0.78rem; line-height: 1.5;
+}
+.consent-scroll:focus-visible { outline: 2px solid var(--accent-500); outline-offset: 2px; }
+.consent-title {
+  font-family: var(--font-serif); font-size: 1rem; margin: 0 0 0.15rem;
+}
+.consent-updated {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin: 0 0 0.6rem;
+}
+.consent-callout {
+  border: 1px solid var(--accent-300); background: var(--accent-100);
+  border-radius: 6px; padding: 0.55rem 0.7rem; margin-bottom: 0.75rem;
+  font-size: 0.78rem;
+}
+/* The shared disclaimer partial renders .report-section cards — flatten them
+   inside the compact scroll box so the terms read as one continuous document. */
+.consent-scroll .report-section {
+  border: none; background: none; padding: 0; margin: 0 0 0.7rem; box-shadow: none;
+}
+.consent-scroll .report-section::before,
+.consent-scroll .report-section::after { display: none; }
+.consent-scroll .report-section h2 {
+  font-size: 0.82rem; margin: 0 0 0.25rem; border: none; padding: 0;
+}
+.consent-scroll .section-body p,
+.consent-scroll .section-body li { font-size: 0.78rem; line-height: 1.5; }
+.consent-scroll .section-body ul { margin: 0.3rem 0 0.3rem 1rem; }
+.consent-check {
+  display: flex; gap: 0.55rem; align-items: flex-start;
+  margin: 0.75rem 0 0.35rem; font-size: 0.8rem; line-height: 1.45; cursor: pointer;
+}
+.consent-check input { margin-top: 0.2rem; flex-shrink: 0; }
+.consent-link { font-size: 0.74rem; color: var(--text-muted); margin: 0 0 0.25rem; }
+.passkey-btn.is-disabled, .signin-btn:disabled {
+  opacity: 0.5; cursor: not-allowed;
+}
