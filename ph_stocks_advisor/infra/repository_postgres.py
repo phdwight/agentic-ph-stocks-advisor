@@ -32,6 +32,11 @@ from ph_stocks_advisor.infra.repository import (
 
 logger = logging.getLogger(__name__)
 
+# Advisory-lock key guarding schema creation (see ``initialize``).  Any
+# stable arbitrary bigint works; it only has to be the same in every
+# process that initialises this database.
+_INIT_LOCK_KEY = 0x7048_5341  # "PHSA"
+
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS reports (
     id                  SERIAL PRIMARY KEY,
@@ -265,6 +270,16 @@ class PostgresReportRepository(AbstractReportRepository):
     def initialize(self) -> None:
         with self._conn() as conn:
             with conn.cursor() as cur:
+                # CREATE TABLE IF NOT EXISTS is *not* atomic against
+                # concurrent creation: two sessions can both observe the
+                # table as absent and then collide on pg_class's unique
+                # index ("duplicate key value violates unique constraint
+                # pg_class_relname_nsp_index").  Gunicorn boots several
+                # workers simultaneously and each initialises the schema,
+                # so serialise the whole DDL block behind an advisory
+                # lock.  It is transaction-scoped: the commit below
+                # releases it, and a rollback releases it too.
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (_INIT_LOCK_KEY,))
                 cur.execute(_CREATE_TABLE_SQL)
                 cur.execute(_CREATE_INDEX_SQL)
                 cur.execute(_CREATE_USER_SYMBOLS_SQL)
