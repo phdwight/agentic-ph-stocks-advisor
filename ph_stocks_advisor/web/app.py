@@ -239,6 +239,24 @@ def create_app() -> Flask:
     except Exception:
         logger.warning("Redis unavailable for sessions — using signed-cookie sessions.")
 
+    # Create the schema now rather than leaving it to whichever request
+    # happens to touch the repository first.  On a brand-new database that
+    # window leaves the tables missing, and anything else reading them —
+    # the SQLAdmin panel, a passkey registration — fails with
+    # UndefinedTable until an unrelated request wanders in.
+    #
+    # Non-fatal by design: if the database is unreachable at boot the app
+    # still starts (degraded, as /healthz will report) and the existing
+    # lazy path re-attempts initialisation on the next request.
+    try:
+        get_repository()
+        logger.info("Database schema initialised.")
+    except Exception as exc:
+        logger.warning(
+            "Database unreachable at startup — schema init deferred to first request: %s",
+            exc,
+        )
+
     # Trust reverse-proxy headers (Azure Container Apps, nginx, etc.)
     # so that request.url_root uses https:// when behind TLS termination.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # type: ignore[assignment]
