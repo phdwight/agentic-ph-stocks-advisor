@@ -21,14 +21,19 @@
 services:
   # ── PostgreSQL database ────────────────────────────────────────────────────
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ph_advisor}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-ph_advisor}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18+ images store the cluster in a major-version subdirectory
+      # (/var/lib/postgresql/18/docker), so the PARENT is what gets mounted —
+      # not /var/lib/postgresql/data as on 17 and earlier. A PG 18 container
+      # refuses to start if it finds an older cluster at the mount root, so a
+      # major upgrade always means a new volume + dump/restore (or pg_upgrade).
+      - pgdata18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ph_advisor}"]
       interval: 5s
@@ -193,4 +198,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  pgdata:
+  # Any pre-18 `pgdata` volume is deliberately left undeclared: it still exists
+  # on disk, but `docker compose down -v` will no longer delete it.
+  pgdata18:

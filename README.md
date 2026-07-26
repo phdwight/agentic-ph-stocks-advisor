@@ -102,7 +102,7 @@ The project ships with a multi-stage `Dockerfile` and a Compose v2 file with fiv
 
 | Container | Role |
 |-----------|------|
-| **db** | PostgreSQL 16 — persistent report storage |
+| **db** | PostgreSQL 18 — persistent report storage |
 | **redis** | Redis 7 — Celery message broker & result backend |
 | **mcp** | PH Stocks Advisor MCP server — PSE data tools over Streamable HTTP (container :8000, host :5184) |
 | **web** | Flask web UI via Gunicorn + gevent (port 5000) |
@@ -125,7 +125,7 @@ docker compose run --rm advisor TEL
 docker compose run --rm advisor SM BDO TEL --pdf
 
 # 5. Stop everything
-docker compose down            # keeps data in the pgdata volume
+docker compose down            # keeps data in the pgdata18 volume
 docker compose down -v         # removes volumes too
 ```
 
