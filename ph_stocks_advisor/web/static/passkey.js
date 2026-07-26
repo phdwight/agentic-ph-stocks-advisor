@@ -56,10 +56,37 @@
     if (errorEl) errorEl.style.display = "none";
   }
   function busy(on) {
-    signinBtn.disabled = on;
     signinBtn.querySelector("span").textContent = on
       ? "Waiting for your device…"
-      : "Sign in with a passkey";
+      : mode === "register"
+        ? "Create account with a passkey"
+        : "Sign in with a passkey";
+    if (on) {
+      signinBtn.disabled = true;
+      signinBtn.classList.add("is-disabled");
+    } else {
+      // Restore the consent gate rather than blindly re-enabling: after a
+      // failed registration the button must stay locked if the box is
+      // unticked, and must not revert to the sign-in label mid-registration.
+      syncConsentState();
+    }
+  }
+
+  /** Raise an error that carries the server's own message, so a real cause
+   *  ("you already have an account", "accept the terms") reaches the user
+   *  instead of a generic "couldn't create a passkey". */
+  async function beginError(resp) {
+    let msg = "";
+    try {
+      msg = (await resp.json()).error || "";
+    } catch {
+      /* non-JSON body (proxy error page, 500) — fall through */
+    }
+    const err = new Error(msg || `Request failed (${resp.status})`);
+    err.name = "BeginError";
+    err.serverMessage = msg;
+    err.status = resp.status;
+    return err;
   }
 
   async function postJSON(url, body) {
@@ -80,7 +107,7 @@
   // ---- ceremonies ---------------------------------------------------------
   async function doLogin(email) {
     const optResp = await postJSON("/auth/passkey/login/begin", { email });
-    if (!optResp.ok) throw new Error("begin");
+    if (!optResp.ok) throw await beginError(optResp);
     const options = await optResp.json();
     options.challenge = b64urlToBuf(options.challenge);
     (options.allowCredentials || []).forEach((c) => (c.id = b64urlToBuf(c.id)));
@@ -108,7 +135,7 @@
       name,
       accept_disclaimer: true, // the server re-checks; the UI cannot be the only gate
     });
-    if (!optResp.ok) throw new Error("begin");
+    if (!optResp.ok) throw await beginError(optResp);
     const options = await optResp.json();
     options.challenge = b64urlToBuf(options.challenge);
     options.user.id = b64urlToBuf(options.user.id);
@@ -152,12 +179,35 @@
       }
       showError(data.error || "Something went wrong. Try again.");
     } catch (err) {
-      // NotAllowedError = user cancelled / no matching passkey; keep it generic.
-      showError(
-        mode === "register"
-          ? "Couldn't create a passkey. Try again, or use a recovery sign-in."
-          : "Couldn't sign you in with a passkey. Check the email and try again."
-      );
+      // Log the real cause for support/diagnosis; the visible text stays
+      // user-appropriate but is no longer a single catch-all.
+      console.error("[passkey]", mode, err && err.name, err && err.message, err);
+
+      if (err && err.name === "BeginError" && err.serverMessage) {
+        // The server explained itself (already registered, terms not
+        // accepted, invalid email) — show that, don't bury it.
+        showError(err.serverMessage);
+      } else if (err && err.name === "InvalidStateError") {
+        showError(
+          mode === "register"
+            ? "This device already has a passkey for that email. Sign in instead — or remove the old passkey in your device's password settings and try again."
+            : "That passkey can't be used here. Try a recovery sign-in."
+        );
+      } else if (err && err.name === "NotAllowedError") {
+        showError(
+          mode === "register"
+            ? "The passkey prompt was dismissed, timed out, or your device refused to create a second passkey for this email. If you previously had an account here, remove the old passkey in your device's password settings and try again."
+            : "The passkey prompt was dismissed or timed out. Try again, or use a recovery sign-in."
+        );
+      } else if (err && (err.name === "SecurityError" || err.name === "NotSupportedError")) {
+        showError("Passkeys aren't available on this connection or device. Use a recovery sign-in.");
+      } else {
+        showError(
+          mode === "register"
+            ? "Couldn't create a passkey. Try again, or use a recovery sign-in."
+            : "Couldn't sign you in with a passkey. Check the email and try again."
+        );
+      }
     } finally {
       busy(false);
     }
