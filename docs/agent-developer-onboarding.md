@@ -340,5 +340,11 @@ hold/accumulate/trim advisory, stored via `repo.save_portfolio_report`.
   Playwright screenshots; pipeline changes get a real one-ticker run.
 - **Branching:** work lands on `develop`; merge-commit-only promotion to `main`; the main
   pipeline path-gates image builds and pushes to GHCR.
+- **Versioning:** fully automatic and tag-driven. Each merge to `main` that rebuilds the app
+  image runs the `bump` job — `next = max(latest vX.Y.Z tag patch+1, pyproject.toml floor)` —
+  pushes an annotated tag only (no commit), bakes that version into `pyproject.toml` before
+  the build, tags the image `latest` + `X.Y.Z`, then verifies the published image reports the
+  same version. Raise the `pyproject.toml` floor for a minor/major. `GET /version` reports the
+  running build.
 - **Dependency locking:** `uv pip compile --extra=postgres --upgrade -o requirements.txt
   pyproject.toml` — the `postgres` extra is mandatory or psycopg2 silently disappears.
