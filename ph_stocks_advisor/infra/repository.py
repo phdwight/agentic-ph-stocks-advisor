@@ -39,6 +39,8 @@ class UserRecord:
         created_at: datetime | None = None,
         last_login_at: datetime | None = None,
         user_type: int = UserType.NORMAL,
+        disclaimer_version: str | None = None,
+        disclaimer_accepted_at: datetime | None = None,
     ) -> None:
         self.oid = oid
         self.name = name
@@ -47,6 +49,11 @@ class UserRecord:
         self.created_at = created_at or datetime.now(tz=UTC)
         self.last_login_at = last_login_at or datetime.now(tz=UTC)
         self.user_type = user_type
+        # Proof of consent captured at sign-up: which version of the
+        # Disclaimer & Terms the user accepted, and when. ``None`` for
+        # accounts created before consent was recorded.
+        self.disclaimer_version = disclaimer_version
+        self.disclaimer_accepted_at = disclaimer_accepted_at
 
     @property
     def is_elevated(self) -> bool:

@@ -143,6 +143,14 @@ class SQLiteReportRepository(AbstractReportRepository):
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(reports)")}
         if "score" not in cols:
             conn.execute("ALTER TABLE reports ADD COLUMN score INTEGER")
+
+        # Idempotent migration: sign-up consent columns for users created
+        # before the disclaimer had to be accepted.
+        ucols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+        if "disclaimer_version" not in ucols:
+            conn.execute("ALTER TABLE users ADD COLUMN disclaimer_version TEXT")
+        if "disclaimer_accepted_at" not in ucols:
+            conn.execute("ALTER TABLE users ADD COLUMN disclaimer_accepted_at TEXT")
         conn.commit()
 
     def save(self, record: ReportRecord) -> int:
@@ -258,13 +266,18 @@ class SQLiteReportRepository(AbstractReportRepository):
         conn = self._get_conn()
         conn.execute(
             """
-            INSERT INTO users (oid, name, email, provider, user_type, created_at, last_login_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (oid, name, email, provider, user_type, created_at, last_login_at,
+                               disclaimer_version, disclaimer_accepted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(oid) DO UPDATE SET
                 name          = excluded.name,
                 email         = excluded.email,
                 provider      = excluded.provider,
-                last_login_at = excluded.last_login_at
+                last_login_at = excluded.last_login_at,
+                -- Consent is write-once: a later sign-in must never erase or
+                -- overwrite the record of what the user originally accepted.
+                disclaimer_version     = COALESCE(users.disclaimer_version, excluded.disclaimer_version),
+                disclaimer_accepted_at = COALESCE(users.disclaimer_accepted_at, excluded.disclaimer_accepted_at)
             """,
             (
                 user.oid,
@@ -274,6 +287,8 @@ class SQLiteReportRepository(AbstractReportRepository):
                 user.user_type,
                 user.created_at.isoformat(),
                 user.last_login_at.isoformat() if user.last_login_at else datetime.now(tz=UTC).isoformat(),
+                user.disclaimer_version,
+                user.disclaimer_accepted_at.isoformat() if user.disclaimer_accepted_at else None,
             ),
         )
         conn.commit()
@@ -289,6 +304,17 @@ class SQLiteReportRepository(AbstractReportRepository):
             email=row["email"],
             provider=row["provider"],
             user_type=row["user_type"],
+            # NB: `.keys()` is required — sqlite3.Row.__contains__ tests VALUES,
+            # not column names, so `"col" in row` is always False (ruff SIM118
+            # would silently break the read-back here).
+            disclaimer_version=(
+                row["disclaimer_version"] if "disclaimer_version" in row.keys() else None  # noqa: SIM118
+            ),
+            disclaimer_accepted_at=(
+                datetime.fromisoformat(row["disclaimer_accepted_at"])
+                if "disclaimer_accepted_at" in row.keys() and row["disclaimer_accepted_at"]  # noqa: SIM118
+                else None
+            ),
             created_at=datetime.fromisoformat(row["created_at"]),
             last_login_at=datetime.fromisoformat(row["last_login_at"]),
         )
@@ -304,6 +330,17 @@ class SQLiteReportRepository(AbstractReportRepository):
             email=row["email"],
             provider=row["provider"],
             user_type=row["user_type"],
+            # NB: `.keys()` is required — sqlite3.Row.__contains__ tests VALUES,
+            # not column names, so `"col" in row` is always False (ruff SIM118
+            # would silently break the read-back here).
+            disclaimer_version=(
+                row["disclaimer_version"] if "disclaimer_version" in row.keys() else None  # noqa: SIM118
+            ),
+            disclaimer_accepted_at=(
+                datetime.fromisoformat(row["disclaimer_accepted_at"])
+                if "disclaimer_accepted_at" in row.keys() and row["disclaimer_accepted_at"]  # noqa: SIM118
+                else None
+            ),
             created_at=datetime.fromisoformat(row["created_at"]),
             last_login_at=datetime.fromisoformat(row["last_login_at"]),
         )

@@ -23,6 +23,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import UTC, datetime
 
 from flask import Blueprint, Response, jsonify, request, session
 from flask.typing import ResponseReturnValue
@@ -53,7 +54,12 @@ passkey_bp = Blueprint("passkey", __name__, url_prefix="/auth/passkey")
 # One generic message for every failure — never reveal *why* (anti-enumeration).
 _GENERIC_LOGIN_ERR = "Couldn't sign you in with a passkey. Check the email and try again."
 _GENERIC_REG_ERR = "Couldn't set up a passkey for that email. If you already have an account, sign in instead."
+# Version of the terms a user accepts at sign-up — keep in step with
+# ``web.app._DISCLAIMER_UPDATED`` whenever the disclaimer text changes.
+_DISCLAIMER_VERSION = "2026-07-26"
+
 _INVALID_EMAIL_ERR = "Enter a valid email address."
+_NO_CONSENT_ERR = "You must read and accept the Disclaimer & Terms of Use to create an account."
 
 # We don't verify that the address is deliverable (no email is sent) — this
 # just rejects malformed input: local@domain.tld, no spaces, a dot in the domain.
@@ -126,6 +132,11 @@ def register_begin() -> ResponseReturnValue:
         name = (data.get("name") or "").strip() or email
         if not _valid_email(email):
             return jsonify({"error": _INVALID_EMAIL_ERR}), 400
+        # Creating a NEW account requires accepting the disclaimer. Enforced
+        # here, server-side: the checkbox in the UI is convenience only and
+        # must never be the sole gate.
+        if data.get("accept_disclaimer") is not True:
+            return jsonify({"error": _NO_CONSENT_ERR}), 400
         # Existing account: don't let an anonymous caller attach a passkey
         # (account-takeover guard). Generic message — no "email taken" leak.
         if repo.get_user_by_email(email) is not None:
@@ -149,6 +160,7 @@ def register_begin() -> ResponseReturnValue:
     session["pk_reg_new"] = is_new
     session["pk_reg_name"] = name
     session["pk_reg_email"] = email
+    session["pk_reg_consent"] = is_new  # only new accounts gave consent just now
     return Response(options_to_json(options), mimetype="application/json")
 
 
@@ -164,6 +176,7 @@ def register_complete() -> ResponseReturnValue:
     is_new = session.pop("pk_reg_new", False)
     name = session.pop("pk_reg_name", "")
     email = session.pop("pk_reg_email", "")
+    consented = session.pop("pk_reg_consent", False)
     if not chal or not oid:
         return jsonify({"error": _GENERIC_REG_ERR}), 400
 
@@ -181,7 +194,17 @@ def register_complete() -> ResponseReturnValue:
         return jsonify({"error": _GENERIC_REG_ERR}), 400
 
     if is_new:
-        repo.save_user(UserRecord(oid=oid, name=name, email=email, provider="passkey"))
+        # Persist proof of consent: which version of the terms, and when.
+        repo.save_user(
+            UserRecord(
+                oid=oid,
+                name=name,
+                email=email,
+                provider="passkey",
+                disclaimer_version=_DISCLAIMER_VERSION if consented else None,
+                disclaimer_accepted_at=datetime.now(tz=UTC) if consented else None,
+            )
+        )
 
     repo.add_webauthn_credential(
         WebAuthnCredentialRecord(
