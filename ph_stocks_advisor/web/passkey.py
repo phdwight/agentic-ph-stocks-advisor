@@ -45,7 +45,7 @@ from webauthn.helpers.structs import (
 )
 
 from ph_stocks_advisor.infra.config import get_email_sender, get_repository, get_settings
-from ph_stocks_advisor.infra.email import EmailSendError, build_verification_email
+from ph_stocks_advisor.infra.email import build_verification_email
 from ph_stocks_advisor.infra.repository import UserRecord, WebAuthnCredentialRecord
 from ph_stocks_advisor.web.auth import _safe_redirect_url
 
@@ -192,13 +192,15 @@ def register_send_code() -> ResponseReturnValue:
         return jsonify({"error": _CODE_COOLDOWN_ERR}), 429
 
     code = f"{secrets.randbelow(1_000_000):06d}"
-    subject, html = build_verification_email(code=code, expires_minutes=_CODE_TTL_SECONDS // 60)
     try:
+        subject, html = build_verification_email(code=code, expires_minutes=_CODE_TTL_SECONDS // 60)
         get_email_sender().send(to=email, subject=subject, html=html)
-    except EmailSendError:
-        # Loud in the log (an unsendable code means signup is silently broken),
-        # actionable for the user, and no session state is written — a retry
-        # starts clean.
+    except Exception:
+        # ANY failure — provider rejection (EmailSendError) or an unexpected
+        # bug — answers the same way: loud in the log (an unsendable code
+        # means signup is silently broken), actionable for the user instead
+        # of a raw 500, and no session state is written so a retry starts
+        # clean.
         logger.error("Failed to send verification code to %s", email, exc_info=True)
         return jsonify({"error": _CODE_SEND_ERR}), 502
 

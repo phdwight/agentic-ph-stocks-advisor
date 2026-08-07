@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*, *::before, *::after { box-sizing: border-box; }</style>
+<title>PH Stocks Advisor — Architecture Reference</title>
+<style>
+  :root {
+    --paper: #f7f6f4;
+    --panel: #eeedeb;
+    --box: #ffffff;
+    --ink: #1d1f20;
+    --muted: #5d5d60;
+    --line: #dcdad6;
+    --line-strong: #b9b6b0;
+    --accent: #cc6420;
+    --accent-ink: #a44e18;
+    --accent-soft: #fdf1e7;
+    --teal: #3d8a7e;
+    --teal-soft: #e4f0ed;
+    --warn: #9a6a1f;
+    --warn-soft: #f6ecd9;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --r: 10px;
+    --r-sm: 6px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #16171a;
+      --panel: #1c1d21;
+      --box: #212226;
+      --ink: #e7e6e3;
+      --muted: #9c9ca0;
+      --line: #2e2f34;
+      --line-strong: #47484e;
+      --accent: #ef9a5c;
+      --accent-ink: #f5bd8f;
+      --accent-soft: #3a2513;
+      --teal: #5fb0a2;
+      --teal-soft: #1d332f;
+      --warn: #d3a45a;
+      --warn-soft: #362b18;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #f7f6f4; --panel: #eeedeb; --box: #ffffff; --ink: #1d1f20; --muted: #5d5d60;
+    --line: #dcdad6; --line-strong: #b9b6b0; --accent: #cc6420; --accent-ink: #a44e18;
+    --accent-soft: #fdf1e7; --teal: #3d8a7e; --teal-soft: #e4f0ed; --warn: #9a6a1f; --warn-soft: #f6ecd9;
+  }
+  :root[data-theme="dark"] {
+    --paper: #16171a; --panel: #1c1d21; --box: #212226; --ink: #e7e6e3; --muted: #9c9ca0;
+    --line: #2e2f34; --line-strong: #47484e; --accent: #ef9a5c; --accent-ink: #f5bd8f;
+    --accent-soft: #3a2513; --teal: #5fb0a2; --teal-soft: #1d332f; --warn: #d3a45a; --warn-soft: #362b18;
+  }
+
+  html { background: var(--paper); }
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    background: var(--paper);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 28px 90px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  header.masthead { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+  h1 {
+    font-size: clamp(34px, 5vw, 52px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  .subtitle { max-width: 58ch; color: var(--ink); margin: 0; font-size: 16px; }
+  .versionblock { text-align: right; min-width: 180px; }
+  .versionblock .v {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .versionblock .v span { font-size: 15px; font-weight: 400; margin-right: 4px; color: var(--muted); }
+  .versionblock p { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; line-height: 1.45; }
+  .versionblock code { font-family: var(--mono); font-size: 11px; }
+
+  nav.toc {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line-strong);
+    margin: 34px 0 0;
+  }
+  nav.toc a {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 16px 14px;
+    text-decoration: none;
+    color: var(--ink);
+    font-weight: 600;
+    font-size: 15px;
+    border-left: 1px solid var(--line);
+  }
+  nav.toc a:first-child { border-left: none; }
+  nav.toc a .n { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  nav.toc a:hover { background: var(--panel); }
+  @media (max-width: 720px) { nav.toc a { border-left: none; border-top: 1px solid var(--line); } nav.toc a:first-child { border-top: none; } }
+
+  section { margin-top: 72px; }
+  .sechead { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; }
+  .sechead .n { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+  h2 { font-size: clamp(24px, 3vw, 32px); font-weight: 800; letter-spacing: -0.015em; margin: 0; text-wrap: balance; }
+  .lede { max-width: 68ch; color: var(--ink); margin: 0 0 26px; font-size: 15.5px; }
+  .lede code, p code, li code, td code { font-family: var(--mono); font-size: 0.86em; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; }
+
+  /* ---------- figure / flow diagram ---------- */
+  figure.flowfig {
+    margin: 0 0 34px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: var(--r);
+    padding: 34px 22px 18px;
+  }
+  .flowscroll { overflow-x: auto; padding-bottom: 6px; }
+  .flow { display: flex; align-items: center; justify-content: center; min-width: 900px; }
+  .fnode {
+    background: var(--box);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    padding: 16px 18px;
+    text-align: center;
+    min-width: 118px;
+    flex: 0 0 auto;
+  }
+  .fnode .name { font-family: var(--mono); font-weight: 700; font-size: 14px; white-space: nowrap; }
+  .fnode .role { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-top: 6px; white-space: nowrap; }
+  .fnode.hot { border: 2px solid var(--accent); }
+  .fnode.edge { background: var(--panel); }
+  .farrow { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1 0 72px; padding: 0 6px; }
+  .farrow .lbl { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); white-space: nowrap; }
+  .farrow .shaft { width: 100%; height: 1px; background: var(--accent); position: relative; }
+  .farrow .shaft::after {
+    content: ""; position: absolute; right: -1px; top: -3.5px;
+    border-left: 7px solid var(--accent); border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  }
+  .hang { display: flex; justify-content: center; margin-top: 0; min-width: 900px; }
+  .hangcol { display: flex; flex-direction: column; align-items: center; }
+  .hangline { width: 1px; height: 22px; border-left: 1px dashed var(--line-strong); }
+  .hangbox {
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--r-sm);
+    background: var(--paper);
+    padding: 8px 14px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    text-align: center;
+  }
+  .hangbox b { color: var(--warn); font-weight: 700; }
+  figcaption {
+    text-align: center; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-top: 24px;
+  }
+
+  /* ---------- invariant callout ---------- */
+  .invariant {
+    border: 1px solid var(--warn);
+    background: var(--warn-soft);
+    border-radius: var(--r);
+    padding: 16px 20px;
+    display: flex; gap: 14px; align-items: baseline;
+    margin: 0 0 34px;
+  }
+  .invariant .star { color: var(--warn); font-size: 18px; flex: 0 0 auto; }
+  .invariant p { margin: 0; font-size: 14.5px; }
+  .invariant strong { color: var(--warn); }
+
+  /* ---------- layer ladder ---------- */
+  .ladder { border: 1px solid var(--line-strong); border-radius: var(--r); overflow: hidden; }
+  .rung { display: grid; grid-template-columns: 240px 1fr; border-top: 1px solid var(--line); background: var(--box); }
+  .rung:first-child { border-top: none; }
+  .rung .mod { padding: 18px 20px; border-right: 1px solid var(--line); background: var(--panel); }
+  .rung .mod .file { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+  .rung .mod .tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-top: 5px; }
+  .rung .desc { padding: 18px 20px; font-size: 14px; }
+  .rung .desc p { margin: 0 0 6px; }
+  .rung .desc p:last-child { margin-bottom: 0; }
+  .rung .desc .no { color: var(--muted); font-size: 13px; }
+  @media (max-width: 720px) { .rung { grid-template-columns: 1fr; } .rung .mod { border-right: none; border-bottom: 1px solid var(--line); } }
+
+  /* ---------- chips ---------- */
+  .chip {
+    display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    background: var(--accent-soft); color: var(--accent-ink);
+    border-radius: 999px;
+    padding: 4px 10px;
+  }
+  .chip.tealchip { background: var(--teal-soft); color: var(--teal); }
+  .chip.warnchip { background: var(--warn-soft); color: var(--warn); }
+  .cardtag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+
+  /* ---------- repo cards ---------- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 20px; }
+  .card { border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--box); display: flex; flex-direction: column; }
+  .card .cardhead { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px 0; }
+  .card .inner { margin: 14px 18px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); padding: 14px 16px; flex: 1; }
+  .card .inner .cls { font-family: var(--mono); font-weight: 700; font-size: 15px; }
+  .card .inner ul { list-style: none; margin: 10px 0 0; padding: 0; font-family: var(--mono); font-size: 12.5px; }
+  .card .inner li { padding: 3px 0; white-space: nowrap; overflow-x: auto; }
+  .card .inner li .ret { color: var(--muted); }
+  .card .inner li .ret b { color: var(--accent-ink); font-weight: 600; }
+  .card .foot { border-top: 1px solid var(--line); margin: 0 18px; padding: 12px 0 14px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .card .foot b { color: var(--ink); font-weight: 700; }
+  .card .foot .proto { border: 1px dashed var(--line-strong); border-radius: 4px; padding: 1px 6px; color: var(--accent-ink); }
+
+  /* ---------- two-col panels ---------- */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 26px; }
+  @media (max-width: 860px) { .duo { grid-template-columns: 1fr; } }
+  .panelbox { border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--box); padding: 18px 20px; }
+  .panelbox h3 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; font-weight: 700; }
+
+  table.swap { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.swap td { padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: baseline; }
+  table.swap tr:first-child td { border-top: none; }
+  table.swap .p { font-family: var(--mono); font-weight: 700; white-space: nowrap; }
+  table.swap .p span { border: 1px dashed var(--line-strong); border-radius: 4px; padding: 1px 6px; }
+  table.swap .impls { font-family: var(--mono); font-size: 12px; }
+  table.swap .impls .or { color: var(--muted); font-family: var(--sans); font-style: italic; padding: 0 4px; }
+
+  .onion { display: flex; flex-direction: column; gap: 0; align-items: stretch; font-family: var(--mono); font-size: 12.5px; }
+  .onion .shell { border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 12px 14px; background: var(--panel); }
+  .onion .shell .who { font-weight: 700; }
+  .onion .shell .what { color: var(--muted); font-size: 11px; margin-top: 2px; font-family: var(--sans); }
+  .onion .shell + .shell { margin-top: 6px; }
+  .onion .core { background: var(--accent-soft); }
+  .onion .indent1 { margin-left: 22px; }
+  .onion .indent2 { margin-left: 44px; }
+
+  .bandscale { font-family: var(--mono); font-size: 12.5px; }
+  .bandrow { display: grid; grid-template-columns: 74px 110px 1fr; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); align-items: baseline; }
+  .bandrow:first-child { border-top: none; }
+  .bandrow .rng { color: var(--muted); white-space: nowrap; }
+  .bandrow .lbl { font-weight: 700; white-space: nowrap; }
+  .bandrow .lbl.buy { color: var(--teal); }
+  .bandrow .lbl.wait { color: var(--ink); }
+  .bandrow .lbl.avoid { color: #d85e52; }
+  .bandrow .note { color: var(--muted); font-family: var(--sans); font-size: 12px; }
+
+  .toolgrid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .toolgrid .tool {
+    font-family: var(--mono); font-size: 12px;
+    border: 1px solid var(--line-strong); border-radius: 999px; background: var(--box);
+    padding: 5px 11px;
+  }
+  .toolgrid .tool.llm { border-color: var(--teal); color: var(--teal); }
+  .toolgrid .tool.action { border-color: var(--warn); color: var(--warn); }
+
+  /* ---------- config matrix ---------- */
+  .cfgwrap { overflow-x: auto; border: 1px solid var(--line-strong); border-radius: var(--r); }
+  table.cfg { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; background: var(--box); }
+  table.cfg th {
+    text-align: left; font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--muted); font-weight: 700;
+    padding: 12px 16px; border-bottom: 1px solid var(--line-strong); background: var(--panel);
+  }
+  table.cfg td { padding: 9px 16px; border-top: 1px solid var(--line); vertical-align: baseline; }
+  table.cfg .grp td {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); background: var(--panel); font-weight: 700; padding: 7px 16px;
+    border-top: 1px solid var(--line-strong);
+  }
+  table.cfg .var { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+  table.cfg .def { font-family: var(--mono); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* ---------- golden path ---------- */
+  .gp { border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--box); overflow: hidden; }
+  .gpstep { display: grid; grid-template-columns: 52px 1fr; border-top: 1px solid var(--line); }
+  .gpstep:first-child { border-top: none; }
+  .gpstep .num {
+    font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 700;
+    padding: 16px 0 0 18px;
+  }
+  .gpstep .body { padding: 14px 20px 16px 0; }
+  .gpstep .call { font-family: var(--mono); font-size: 13.5px; font-weight: 600; overflow-x: auto; white-space: nowrap; }
+  .gpstep .call .at { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+  .gpstep .note { font-size: 13.5px; color: var(--ink); margin: 5px 0 0; max-width: 75ch; }
+  .gpstep .note .halt { color: var(--warn); font-weight: 600; }
+  .gpstep.freeze { background: var(--panel); }
+  .envelope { margin: 22px 0 0; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--panel); padding: 18px 20px; overflow-x: auto; }
+  .envelope pre { margin: 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.75; }
+  .envelope .k { color: var(--accent-ink); font-weight: 600; }
+  .envelope .c { color: var(--muted); }
+
+  /* ---------- legend ---------- */
+  .legend {
+    margin-top: 60px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--panel);
+    padding: 14px 20px; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  .legend .t { letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700; }
+  .legend .sw-solid { display: inline-block; width: 26px; height: 12px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--box); vertical-align: -2px; margin-right: 7px; }
+  .legend .sw-dash { display: inline-block; width: 26px; height: 12px; border: 1px dashed var(--line-strong); border-radius: 3px; vertical-align: -2px; margin-right: 7px; }
+  .legend .sw-star { color: var(--warn); font-weight: 700; margin-right: 5px; }
+  .legend .sw-teal { display: inline-block; width: 26px; height: 12px; border: 1px solid var(--teal); border-radius: 999px; vertical-align: -2px; margin-right: 7px; }
+
+  a { color: var(--accent-ink); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">Reference card · Python · LangGraph multi-agent</p>
+  <header class="masthead">
+    <div>
+      <h1>PH Stocks Advisor</h1>
+      <p class="subtitle">How a ticker becomes a verdict — six specialist agents, one consolidator,
+      and every seam in between: the web boundary, the queue, the graph, the MCP data plane, and
+      one analysis traced end to end.</p>
+    </div>
+    <div class="versionblock">
+      <div class="v"><span>v</span>2.1.13</div>
+      <p>Tag-driven: app == git tag == image tag on every merge;
+      <code>pyproject.toml</code> is the floor.<br>
+      Live at phstockadvisor.sakayandgo.com,<br>published to <code>ghcr.io/phdwight/agentic-ph-stocks-advisor</code>.</p>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Sections">
+    <a href="#s1"><span class="n">01</span> Architecture &amp; layering</a>
+    <a href="#s2"><span class="n">02</span> Core class map</a>
+    <a href="#s3"><span class="n">03</span> Configuration matrix</a>
+    <a href="#s4"><span class="n">04</span> Golden path</a>
+  </nav>
+
+  <!-- ============================ 01 ============================ -->
+  <section id="s1">
+    <div class="sechead"><span class="n">01</span><h2>Architecture &amp; layering</h2></div>
+    <p class="lede">Five processes, one direction of dependency. The web app never analyses;
+    the worker never renders; every byte of market data crosses the <b>MCP server</b> — there is
+    no in-process fallback. ★ marks the freshness invariant the caching design exists to protect.</p>
+
+    <figure class="flowfig">
+      <div class="flowscroll">
+        <div class="flow">
+          <div class="fnode">
+            <div class="name">Browser</div>
+            <div class="role">analyse · SSE</div>
+          </div>
+          <div class="farrow"><span class="lbl">claims &amp; queues</span><span class="shaft"></span></div>
+          <div class="fnode">
+            <div class="name">web/</div>
+            <div class="role">flask · gunicorn</div>
+          </div>
+          <div class="farrow"><span class="lbl">redis · celery</span><span class="shaft"></span></div>
+          <div class="fnode">
+            <div class="name">worker</div>
+            <div class="role">analyse_stock</div>
+          </div>
+          <div class="farrow"><span class="lbl">run_analysis</span><span class="shaft"></span></div>
+          <div class="fnode hot">
+            <div class="name">LangGraph</div>
+            <div class="role">6 + 1 agents</div>
+          </div>
+          <div class="farrow"><span class="lbl">every tool call</span><span class="shaft"></span></div>
+          <div class="fnode">
+            <div class="name">MCP server</div>
+            <div class="role">ph_stocks_mcp</div>
+          </div>
+          <div class="farrow"><span class="lbl">fetch · fallback</span><span class="shaft"></span></div>
+          <div class="fnode edge">
+            <div class="name">Sources</div>
+            <div class="role">dragonfi · edge · tv</div>
+          </div>
+        </div>
+        <div class="hang">
+          <div class="hangcol" style="margin-left: 130px;">
+            <div class="hangline"></div>
+            <div class="hangbox">A report is fresh until the next <b>15:00 Asia/Manila</b> close of a trading day.<br>
+            Market open (09:00–15:00) → serve the last report, <b>never start a fresh run</b>;<br>
+            two requests for the same ticker join <b>one</b> run (atomic claim + SSE snapshot).</div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Fig. 1 — the path every analysis follows</figcaption>
+    </figure>
+
+    <div class="invariant">
+      <span class="star" aria-hidden="true">★</span>
+      <p><strong>Trading-hours freshness.</strong> Prices settle at the 15:00 close, so a report
+      generated after the close is <em>the</em> report until the next trading day's close — weekends
+      (and, when configured, holidays) roll forward. During the 09:00–15:00 session the app shows the
+      last report with a "market open" note instead of analysing a moving target. Concurrency is part
+      of the same contract: the first requester wins an atomic <code>SET NX</code> claim with a
+      pre-generated task id; everyone else attaches to that run's progress stream via an SSE snapshot.
+      One ticker, one boundary window, at most one LLM spend.</p>
+    </div>
+
+    <div class="ladder">
+      <div class="rung">
+        <div class="mod"><div class="file">web/</div><div class="tag">delivery boundary</div></div>
+        <div class="desc">
+          <p>Routes, passkey-first auth (emailed 6-digit code at sign-up, OAuth recovery), per-user
+          rate limit (5/day, atomic reserve/release), the same-ticker dedup claim, SSE progress, and
+          Celery dispatch. Tala UI: console layout on desktop, stream on mobile.</p>
+          <p class="no">Never: analysis logic, LLM calls, data fetching.</p>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="mod"><div class="file">graph/ · agents/</div><div class="tag">the analysis</div></div>
+        <div class="desc">
+          <p><code>build_graph()</code>: a validation gate, then a registry-driven fan-out to six
+          specialists, fan-in to the consolidator. Each agent resolves its own LLM from
+          <code>AGENT_LLM_SPECS</code> (<code>[provider:]tier</code>) — adding an agent is one
+          registry row, not a graph rewrite.</p>
+          <div class="toolgrid" aria-label="Graph nodes">
+            <span class="tool">validate</span>
+            <span class="tool llm">price_agent</span><span class="tool llm">dividend_agent</span>
+            <span class="tool llm">movement_agent</span><span class="tool llm">valuation_agent</span>
+            <span class="tool llm">controversy_agent</span><span class="tool llm">sentiment_agent</span>
+            <span class="tool action">consolidator · large tier</span>
+          </div>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="mod"><div class="file">data/</div><div class="tag">models &amp; data plane</div></div>
+        <div class="desc">
+          <p>Pydantic models, the MCP client, and agent tools. <b>All fetching dispatches through the
+          MCP server</b> (<code>MCP_SERVER_URL</code> is a hard requirement). <code>services/</code>
+          holds the shared analysis logic the MCP server itself serves — one implementation, two callers.</p>
+          <p class="no">DragonFi outage ≠ not-listed: symbol validation is tri-state with PSE Edge fallbacks.</p>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="mod"><div class="file">infra/</div><div class="tag">wiring &amp; policy</div></div>
+        <div class="desc">
+          <p><code>config.py</code> (env-backed <code>Settings</code>, LLM factory, singletons) ·
+          <code>repository*.py</code> (reports, users, credentials) · <code>email.py</code>
+          (Tala-styled report &amp; verification mail) · <code>trading_calendar.py</code> (the ★ rule) ·
+          Langfuse tracing · logging.</p>
+          <p class="no">Config is read here and only here — modules receive values, never the environment.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 02 ============================ -->
+  <section id="s2">
+    <div class="sechead"><span class="n">02</span><h2>Core class map</h2></div>
+    <p class="lede">Seven LLM-backed agents cover the analysis; three protocols cover persistence,
+    mail, and models. Concrete classes are wired in <code>infra/config.py</code> — nothing else
+    knows which column of the swap table is live.</p>
+
+    <div class="cards">
+      <div class="card">
+        <div class="cardhead"><span class="chip tealchip">Agents</span><span class="cardtag">specialists.py</span></div>
+        <div class="inner">
+          <div class="cls">Six specialists</div>
+          <ul>
+            <li>PriceAgent <span class="ret">→ <b>PriceAnalysis</b></span></li>
+            <li>DividendAgent <span class="ret">→ <b>DividendAnalysis</b></span></li>
+            <li>MovementAgent <span class="ret">→ <b>MovementAnalysis</b></span></li>
+            <li>ValuationAgent <span class="ret">→ <b>ValuationAnalysis</b></span></li>
+            <li>ControversyAgent <span class="ret">→ <b>ControversyAnalysis</b></span></li>
+            <li>SentimentAgent <span class="ret">→ <b>SentimentAnalysis</b></span></li>
+          </ul>
+        </div>
+        <div class="foot">small tier by default · tools via MCP · prompts may only key on fields the payload carries — state the negative case</div>
+      </div>
+
+      <div class="card">
+        <div class="cardhead"><span class="chip tealchip">Agent</span><span class="cardtag">consolidator.py</span></div>
+        <div class="inner">
+          <div class="cls">ConsolidatorAgent</div>
+          <ul>
+            <li>run(state) <span class="ret">→ <b>FinalReport</b></span></li>
+            <li>· six sub-scores <span class="ret">→ <b>weighted 0–100</b></span></li>
+            <li>· score_band() <span class="ret">→ <b>five bands</b></span></li>
+          </ul>
+        </div>
+        <div class="foot">large tier · structured output first, regex fallback · binary BUY/NOT&nbsp;BUY derived at threshold <b>60</b> for compat</div>
+      </div>
+
+      <div class="card">
+        <div class="cardhead"><span class="chip tealchip">Agent</span><span class="cardtag">portfolio.py</span></div>
+        <div class="inner">
+          <div class="cls">PortfolioAgent</div>
+          <ul>
+            <li>run(symbol, shares, avg_cost, …) <span class="ret">→ <b>analysis</b></span></li>
+          </ul>
+        </div>
+        <div class="foot">elevated users only · chains after the base report (<b>My Position</b>) · assumes an existing holding, not a new position</div>
+      </div>
+
+      <div class="card">
+        <div class="cardhead"><span class="chip">Protocol</span><span class="cardtag">repository.py</span></div>
+        <div class="inner">
+          <div class="cls">AbstractReportRepository</div>
+          <ul>
+            <li>save / get_latest / get_by_id <span class="ret">→ <b>ReportRecord</b></span></li>
+            <li>save_user / get_user_by_email <span class="ret">→ <b>UserRecord</b></span></li>
+            <li>add/list_webauthn_credentials <span class="ret">→ <b>credentials</b></span></li>
+            <li>save_portfolio_report <span class="ret">→ <b>id</b></span></li>
+          </ul>
+        </div>
+        <div class="foot">SQLite (dev default) <span class="proto">or</span> Postgres (Docker) · schema created at startup, concurrency-safe · admin panel reflects it</div>
+      </div>
+
+      <div class="card">
+        <div class="cardhead"><span class="chip">Protocol</span><span class="cardtag">infra/email.py</span></div>
+        <div class="inner">
+          <div class="cls">EmailSender</div>
+          <ul>
+            <li>send(to, subject, html) <span class="ret">→ <b>None</b></span></li>
+            <li>build_report_email(…) <span class="ret">→ <b>Tala report</b></span></li>
+            <li>build_verification_email(…) <span class="ret">→ <b>6-digit code</b></span></li>
+          </ul>
+        </div>
+        <div class="foot">Console (no key) <span class="proto">or</span> ZeptoMail · <b>no email failure of any kind may interrupt the flow</b> — logged, never raised past the seam</div>
+      </div>
+
+      <div class="card">
+        <div class="cardhead"><span class="chip warnchip">Boundary</span><span class="cardtag">web plumbing</span></div>
+        <div class="inner">
+          <div class="cls">rate_limit · dedup · progress</div>
+          <ul>
+            <li>rl_reserve / rl_release <span class="ret">→ <b>atomic, 5/day</b></span></li>
+            <li>SET NX inflight claim <span class="ret">→ <b>one run per ticker</b></span></li>
+            <li>publish_progress → SSE <span class="ret">→ <b>snapshot + stream</b></span></li>
+          </ul>
+        </div>
+        <div class="foot">all three live in Redis · a failed analysis releases its rate-limit slot so the user can retry</div>
+      </div>
+    </div>
+
+    <div class="duo">
+      <div class="panelbox">
+        <h3>Protocols &amp; swappable implementations</h3>
+        <table class="swap">
+          <tr><td class="p"><span>Repository</span></td><td class="impls">SQLiteReportRepository <span class="or">or</span> PostgresReportRepository</td></tr>
+          <tr><td class="p"><span>EmailSender</span></td><td class="impls">ConsoleEmailSender <span class="or">or</span> ZeptoMailSender</td></tr>
+          <tr><td class="p"><span>BaseChatModel</span></td><td class="impls">ChatOpenAI <span class="or">or</span> ChatAnthropic <span class="or">× large / medium / small</span></td></tr>
+          <tr><td class="p"><span>Data source</span></td><td class="impls">MCP server <span class="or">(required — deliberately no fallback)</span></td></tr>
+        </table>
+        <p style="font-size: 12.5px; color: var(--muted); margin: 14px 0 0;">
+        <code>DB_BACKEND</code> picks the repository; <code>ZEPTOMAIL_API_KEY</code> picks the sender;
+        every agent picks its model from a <code>[provider:]tier</code> spec, so one agent can run on
+        Anthropic while the rest run on OpenAI.</p>
+      </div>
+
+      <div class="panelbox">
+        <h3>Sign-in — passkey-first, verified email</h3>
+        <div class="onion">
+          <div class="shell"><span class="who">login page</span><div class="what">email-first · decoy credentials make unknown emails indistinguishable</div></div>
+          <div class="shell indent1"><span class="who">register/send-code</span><div class="what">consent + emailed 6-digit code — HMAC-hashed in session, 10 min, 5 attempts, 60 s resend</div></div>
+          <div class="shell indent1"><span class="who">register/begin · complete</span><div class="what">WebAuthn ceremony — code checked before the exists-check, so begin answers uniformly</div></div>
+          <div class="shell indent2 core"><span class="who">session user</span><div class="what">user_id is the email — reports, limits, and result mail all key on it</div></div>
+        </div>
+        <p style="font-size: 12.5px; color: var(--muted); margin: 14px 0 0;">Google / Microsoft OAuth
+        stays as account recovery. Passkeys bind to <code>WEBAUTHN_RP_ID</code> — changing the domain
+        invalidates every credential.</p>
+      </div>
+    </div>
+
+    <div class="duo">
+      <div class="panelbox">
+        <h3>Verdict scale — 0–100, five bands</h3>
+        <div class="bandscale">
+          <div class="bandrow"><span class="rng">80–100</span><span class="lbl buy">STRONG BUY</span><span class="note">meter deep in the teal zone</span></div>
+          <div class="bandrow"><span class="rng">60–79</span><span class="lbl buy">BUY</span><span class="note">≥ 60 also sets the legacy binary BUY</span></div>
+          <div class="bandrow"><span class="rng">40–59</span><span class="lbl wait">WAIT</span><span class="note">mixed signals — the band the binary verdict can't say</span></div>
+          <div class="bandrow"><span class="rng">20–39</span><span class="lbl avoid">DON'T BUY</span><span class="note"></span></div>
+          <div class="bandrow"><span class="rng">0–19</span><span class="lbl avoid">AVOID</span><span class="note"></span></div>
+        </div>
+        <p style="font-size: 12.5px; color: var(--muted); margin: 14px 0 0;">The score is the weighted
+        mean of six per-dimension sub-scores (weights env-tunable, valuation heaviest at 0.25).
+        Report page and result email both show the band, never the raw binary.</p>
+      </div>
+
+      <div class="panelbox">
+        <h3>Ship pipeline — tag-driven, path-gated</h3>
+        <p style="font-size: 13.5px; margin: 0 0 10px;">Merge to <code>main</code> → tests →
+        <b>Bump Version &amp; Tag</b> (app version == git tag == image tag) → multi-arch images to
+        GHCR. Images rebuild <b>only when their inputs change</b>; deps are locked via pip-compiled
+        <code>requirements.txt</code> (CI resolves fresh from <code>pyproject</code> — the reason
+        <code>mcp&lt;2</code> and <code>redis&lt;6.5</code> ceilings exist).</p>
+        <p style="font-size: 13.5px; margin: 0;">Prod pulls <code>docker-compose.prod.yml</code>
+        verbatim: same app image for web / worker / MCP, selected by entrypoint; cloudflared tunnel
+        opt-in via the <code>tunnel</code> profile with its token in <code>.env</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 03 ============================ -->
+  <section id="s3">
+    <div class="sechead"><span class="n">03</span><h2>Configuration matrix</h2></div>
+    <p class="lede">Everything is environment-sourced into one <code>Settings</code> object in
+    <code>infra/config.py</code>. Two variables change the shape of the system:
+    <code>DB_BACKEND</code> picks the storage column, and <code>WEBAUTHN_RP_ID</code> turns the
+    whole auth stack on. Empty-but-forwarded Compose vars are treated as unset.</p>
+
+    <div class="cfgwrap">
+      <table class="cfg">
+        <thead><tr><th>Variable</th><th>Default</th><th>What it governs</th></tr></thead>
+        <tbody>
+          <tr class="grp"><td colspan="3">LLM · provider-agnostic, per-agent</td></tr>
+          <tr><td class="var">LLM_PROVIDER</td><td class="def">openai</td><td>Default provider; each agent may override via its spec</td></tr>
+          <tr><td class="var">OPENAI_API_KEY / ANTHROPIC_API_KEY</td><td class="def">unset</td><td>Fail-fast when the chosen provider's key is missing</td></tr>
+          <tr><td class="var">*_MODEL_LARGE / MEDIUM / SMALL</td><td class="def">gpt-4o · gpt-4o-mini / opus · sonnet · haiku</td><td>Three tiers per provider</td></tr>
+          <tr><td class="var">LLM_&lt;AGENT&gt;</td><td class="def">consolidator+portfolio large, specialists small</td><td>Per-agent <code>[provider:]tier</code> spec</td></tr>
+
+          <tr class="grp"><td colspan="3">Data plane · protect the sources</td></tr>
+          <tr><td class="var">MCP_SERVER_URL</td><td class="def">required</td><td>All fetching dispatches here — missing value is a hard error, not a fallback</td></tr>
+          <tr><td class="var">TAVILY_API_KEY</td><td class="def">unset</td><td>Web search for sentiment / controversy context</td></tr>
+          <tr><td class="var">DRAGONFI / PSE_EDGE / TRADINGVIEW _BASE_URL</td><td class="def">public endpoints</td><td>Upstream roots (DragonFi outage ≠ not-listed — Edge fallbacks)</td></tr>
+
+          <tr class="grp"><td colspan="3">Storage · the one switch</td></tr>
+          <tr><td class="var">DB_BACKEND</td><td class="def">sqlite</td><td>sqlite → single file; postgres → pooled <code>POSTGRES_DSN</code> (always postgres in Docker)</td></tr>
+          <tr><td class="var">REDIS_URL</td><td class="def">redis://localhost:6379/0</td><td>Queue, sessions, SSE, rate limit, dedup claims — one pool, bounded</td></tr>
+
+          <tr class="grp"><td colspan="3">Auth · off unless the RP ID is set</td></tr>
+          <tr><td class="var">WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN</td><td class="def">unset / localhost:5180</td><td>Passkeys bind to this domain; origin verified server-side, never inferred</td></tr>
+          <tr><td class="var">GOOGLE_* / ENTRA_*</td><td class="def">unset</td><td>OAuth recovery sign-ins</td></tr>
+          <tr><td class="var">FLASK_SECRET_KEY</td><td class="def">change-me</td><td>Sessions, CSRF, verification-code HMAC, decoy credential HMAC</td></tr>
+
+          <tr class="grp"><td colspan="3">Email · console unless the key is set</td></tr>
+          <tr><td class="var">ZEPTOMAIL_API_KEY</td><td class="def">unset</td><td>Unset → log-only console sender; set → ZeptoMail. Sign-up codes need it in prod</td></tr>
+          <tr><td class="var">EMAIL_FROM_ADDRESS</td><td class="def">customer.success@sakayandgo.com</td><td>Must belong to a ZeptoMail-verified <b>exact</b> domain</td></tr>
+          <tr><td class="var">APP_BASE_URL</td><td class="def">→ WEBAUTHN_ORIGIN</td><td>Absolute report links inside result emails</td></tr>
+
+          <tr class="grp"><td colspan="3">Verdict &amp; limits</td></tr>
+          <tr><td class="var">SCORE_WEIGHT_*</td><td class="def">valuation .25 · others .15</td><td>Sub-score weights, normalised by their sum</td></tr>
+          <tr><td class="var">BUY_SCORE_THRESHOLD</td><td class="def">60</td><td>Where the legacy binary verdict flips to BUY</td></tr>
+          <tr><td class="var">DAILY_ANALYSIS_LIMIT</td><td class="def">5</td><td>Fresh analyses per user per UTC day; cached and joined runs are free</td></tr>
+          <tr><td class="var">TIMEZONE</td><td class="def">Asia/Manila</td><td>The ★ rule's clock — trading days, 15:00 cutoff</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================ 04 ============================ -->
+  <section id="s4">
+    <div class="sechead"><span class="n">04</span><h2>Golden path</h2></div>
+    <p class="lede">One request, traced through every layer:
+    <code>analyse("TEL")</code> after market close, no report since the last cutoff.</p>
+
+    <div class="gp">
+      <div class="gpstep">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="call">POST /analyze <span class="at">· web/app.py</span></div>
+          <p class="note">Session user resolved (<code>user_id</code> = email). A fresh run costs a
+          rate-limit slot — reserved atomically, <span class="halt">released if the run fails</span>.
+          Market open, or a report newer than the last 15:00 cutoff? Serve that instead — no task.</p>
+        </div>
+      </div>
+      <div class="gpstep freeze">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="call">SET NX analysis:inflight:TEL <span class="at">· ★ one run per ticker</span></div>
+          <p class="note">First requester claims the ticker with a pre-generated task id and queues
+          <code>analyse_stock</code>. Anyone else asking for TEL in the meantime gets the <b>same</b>
+          task id and attaches to its SSE stream — snapshot first, then live events.</p>
+        </div>
+      </div>
+      <div class="gpstep">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="call">run_analysis("TEL") <span class="at">· worker · graph/workflow.py</span></div>
+          <p class="note">The validate gate calls <code>validate_symbol</code> via MCP (tri-state:
+          listed / not-listed / <em>can't-tell</em> — an upstream outage never brands a real ticker
+          invalid). Errors here end the run with a user-readable reason.</p>
+        </div>
+      </div>
+      <div class="gpstep">
+        <div class="num">4</div>
+        <div class="body">
+          <div class="call">fan-out → six specialists <span class="at">· agents/specialists.py</span></div>
+          <p class="note">Price, dividend, movement, valuation, controversy, sentiment — each with its
+          own tier/provider, each fetching exclusively through MCP tools. Progress lands on the SSE
+          stream as each phase starts.</p>
+        </div>
+      </div>
+      <div class="gpstep">
+        <div class="num">5</div>
+        <div class="body">
+          <div class="call">consolidator → FinalReport <span class="at">· agents/consolidator.py</span></div>
+          <p class="note">Large-tier structured output: summary sections, six sub-scores → weighted
+          0–100 score → five-band verdict; the binary BUY/NOT BUY is derived at 60 for compatibility.</p>
+        </div>
+      </div>
+      <div class="gpstep">
+        <div class="num">6</div>
+        <div class="body">
+          <div class="call">save → SSE done → email <span class="at">· web/tasks.py</span></div>
+          <p class="note"><code>ReportRecord</code> persisted; the completion event carries
+          <code>report_id</code>; the requesting user gets the Tala-styled result email.
+          <span class="halt">No email failure of any kind may interrupt the flow</span> — logged,
+          never raised. The inflight claim clears in a <code>finally</code>.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="envelope">
+      <pre><span class="c">// the completion event — what the SSE stream (and the task result) carries</span>
+{
+  <span class="k">"step"</span>:      <span class="c">5</span>,               <span class="c">// Saving — the last of six progress phases</span>
+  <span class="k">"done"</span>:      <span class="c">true</span>,
+  <span class="k">"symbol"</span>:    <span class="c">"TEL"</span>,
+  <span class="k">"verdict"</span>:   <span class="c">"BUY"</span>,           <span class="c">// legacy binary — kept for compatibility</span>
+  <span class="k">"score"</span>:     <span class="c">72</span>,              <span class="c">// 0–100; the five-band label drives the UI</span>
+  <span class="k">"report_id"</span>: <span class="c">123</span>             <span class="c">// → /report-by-id/123 · /report/TEL</span>
+}</pre>
+    </div>
+  </section>
+
+  <div class="legend">
+    <span class="t">Legend</span>
+    <span><span class="sw-solid"></span>concrete class / module</span>
+    <span><span class="sw-dash"></span>protocol — a swap point</span>
+    <span><span class="sw-teal"></span>LLM-backed agent</span>
+    <span><span class="sw-star">★</span>the trading-hours invariant</span>
+  </div>
+
+</div>
+</html>
