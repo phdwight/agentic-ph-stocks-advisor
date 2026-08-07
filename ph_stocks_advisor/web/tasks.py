@@ -23,6 +23,34 @@ _INFLIGHT_TASK_PREFIX = "analysis:task:"
 _PORTFOLIO_INFLIGHT_PREFIX = "portfolio:inflight:"
 
 
+def _email_report(symbol: str, verdict: str, score: int | None, summary: str, user_id: str) -> None:
+    """Email the finished analysis to the user who requested it.
+
+    Best-effort by design: the report is already saved and visible in the app,
+    so a mail failure must never fail the task — but it is logged as an error
+    because a silently-dead mail pipeline is invisible from the UI.
+    ``user_id`` is the signed-in user's email; "anonymous" (auth disabled) has
+    no address to send to.
+    """
+    if "@" not in user_id:
+        return
+    from ph_stocks_advisor.infra.config import get_email_sender, get_settings
+    from ph_stocks_advisor.infra.email import build_report_email
+
+    try:
+        base_url = get_settings().app_base_url.rstrip("/")
+        subject, html = build_report_email(
+            symbol=symbol,
+            verdict=verdict,
+            score=score,
+            summary=summary,
+            report_url=f"{base_url}/report/{symbol}",
+        )
+        get_email_sender().send(to=user_id, subject=subject, html=html)
+    except Exception:
+        logger.error("Failed to email %s report to %s", symbol, user_id, exc_info=True)
+
+
 def _clear_inflight_lock(symbol: str, task_id: str | None = None) -> None:
     """Remove the inflight dedup lock and reverse mapping for *symbol*."""
     from ph_stocks_advisor.infra.config import get_redis
@@ -109,6 +137,7 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
             score=report.score,
             report_id=report_id,
         )
+        _email_report(symbol, report.verdict.value, report.score, report.summary, user_id)
         return {
             "symbol": symbol,
             "verdict": report.verdict.value,

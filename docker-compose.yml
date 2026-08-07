@@ -150,6 +150,10 @@ services:
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-PH Stock Advisor AI}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:5180}
+      # ── Transactional email (no key → log-only console sender) ────────────
+      ZEPTOMAIL_API_KEY: ${ZEPTOMAIL_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      APP_BASE_URL: ${APP_BASE_URL:-}
       # ── Langfuse (optional) ───────────────────────────────────────────────
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
