@@ -61,8 +61,9 @@ services:
       PSE_EDGE_BASE_URL: ${PSE_EDGE_BASE_URL:-https://edge.pse.com.ph}
       TRADINGVIEW_SCANNER_URL: ${TRADINGVIEW_SCANNER_URL:-https://scanner.tradingview.com/philippines/scan}
       HTTP_TIMEOUT: ${HTTP_TIMEOUT:-15}
-      TIMEZONE: ${TIMEZONE:-Asia/Manila}      # ── Analysis thresholds (mirrored so the in-server services use the
-      #    same configuration as the rest of the stack) ──────────────────
+      TIMEZONE: ${TIMEZONE:-Asia/Manila}
+      # ── Analysis thresholds (mirrored so the in-server services use the
+      #    same configuration as the rest of the stack) ──────────────────────
       TREND_UP_THRESHOLD: ${TREND_UP_THRESHOLD:-5}
       TREND_DOWN_THRESHOLD: ${TREND_DOWN_THRESHOLD:--5}
       SPIKE_STD_MULTIPLIER: ${SPIKE_STD_MULTIPLIER:-3}
@@ -140,6 +141,17 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_PATH: ${GOOGLE_REDIRECT_PATH:-/auth/google/callback}
+      # ── Passkeys / WebAuthn (off unless WEBAUTHN_RP_ID is set) ─────────────
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-PH Stock Advisor AI}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:5180}
+      # ── Transactional email (no key → log-only console sender) ────────────
+      # Analysis-result emails and sign-up verification codes both need this;
+      # without the key, verification codes only appear in container logs and
+      # real signups cannot complete.
+      ZEPTOMAIL_API_KEY: ${ZEPTOMAIL_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      APP_BASE_URL: ${APP_BASE_URL:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
@@ -197,7 +209,35 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
     restart: unless-stopped
 
+  # ── Cloudflare Tunnel connector (opt-in via the "tunnel" profile) ──────────
+  # Shares this stack's default network, so it reaches the Flask UI at web:5000.
+  # This matches the route set in Cloudflare:
+  #   phstockadvisor.sakayandgo.com  ->  http://web:5000
+  #
+  # Off by default. To enable, set BOTH in .env (never put the token here —
+  # this file is tracked in git):
+  #   COMPOSE_PROFILES=tunnel
+  #   CLOUDFLARED_TUNNEL_TOKEN=eyJ...
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    container_name: phstocksadvisor-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
+
 volumes:
   # Any pre-18 `pgdata` volume is deliberately left undeclared: it still exists
   # on disk, but `docker compose down -v` will no longer delete it.
+  #
+  # An already-existing pgdata18 volume is reused as-is (compose never rebinds
+  # it), so this plain declaration is safe on a running host. For a FRESH
+  # install that must keep the cluster on a NAS share, uncomment and adjust:
+  #   pgdata18:
+  #     driver: local
+  #     driver_opts:
+  #       type: none
+  #       o: bind
+  #       device: /volume1/docker/phstocks/pgdata
   pgdata18:
