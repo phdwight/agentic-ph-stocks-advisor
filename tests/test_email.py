@@ -110,6 +110,28 @@ def test_report_email_without_score_omits_score() -> None:
     assert subject == "TEL analysis ready — NOT BUY"
 
 
+def test_report_email_uses_the_apps_five_band_scale() -> None:
+    """A scored report shows the band word (like the report page), not the
+    binary verdict — a 45 is WAIT even though the stored verdict is NOT BUY."""
+    subject, html = build_report_email(symbol="TEL", verdict="NOT BUY", score=45, summary="", report_url="u")
+    assert "WAIT" in subject
+    assert "NOT BUY" not in subject
+    assert "WAIT" in html
+
+
+def test_report_email_renders_summary_sections_like_the_app() -> None:
+    _, html = build_report_email(
+        symbol="TEL",
+        verdict="BUY",
+        score=72,
+        summary="**Executive Summary:**\nStrong pick.\n\n**Dividend Analysis:**\n- **Yield**: 5.2%",
+        report_url="u",
+    )
+    assert "Executive Summary" in html
+    assert "Dividend Analysis" in html
+    assert "<li><strong>Yield</strong>: 5.2%</li>" in html
+
+
 def test_report_email_escapes_html_in_summary() -> None:
     _, html = build_report_email(
         symbol="TEL",

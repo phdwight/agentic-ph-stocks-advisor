@@ -95,6 +95,51 @@ def build_email_sender(api_key: str | None, from_address: str) -> EmailSender:
     return ConsoleEmailSender()
 
 
+# ---------------------------------------------------------------------------
+# Email bodies — Tala-styled, mirroring the in-app report page
+#
+# Same design tokens as static/style.css (bg #f2f2f3, ink #1d1f20, accent
+# #e8792b, buy #3d8a7e, sell #d85e52), everything inline because mail clients
+# strip <style> unpredictably. Layout uses simple centered divs — the report
+# is a single column in the app too.
+# ---------------------------------------------------------------------------
+
+_INK = "#1d1f20"
+_MUTED = "#5d5d60"
+_BG = "#f2f2f3"
+_CARD = "#fbfbfc"
+_INSET = "#e9e9ea"
+_DIVIDER = "#d6d6d8"
+_ACCENT = "#e8792b"
+_ACCENT_DARK = "#a44e18"
+_BUY = "#3d8a7e"
+_SELL = "#d85e52"
+_WAIT = "#424244"
+
+_FONT = "font-family:Arial,Helvetica,sans-serif;"
+_KICKER = f"{_FONT}font-size:11px;letter-spacing:2px;text-transform:uppercase;color:{_MUTED};margin:0 0 6px;"
+
+
+def _shell(inner: str) -> str:
+    """Wrap card content in the app's grey ground + branded header/footer."""
+    return f"""\
+<div style="background:{_BG};padding:24px 12px;">
+  <div style="max-width:600px;margin:0 auto;">
+    <p style="{_FONT}font-size:13px;font-weight:bold;letter-spacing:3px;color:{_ACCENT_DARK};margin:0 0 12px;">
+      &#8599; PH STOCKS ADVISOR
+    </p>
+    <div style="background:{_CARD};border:1px solid {_DIVIDER};border-radius:6px;padding:22px 24px;color:{_INK};">
+{inner}
+    </div>
+    <p style="{_FONT}font-size:11px;color:{_MUTED};margin:14px 4px 0;line-height:1.5;">
+      Educational use only — not financial advice. AI-generated analysis may
+      contain errors. Always consult a licensed financial advisor before investing.
+    </p>
+  </div>
+</div>
+"""
+
+
 def build_verification_email(*, code: str, expires_minutes: int) -> tuple[str, str]:
     """Build ``(subject, html)`` for a registration verification code.
 
@@ -102,26 +147,45 @@ def build_verification_email(*, code: str, expires_minutes: int) -> tuple[str, s
     and the whole point is getting the digits in front of the user fast.
     """
     subject = f"{code} is your PH Stock Advisor verification code"
-    body = f"""\
-<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2933;">
-  <h2 style="margin:0 0 8px;">Confirm your email</h2>
-  <p style="margin:0 0 16px;">
-    Enter this code to finish creating your PH Stock Advisor account:
-  </p>
-  <p style="font-size:32px;letter-spacing:8px;font-weight:bold;margin:0 0 16px;
-            background:#f3f4f6;border-radius:8px;padding:14px 18px;text-align:center;">
-    {_html.escape(code)}
-  </p>
-  <p style="margin:0 0 4px;color:#6b7280;">
-    The code expires in {expires_minutes} minutes.
-  </p>
-  <p style="margin:16px 0 0;font-size:12px;color:#6b7280;">
-    If you didn't try to create an account, you can ignore this email —
-    nothing happens without the code.
-  </p>
-</div>
-"""
-    return subject, body
+    inner = f"""\
+      <p style="{_KICKER}">Confirm your email</p>
+      <h2 style="{_FONT}font-size:20px;margin:0 0 14px;">One step left</h2>
+      <p style="{_FONT}font-size:14px;line-height:1.55;margin:0 0 16px;">
+        Enter this code to finish creating your PH Stock Advisor account:
+      </p>
+      <p style="{_FONT}font-size:32px;letter-spacing:8px;font-weight:bold;margin:0 0 16px;
+                background:#fdf1e7;color:{_ACCENT_DARK};border:1px solid #f5bd8f;
+                border-radius:6px;padding:14px 18px;text-align:center;">
+        {_html.escape(code)}
+      </p>
+      <p style="{_FONT}font-size:13px;color:{_MUTED};margin:0 0 4px;">
+        The code expires in {expires_minutes} minutes.
+      </p>
+      <p style="{_FONT}font-size:12px;color:{_MUTED};margin:16px 0 0;line-height:1.5;">
+        If you didn't try to create an account, you can ignore this email —
+        nothing happens without the code.
+      </p>"""
+    return subject, _shell(inner)
+
+
+def _band_and_color(verdict: str, score: int | None) -> tuple[str, str, int]:
+    """Mirror the report page's verdict panel: ``(band label, color, meter %)``.
+
+    With a score, the five-band label drives the display (the binary verdict is
+    a compatibility artifact); legacy scoreless reports fall back to it.
+    """
+    from ph_stocks_advisor.data.models import score_band
+
+    if score is not None:
+        band = score_band(score)
+        if band in ("BUY", "STRONG BUY"):
+            return band, _BUY, score
+        if band == "WAIT":
+            return band, _WAIT, score
+        return band, _SELL, score
+    if verdict == "BUY":
+        return verdict, _BUY, 80
+    return verdict, _SELL, 18
 
 
 def build_report_email(
@@ -134,33 +198,62 @@ def build_report_email(
 ) -> tuple[str, str]:
     """Build ``(subject, html)`` for a completed-analysis notification.
 
-    Kept deliberately plain-HTML (inline styles, no images) so it renders the
-    same in every mail client; the full styled report lives behind the link.
+    Formatted like the in-app report page: the Tala verdict panel (band word,
+    score, avoid→buy meter) followed by the same sections the app renders,
+    through the same ``parse_sections`` + ``_body_to_html`` pipeline.
     """
-    score_text = f" · score {score}/100" if score is not None else ""
-    subject = f"{symbol} analysis ready — {verdict}{score_text}"
+    from ph_stocks_advisor.export.formatter import parse_sections
+    from ph_stocks_advisor.export.html import _body_to_html
 
-    verdict_color = "#0e7c6b" if verdict == "BUY" else "#b3401e"
-    paragraphs = "".join(
-        f'<p style="margin:0 0 12px;">{_html.escape(p.strip())}</p>' for p in summary.split("\n\n") if p.strip()
-    )
-    body = f"""\
-<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2933;">
-  <h2 style="margin:0 0 4px;">{_html.escape(symbol)}</h2>
-  <p style="margin:0 0 16px;font-size:18px;">
-    Verdict: <strong style="color:{verdict_color};">{_html.escape(verdict)}</strong>{_html.escape(score_text)}
-  </p>
-  {paragraphs}
-  <p style="margin:20px 0 0;">
-    <a href="{_html.escape(report_url, quote=True)}"
-       style="background:#e8630a;color:#ffffff;padding:10px 18px;border-radius:8px;
-              text-decoration:none;display:inline-block;">
-      View the full report
-    </a>
-  </p>
-  <p style="margin:24px 0 0;font-size:12px;color:#6b7280;">
-    PH Stock Advisor AI — this is an automated analysis, not financial advice.
-  </p>
-</div>
-"""
-    return subject, body
+    band, color, meter_pct = _band_and_color(verdict, score)
+    score_text = f" · score {score}/100" if score is not None else ""
+    subject = f"{symbol} analysis ready — {band}{score_text}"
+
+    score_html = ""
+    if score is not None:
+        score_html = f"""\
+        <td align="right" style="{_FONT}font-size:15px;color:{color};vertical-align:bottom;">
+          <b style="font-size:26px;">{score}</b> <span style="color:{_MUTED};font-size:12px;">/ 100</span>
+        </td>"""
+
+    sections_html = []
+    for title, body in parse_sections(summary or ""):
+        if title.lower().startswith("verdict"):
+            continue  # the verdict panel is the single place the verdict appears
+        rendered = _body_to_html(body).replace("<p></p>", "")
+        sections_html.append(f"""\
+      <div style="border-top:1px solid {_DIVIDER};margin-top:18px;padding-top:14px;">
+        <p style="{_KICKER}">{_html.escape(title)}</p>
+        <div style="{_FONT}font-size:14px;line-height:1.6;">{rendered}</div>
+      </div>""")
+
+    inner = f"""\
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="{_FONT}"><h2 style="font-size:24px;margin:0;">{_html.escape(symbol)}</h2></td>
+      </tr></table>
+      <p style="{_KICKER}margin-top:14px;">Verdict</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="{_FONT}font-size:28px;font-weight:bold;color:{color};">{_html.escape(band)}</td>
+{score_html}
+      </tr></table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;">
+        <tr><td style="background:{_INSET};border-radius:4px;height:8px;font-size:0;line-height:0;">
+          <div style="width:{meter_pct}%;max-width:100%;background:{color};border-radius:4px;height:8px;">&nbsp;</div>
+        </td></tr>
+        <tr><td style="{_FONT}font-size:11px;color:{_MUTED};padding-top:4px;">
+          Avoid <span style="float:right;">Buy</span>
+        </td></tr>
+      </table>
+      <p style="{_FONT}font-size:12px;color:{_MUTED};margin:10px 0 0;line-height:1.5;">
+        Consolidated from six specialist analyses of {_html.escape(symbol)}.
+        Assumes a new position — not advice for an existing holding.
+      </p>
+{"".join(sections_html)}
+      <p style="margin:22px 0 4px;">
+        <a href="{_html.escape(report_url, quote=True)}"
+           style="{_FONT}background:{_ACCENT};color:#ffffff;font-size:14px;padding:11px 20px;
+                  border-radius:6px;text-decoration:none;display:inline-block;">
+          View the full report
+        </a>
+      </p>"""
+    return subject, _shell(inner)
