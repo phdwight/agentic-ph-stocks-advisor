@@ -24,7 +24,9 @@ dependencies = [
     "flask-session>=0.8",
     "gunicorn>=26.0",
     "gevent>=26.5",
-    "mcp>=1.28",
+    # mcp 2.0 removed/moved mcp.server.fastmcp — migrate deliberately, not via
+    # a surprise CI resolve. Lift the ceiling when the server is ported.
+    "mcp>=1.28,<2",
     "langfuse>=4.14",
 ]
 

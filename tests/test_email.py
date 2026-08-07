@@ -106,9 +106,7 @@ def test_report_email_subject_carries_verdict_and_score() -> None:
 
 
 def test_report_email_without_score_omits_score() -> None:
-    subject, _ = build_report_email(
-        symbol="TEL", verdict="NOT BUY", score=None, summary="", report_url="u"
-    )
+    subject, _ = build_report_email(symbol="TEL", verdict="NOT BUY", score=None, summary="", report_url="u")
     assert subject == "TEL analysis ready — NOT BUY"
 
 
@@ -138,9 +136,7 @@ def test_email_report_skips_users_without_an_address(monkeypatch: pytest.MonkeyP
 
 def test_email_report_sends_to_the_requesting_user(monkeypatch: pytest.MonkeyPatch) -> None:
     sender = MagicMock()
-    monkeypatch.setattr(
-        "ph_stocks_advisor.infra.config.get_email_sender", lambda *a, **k: sender
-    )
+    monkeypatch.setattr("ph_stocks_advisor.infra.config.get_email_sender", lambda *a, **k: sender)
     _email_report("TEL", "BUY", 70, "summary", "u@example.com")
     kwargs = sender.send.call_args.kwargs
     assert kwargs["to"] == "u@example.com"
@@ -151,9 +147,7 @@ def test_email_report_sends_to_the_requesting_user(monkeypatch: pytest.MonkeyPat
 def test_email_report_never_raises(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     sender = MagicMock()
     sender.send.side_effect = EmailSendError("provider down")
-    monkeypatch.setattr(
-        "ph_stocks_advisor.infra.config.get_email_sender", lambda *a, **k: sender
-    )
+    monkeypatch.setattr("ph_stocks_advisor.infra.config.get_email_sender", lambda *a, **k: sender)
     with caplog.at_level(logging.ERROR, logger="ph_stocks_advisor.web.tasks"):
         _email_report("TEL", "BUY", 70, "summary", "u@example.com")  # must not raise
     assert "Failed to email" in caplog.text

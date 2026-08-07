@@ -360,9 +360,7 @@ def test_adding_a_device_to_an_existing_account_needs_no_consent(pk_client):
 
 def test_send_code_requires_consent(pk_client, mail):
     hdr = _csrf(pk_client)
-    resp = pk_client.post(
-        "/auth/passkey/register/send-code", json={"email": "new@example.com"}, headers=hdr
-    )
+    resp = pk_client.post("/auth/passkey/register/send-code", json={"email": "new@example.com"}, headers=hdr)
     assert resp.status_code == 400
     assert "accept" in resp.get_json()["error"].lower()
     assert mail.sent == []
@@ -386,9 +384,7 @@ def test_wrong_code_burns_attempts_until_lockout(pk_client, mail):
     payload = {"email": "new@example.com", "name": "N", "accept_disclaimer": True}
 
     for _ in range(5):
-        resp = pk_client.post(
-            "/auth/passkey/register/begin", json={**payload, "code": wrong}, headers=hdr
-        )
+        resp = pk_client.post("/auth/passkey/register/begin", json={**payload, "code": wrong}, headers=hdr)
         assert resp.status_code == 400
     # Attempts exhausted — even the REAL code is now refused.
     resp = pk_client.post("/auth/passkey/register/begin", json={**payload, "code": code}, headers=hdr)

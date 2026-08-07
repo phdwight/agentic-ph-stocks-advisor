@@ -70,9 +70,7 @@ class ZeptoMailSender:
             "htmlbody": html,
         }
         try:
-            response = self._http.post(
-                ZEPTOMAIL_URL, json=payload, headers=self._headers, timeout=self._timeout
-            )
+            response = self._http.post(ZEPTOMAIL_URL, json=payload, headers=self._headers, timeout=self._timeout)
         except requests.RequestException as exc:
             raise EmailSendError(f"ZeptoMail unreachable: {exc}") from exc
         if response.status_code >= 400:
@@ -144,9 +142,7 @@ def build_report_email(
 
     verdict_color = "#0e7c6b" if verdict == "BUY" else "#b3401e"
     paragraphs = "".join(
-        f'<p style="margin:0 0 12px;">{_html.escape(p.strip())}</p>'
-        for p in summary.split("\n\n")
-        if p.strip()
+        f'<p style="margin:0 0 12px;">{_html.escape(p.strip())}</p>' for p in summary.split("\n\n") if p.strip()
     )
     body = f"""\
 <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2933;">
