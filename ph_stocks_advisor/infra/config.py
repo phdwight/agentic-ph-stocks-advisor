@@ -199,6 +199,16 @@ class Settings:
     # -- Rate limiting ---------------------------------------------------------
     daily_analysis_limit: int = int(os.getenv("DAILY_ANALYSIS_LIMIT", "5"))
 
+    # -- Transactional email (ZeptoMail) ----------------------------------------
+    # No key → console sender (logs instead of sending), so dev and tests never
+    # need mail credentials. ZeptoMail verifies exact domains — the from address
+    # must belong to a domain verified in the ZeptoMail console.
+    zeptomail_api_key: str = os.getenv("ZEPTOMAIL_API_KEY", "")
+    email_from_address: str = _env("EMAIL_FROM_ADDRESS", "customer.success@sakayandgo.com")
+    # Base URL used to build absolute links in emails (report pages). Falls back
+    # to the WebAuthn origin, which already names the public https origin in prod.
+    app_base_url: str = _env("APP_BASE_URL", "WEBAUTHN_ORIGIN", "http://localhost:5180")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
@@ -370,6 +380,19 @@ def get_mini_llm(settings: Settings | None = None) -> BaseChatModel:
     via :func:`get_agent_llm`.
     """
     return build_chat_model("small", settings)
+
+
+def get_email_sender(settings: Settings | None = None):
+    """Return the configured :class:`~ph_stocks_advisor.infra.email.EmailSender`.
+
+    ZeptoMail when ``ZEPTOMAIL_API_KEY`` is set, console (log-only) otherwise.
+    Not cached: the sender is cheap to build and Celery prefork workers each
+    get their own requests session lazily.
+    """
+    from ph_stocks_advisor.infra.email import build_email_sender
+
+    s = settings or get_settings()
+    return build_email_sender(s.zeptomail_api_key or None, s.email_from_address)
 
 
 _repository: AbstractReportRepository | None = None

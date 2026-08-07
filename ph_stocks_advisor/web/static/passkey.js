@@ -25,8 +25,15 @@
   const errorEl = document.getElementById("pk-error");
   const consentBlock = document.getElementById("pk-consent");
   const acceptBox = document.getElementById("pk-accept");
+  const codeBlock = document.getElementById("pk-code-block");
+  const codeInput = document.getElementById("pk-code");
+  const codeEmailEl = document.getElementById("pk-code-email");
+  const resendBtn = document.getElementById("pk-resend");
 
   let mode = "login"; // "login" | "register"
+  // Registration is two steps: "form" (email + consent → server emails a
+  // code) then "code" (type the code → WebAuthn ceremony).
+  let regStage = "form";
 
   const csrf = () =>
     document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
@@ -55,12 +62,12 @@
   function clearError() {
     if (errorEl) errorEl.style.display = "none";
   }
+  function idleLabel() {
+    if (mode !== "register") return "Sign in with a passkey";
+    return regStage === "code" ? "Verify code & create account" : "Email me a verification code";
+  }
   function busy(on) {
-    signinBtn.querySelector("span").textContent = on
-      ? "Waiting for your device…"
-      : mode === "register"
-        ? "Create account with a passkey"
-        : "Sign in with a passkey";
+    signinBtn.querySelector("span").textContent = on ? "Working…" : idleLabel();
     if (on) {
       signinBtn.disabled = true;
       signinBtn.classList.add("is-disabled");
@@ -129,10 +136,11 @@
     return done;
   }
 
-  async function doRegister(email, name) {
+  async function doRegister(email, name, code) {
     const optResp = await postJSON("/auth/passkey/register/begin", {
       email,
       name,
+      code, // emailed verification code — the server refuses new accounts without it
       accept_disclaimer: true, // the server re-checks; the UI cannot be the only gate
     });
     if (!optResp.ok) throw await beginError(optResp);
@@ -158,6 +166,42 @@
     return done;
   }
 
+  /** Ask the server to email a verification code; true on success. */
+  async function sendCode(email) {
+    const resp = await postJSON("/auth/passkey/register/send-code", {
+      email,
+      accept_disclaimer: true, // the server re-checks; the UI cannot be the only gate
+    });
+    if (resp.ok) return true;
+    let msg = "";
+    try {
+      msg = (await resp.json()).error || "";
+    } catch {
+      /* non-JSON body — fall through to the generic message */
+    }
+    showError(msg || "Couldn't send the verification code. Try again.");
+    return false;
+  }
+
+  function enterCodeStage(email) {
+    regStage = "code";
+    if (codeEmailEl) codeEmailEl.textContent = email;
+    if (codeBlock) codeBlock.style.display = "";
+    // The form step is done — hide it so the code has the user's focus.
+    // Email stays visible (and typable: editing it just means the code
+    // won't match, and the server rejects a mismatched email anyway).
+    nameInput.style.display = "none";
+    syncConsentState();
+    if (codeInput) codeInput.focus();
+  }
+
+  function leaveCodeStage() {
+    regStage = "form";
+    if (codeBlock) codeBlock.style.display = "none";
+    if (codeInput) codeInput.value = "";
+    syncConsentState();
+  }
+
   // Mirrors the server's acceptable-form check (not deliverability).
   const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -169,9 +213,30 @@
       return;
     }
     const name = (nameInput.value || "").trim();
+
+    // Registration step 1: no ceremony yet — just get the code emailed.
+    if (mode === "register" && regStage === "form") {
+      busy(true);
+      try {
+        if (await sendCode(email)) enterCodeStage(email);
+      } finally {
+        busy(false);
+      }
+      return;
+    }
+
+    let code = "";
+    if (mode === "register") {
+      code = (codeInput && codeInput.value ? codeInput.value : "").trim();
+      if (!/^\d{6}$/.test(code)) {
+        showError("Enter the 6-digit code from the email.");
+        return;
+      }
+    }
+
     busy(true);
     try {
-      const resp = mode === "register" ? await doRegister(email, name) : await doLogin(email);
+      const resp = mode === "register" ? await doRegister(email, name, code) : await doLogin(email);
       const data = await resp.json().catch(() => ({}));
       if (resp.ok && data.ok) {
         window.location.href = data.redirect || "/";
@@ -224,9 +289,12 @@
   function syncConsentState() {
     if (!consentBlock || !acceptBox) return;
     const registering = mode === "register";
-    consentBlock.style.display = registering ? "" : "none";
+    // Consent was already given when the code was requested — in the code
+    // stage the big terms block makes way for the code input.
+    consentBlock.style.display = registering && regStage === "form" ? "" : "none";
     signinBtn.disabled = registering && !acceptBox.checked;
     signinBtn.classList.toggle("is-disabled", signinBtn.disabled);
+    signinBtn.querySelector("span").textContent = idleLabel();
   }
 
   if (acceptBox) {
@@ -237,18 +305,39 @@
   }
 
   registerToggle.addEventListener("click", () => {
+    leaveCodeStage(); // switching modes always restarts registration at step 1
     if (mode === "login") {
       mode = "register";
       nameInput.style.display = "";
-      signinBtn.querySelector("span").textContent = "Create account with a passkey";
       registerToggle.textContent = "Already have an account? Sign in";
     } else {
       mode = "login";
       nameInput.style.display = "none";
-      signinBtn.querySelector("span").textContent = "Sign in with a passkey";
       registerToggle.textContent = "New here? Create an account with a passkey";
     }
     syncConsentState();
     clearError();
   });
+
+  if (resendBtn) {
+    resendBtn.addEventListener("click", async () => {
+      clearError();
+      const email = (emailInput.value || "").trim();
+      resendBtn.disabled = true;
+      try {
+        if (await sendCode(email)) {
+          resendBtn.textContent = "Code sent — check your inbox.";
+          setTimeout(() => {
+            resendBtn.textContent = "Didn't get it? Resend the code";
+            resendBtn.disabled = false;
+          }, 5000);
+          return;
+        }
+      } finally {
+        if (resendBtn.disabled && resendBtn.textContent.indexOf("sent") === -1) {
+          resendBtn.disabled = false;
+        }
+      }
+    });
+  }
 })();

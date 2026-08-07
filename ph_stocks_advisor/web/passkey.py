@@ -22,6 +22,7 @@ import hmac
 import json
 import logging
 import re
+import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -43,7 +44,8 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from ph_stocks_advisor.infra.config import get_repository, get_settings
+from ph_stocks_advisor.infra.config import get_email_sender, get_repository, get_settings
+from ph_stocks_advisor.infra.email import EmailSendError, build_verification_email
 from ph_stocks_advisor.infra.repository import UserRecord, WebAuthnCredentialRecord
 from ph_stocks_advisor.web.auth import _safe_redirect_url
 
@@ -61,8 +63,20 @@ _DISCLAIMER_VERSION = "2026-07-26"
 _INVALID_EMAIL_ERR = "Enter a valid email address."
 _NO_CONSENT_ERR = "You must read and accept the Disclaimer & Terms of Use to create an account."
 
-# We don't verify that the address is deliverable (no email is sent) — this
-# just rejects malformed input: local@domain.tld, no spaces, a dot in the domain.
+# Email verification: a 6-digit code emailed at sign-up, required before the
+# WebAuthn ceremony may start. One message for missing/wrong/expired/exhausted
+# so ``register/begin`` stays uniform whether or not the email is registered
+# (the exists-check lives in ``send-code``, where probing costs a real email
+# send and is throttled by the cooldown).
+_BAD_CODE_ERR = "That verification code is incorrect or has expired. Request a new one."
+_CODE_COOLDOWN_ERR = "A code was just sent to that email. Wait a minute before requesting another."
+_CODE_SEND_ERR = "Couldn't send the verification code right now. Try again in a moment."
+_CODE_TTL_SECONDS = 10 * 60
+_CODE_MAX_ATTEMPTS = 5
+_CODE_RESEND_COOLDOWN_SECONDS = 60
+
+# This regex only rejects malformed input (local@domain.tld, no spaces, a dot
+# in the domain); deliverability is proven by the verification code itself.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -110,6 +124,93 @@ def _transports_from(raw_json: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Email verification (self-signup only)
+# ---------------------------------------------------------------------------
+
+
+def _code_hash(code: str, email: str) -> str:
+    """HMAC the code (keyed by the app secret, bound to the email) so the
+    session never holds the plaintext code."""
+    secret = get_settings().flask_secret_key.encode()
+    return hmac.new(secret, f"vcode:{email}:{code}".encode(), hashlib.sha256).hexdigest()
+
+
+def _now_ts() -> float:
+    return datetime.now(tz=UTC).timestamp()
+
+
+def _verify_signup_code(email: str, code: str) -> bool:
+    """Check *code* against the session state; wrong guesses burn an attempt.
+
+    Deliberately NOT single-use: a dismissed/timed-out passkey prompt makes the
+    browser re-run ``register/begin``, and forcing a fresh code there would
+    punish the common retry. The state is session-bound and short-lived; it is
+    cleared when registration actually completes (``register/complete``).
+    """
+    sent_hash = session.get("pk_vc_hash")
+    sent_email = session.get("pk_vc_email")
+    expires = session.get("pk_vc_expires") or 0
+    attempts = session.get("pk_vc_attempts") or 0
+
+    if not sent_hash or sent_email != email:
+        return False
+    if _now_ts() > expires or attempts >= _CODE_MAX_ATTEMPTS:
+        return False
+    if not code or not hmac.compare_digest(_code_hash(code, email), sent_hash):
+        session["pk_vc_attempts"] = attempts + 1
+        return False
+    return True
+
+
+def _clear_signup_code_state() -> None:
+    for key in ("pk_vc_hash", "pk_vc_email", "pk_vc_expires", "pk_vc_attempts", "pk_vc_sent_at"):
+        session.pop(key, None)
+
+
+@passkey_bp.route("/register/send-code", methods=["POST"])
+def register_send_code() -> ResponseReturnValue:
+    """Email a verification code for a new-account registration.
+
+    Runs the same gates as ``register/begin`` (valid email, consent, email not
+    already registered) so a user can't pass this step and then trip over
+    those errors after typing the code.
+    """
+    settings = get_settings()
+    if not settings.passkey_enabled:
+        return jsonify({"error": "Passkeys are not enabled."}), 404
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if not _valid_email(email):
+        return jsonify({"error": _INVALID_EMAIL_ERR}), 400
+    if data.get("accept_disclaimer") is not True:
+        return jsonify({"error": _NO_CONSENT_ERR}), 400
+    if get_repository().get_user_by_email(email) is not None:
+        return jsonify({"error": _GENERIC_REG_ERR}), 400
+
+    sent_at = session.get("pk_vc_sent_at") or 0
+    if _now_ts() - sent_at < _CODE_RESEND_COOLDOWN_SECONDS:
+        return jsonify({"error": _CODE_COOLDOWN_ERR}), 429
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    subject, html = build_verification_email(code=code, expires_minutes=_CODE_TTL_SECONDS // 60)
+    try:
+        get_email_sender().send(to=email, subject=subject, html=html)
+    except EmailSendError:
+        # Loud in the log (an unsendable code means signup is silently broken),
+        # actionable for the user, and no session state is written — a retry
+        # starts clean.
+        logger.error("Failed to send verification code to %s", email, exc_info=True)
+        return jsonify({"error": _CODE_SEND_ERR}), 502
+
+    session["pk_vc_hash"] = _code_hash(code, email)
+    session["pk_vc_email"] = email
+    session["pk_vc_expires"] = _now_ts() + _CODE_TTL_SECONDS
+    session["pk_vc_attempts"] = 0
+    session["pk_vc_sent_at"] = _now_ts()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # Registration (self-signup, or add-a-device when already signed in)
 # ---------------------------------------------------------------------------
 
@@ -137,6 +238,12 @@ def register_begin() -> ResponseReturnValue:
         # must never be the sole gate.
         if data.get("accept_disclaimer") is not True:
             return jsonify({"error": _NO_CONSENT_ERR}), 400
+        # The emailed code proves the address is real and reachable. Checked
+        # BEFORE the exists-check so this endpoint answers uniformly whether
+        # or not the email is registered (enumeration lives only behind
+        # send-code, where probing costs an actual email + cooldown).
+        if not _verify_signup_code(email, str(data.get("code") or "")):
+            return jsonify({"error": _BAD_CODE_ERR}), 400
         # Existing account: don't let an anonymous caller attach a passkey
         # (account-takeover guard). Generic message — no "email taken" leak.
         if repo.get_user_by_email(email) is not None:
@@ -194,6 +301,8 @@ def register_complete() -> ResponseReturnValue:
         return jsonify({"error": _GENERIC_REG_ERR}), 400
 
     if is_new:
+        # The email was proven reachable at register/begin — retire the code.
+        _clear_signup_code_state()
         # Persist proof of consent: which version of the terms, and when.
         repo.save_user(
             UserRecord(

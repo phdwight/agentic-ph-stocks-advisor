@@ -118,6 +118,46 @@ def _seed_user_with_credential(email: str, oid: str = "passkey:seed") -> None:
     )
 
 
+class RecordingSender:
+    """Captures outgoing mail so tests can read the verification code."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str, str]] = []
+
+    def send(self, *, to: str, subject: str, html: str) -> None:
+        self.sent.append((to, subject, html))
+
+
+@pytest.fixture
+def mail(monkeypatch) -> RecordingSender:
+    sender = RecordingSender()
+    monkeypatch.setattr("ph_stocks_advisor.web.passkey.get_email_sender", lambda: sender)
+    return sender
+
+
+def _request_code(client, mail: RecordingSender, email: str, hdr: dict[str, str]) -> str:
+    """Go through send-code and return the 6-digit code that was emailed.
+
+    Clears the per-session resend cooldown first so tests can request codes
+    back-to-back.
+    """
+    import re
+
+    with client.session_transaction() as sess:
+        sess.pop("pk_vc_sent_at", None)
+    resp = client.post(
+        "/auth/passkey/register/send-code",
+        json={"email": email, "accept_disclaimer": True},
+        headers=hdr,
+    )
+    assert resp.status_code == 200, resp.get_json()
+    to, _subject, html = mail.sent[-1]
+    assert to == email
+    match = re.search(r"\b(\d{6})\b", html)
+    assert match, "verification email must contain a 6-digit code"
+    return match.group(1)
+
+
 # ---------------------------------------------------------------------------
 # Behaviour
 # ---------------------------------------------------------------------------
@@ -184,11 +224,12 @@ def test_login_complete_unknown_credential_is_generic_401(pk_client):
     assert resp.get_json()["error"] == "Couldn't sign you in with a passkey. Check the email and try again."
 
 
-def test_register_begin_new_email_returns_options(pk_client):
+def test_register_begin_new_email_with_code_returns_options(pk_client, mail):
     hdr = _csrf(pk_client)
+    code = _request_code(pk_client, mail, "new@example.com", hdr)
     resp = pk_client.post(
         "/auth/passkey/register/begin",
-        json={"email": "new@example.com", "name": "New User", "accept_disclaimer": True},
+        json={"email": "new@example.com", "name": "New User", "accept_disclaimer": True, "code": code},
         headers=hdr,
     )
     assert resp.status_code == 200
@@ -198,12 +239,13 @@ def test_register_begin_new_email_returns_options(pk_client):
     assert data["rp"]["id"] == "localhost"
 
 
-def test_register_begin_existing_email_is_generic(pk_client):
+def test_send_code_existing_email_is_generic(pk_client, mail):
+    """The exists-check lives at send-code; probing costs an email + cooldown."""
     _seed_user_with_credential("taken@example.com")
     hdr = _csrf(pk_client)
     resp = pk_client.post(
-        "/auth/passkey/register/begin",
-        json={"email": "taken@example.com", "name": "Imposter", "accept_disclaimer": True},
+        "/auth/passkey/register/send-code",
+        json={"email": "taken@example.com", "accept_disclaimer": True},
         headers=hdr,
     )
     assert resp.status_code == 400
@@ -212,6 +254,24 @@ def test_register_begin_existing_email_is_generic(pk_client):
         resp.get_json()["error"]
         == "Couldn't set up a passkey for that email. If you already have an account, sign in instead."
     )
+    assert mail.sent == []
+
+
+def test_register_begin_without_code_is_uniform(pk_client, mail):
+    """No valid code → the same error whether or not the email is registered,
+    so ``register/begin`` itself leaks nothing."""
+    _seed_user_with_credential("taken@example.com")
+    hdr = _csrf(pk_client)
+    responses = []
+    for email in ("taken@example.com", "ghost@example.com"):
+        resp = pk_client.post(
+            "/auth/passkey/register/begin",
+            json={"email": email, "name": "X", "accept_disclaimer": True, "code": "123456"},
+            headers=hdr,
+        )
+        responses.append((resp.status_code, resp.get_json()["error"]))
+    expected = (400, "That verification code is incorrect or has expired. Request a new one.")
+    assert responses[0] == responses[1] == expected
 
 
 def test_manage_endpoints_require_auth(pk_client):
@@ -226,22 +286,24 @@ def test_manage_endpoints_require_auth(pk_client):
 )
 def test_register_and_login_reject_malformed_email(pk_client, bad_email):
     hdr = _csrf(pk_client)
-    reg = pk_client.post(
-        "/auth/passkey/register/begin", json={"email": bad_email, "name": "X", "accept_disclaimer": True}, headers=hdr
-    )
-    assert reg.status_code == 400
-    assert reg.get_json()["error"] == "Enter a valid email address."
+    for url in ("/auth/passkey/register/begin", "/auth/passkey/register/send-code"):
+        reg = pk_client.post(url, json={"email": bad_email, "name": "X", "accept_disclaimer": True}, headers=hdr)
+        assert reg.status_code == 400, url
+        assert reg.get_json()["error"] == "Enter a valid email address."
 
     login = pk_client.post("/auth/passkey/login/begin", json={"email": bad_email}, headers=hdr)
     assert login.status_code == 400
     assert login.get_json()["error"] == "Enter a valid email address."
 
 
-def test_valid_email_forms_are_accepted(pk_client):
+def test_valid_email_forms_are_accepted(pk_client, mail):
     hdr = _csrf(pk_client)
     for ok in ["a@b.co", "first.last@sub.example.com", "user+tag@example.io"]:
+        code = _request_code(pk_client, mail, ok, hdr)
         reg = pk_client.post(
-            "/auth/passkey/register/begin", json={"email": ok, "name": "X", "accept_disclaimer": True}, headers=hdr
+            "/auth/passkey/register/begin",
+            json={"email": ok, "name": "X", "accept_disclaimer": True, "code": code},
+            headers=hdr,
         )
         assert reg.status_code == 200, ok
 
@@ -289,6 +351,105 @@ def test_adding_a_device_to_an_existing_account_needs_no_consent(pk_client):
         }
     resp = pk_client.post("/auth/passkey/register/begin", json={}, headers=_csrf(pk_client))
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Email verification — the code emailed at sign-up
+# ---------------------------------------------------------------------------
+
+
+def test_send_code_requires_consent(pk_client, mail):
+    hdr = _csrf(pk_client)
+    resp = pk_client.post("/auth/passkey/register/send-code", json={"email": "new@example.com"}, headers=hdr)
+    assert resp.status_code == 400
+    assert "accept" in resp.get_json()["error"].lower()
+    assert mail.sent == []
+
+
+def test_code_is_bound_to_the_email_it_was_sent_to(pk_client, mail):
+    hdr = _csrf(pk_client)
+    code = _request_code(pk_client, mail, "alice@example.com", hdr)
+    resp = pk_client.post(
+        "/auth/passkey/register/begin",
+        json={"email": "mallory@example.com", "name": "M", "accept_disclaimer": True, "code": code},
+        headers=hdr,
+    )
+    assert resp.status_code == 400
+
+
+def test_wrong_code_burns_attempts_until_lockout(pk_client, mail):
+    hdr = _csrf(pk_client)
+    code = _request_code(pk_client, mail, "new@example.com", hdr)
+    wrong = "000000" if code != "000000" else "111111"
+    payload = {"email": "new@example.com", "name": "N", "accept_disclaimer": True}
+
+    for _ in range(5):
+        resp = pk_client.post("/auth/passkey/register/begin", json={**payload, "code": wrong}, headers=hdr)
+        assert resp.status_code == 400
+    # Attempts exhausted — even the REAL code is now refused.
+    resp = pk_client.post("/auth/passkey/register/begin", json={**payload, "code": code}, headers=hdr)
+    assert resp.status_code == 400
+
+
+def test_expired_code_is_rejected(pk_client, mail):
+    hdr = _csrf(pk_client)
+    code = _request_code(pk_client, mail, "new@example.com", hdr)
+    with pk_client.session_transaction() as sess:
+        sess["pk_vc_expires"] = 1.0  # long past
+    resp = pk_client.post(
+        "/auth/passkey/register/begin",
+        json={"email": "new@example.com", "name": "N", "accept_disclaimer": True, "code": code},
+        headers=hdr,
+    )
+    assert resp.status_code == 400
+
+
+def test_code_survives_a_retried_ceremony(pk_client, mail):
+    """A dismissed passkey prompt re-runs register/begin — the same code must
+    still work (it is retired only when registration completes)."""
+    hdr = _csrf(pk_client)
+    code = _request_code(pk_client, mail, "new@example.com", hdr)
+    payload = {"email": "new@example.com", "name": "N", "accept_disclaimer": True, "code": code}
+    assert pk_client.post("/auth/passkey/register/begin", json=payload, headers=hdr).status_code == 200
+    assert pk_client.post("/auth/passkey/register/begin", json=payload, headers=hdr).status_code == 200
+
+
+def test_resend_is_throttled(pk_client, mail):
+    hdr = _csrf(pk_client)
+    _request_code(pk_client, mail, "new@example.com", hdr)  # clears + sets cooldown
+    resp = pk_client.post(
+        "/auth/passkey/register/send-code",
+        json={"email": "new@example.com", "accept_disclaimer": True},
+        headers=hdr,
+    )
+    assert resp.status_code == 429
+    assert len(mail.sent) == 1
+
+
+def test_send_failure_is_a_502_and_leaves_no_code_state(pk_client, monkeypatch):
+    from ph_stocks_advisor.infra.email import EmailSendError
+
+    class BrokenSender:
+        def send(self, **_kw) -> None:
+            raise EmailSendError("provider down")
+
+    monkeypatch.setattr("ph_stocks_advisor.web.passkey.get_email_sender", lambda: BrokenSender())
+    hdr = _csrf(pk_client)
+    resp = pk_client.post(
+        "/auth/passkey/register/send-code",
+        json={"email": "new@example.com", "accept_disclaimer": True},
+        headers=hdr,
+    )
+    assert resp.status_code == 502
+    with pk_client.session_transaction() as sess:
+        assert "pk_vc_hash" not in sess
+        assert "pk_vc_sent_at" not in sess  # a failed send must not start the cooldown
+
+
+def test_login_page_has_the_code_step_ui(pk_client):
+    html = pk_client.get("/auth/login").get_data(as_text=True)
+    assert 'id="pk-code"' in html
+    assert 'id="pk-resend"' in html
 
 
 def test_login_page_shows_the_full_disclaimer_and_consent_box(pk_client):
