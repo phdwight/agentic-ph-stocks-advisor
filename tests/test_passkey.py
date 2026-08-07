@@ -446,6 +446,27 @@ def test_send_failure_is_a_502_and_leaves_no_code_state(pk_client, monkeypatch):
         assert "pk_vc_sent_at" not in sess  # a failed send must not start the cooldown
 
 
+def test_unexpected_send_error_is_also_a_502_not_a_500(pk_client, monkeypatch):
+    """Any exception in the mail path — not just EmailSendError — must come
+    back as the same actionable 502, never an unhandled 500."""
+
+    class BuggySender:
+        def send(self, **_kw) -> None:
+            raise TypeError("unexpected bug")
+
+    monkeypatch.setattr("ph_stocks_advisor.web.passkey.get_email_sender", lambda: BuggySender())
+    hdr = _csrf(pk_client)
+    resp = pk_client.post(
+        "/auth/passkey/register/send-code",
+        json={"email": "new@example.com", "accept_disclaimer": True},
+        headers=hdr,
+    )
+    assert resp.status_code == 502
+    assert "verification code" in resp.get_json()["error"]
+    with pk_client.session_transaction() as sess:
+        assert "pk_vc_hash" not in sess
+
+
 def test_login_page_has_the_code_step_ui(pk_client):
     html = pk_client.get("/auth/login").get_data(as_text=True)
     assert 'id="pk-code"' in html

@@ -32,12 +32,16 @@ def _email_report(symbol: str, verdict: str, score: int | None, summary: str, us
     ``user_id`` is the signed-in user's email; "anonymous" (auth disabled) has
     no address to send to.
     """
-    if "@" not in user_id:
-        return
-    from ph_stocks_advisor.infra.config import get_email_sender, get_settings
-    from ph_stocks_advisor.infra.email import build_report_email
-
+    # EVERYTHING is inside the try — the report is already saved, so nothing
+    # this function does (a None user_id, an import error, a builder bug, a
+    # provider outage) may fail the task. The error log is the report of
+    # record for a mail pipeline failure; the UI is unaffected either way.
     try:
+        if not user_id or "@" not in user_id:
+            return
+        from ph_stocks_advisor.infra.config import get_email_sender, get_settings
+        from ph_stocks_advisor.infra.email import build_report_email
+
         base_url = get_settings().app_base_url.rstrip("/")
         subject, html = build_report_email(
             symbol=symbol,

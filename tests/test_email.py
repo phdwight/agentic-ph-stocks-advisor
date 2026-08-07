@@ -173,3 +173,20 @@ def test_email_report_never_raises(monkeypatch: pytest.MonkeyPatch, caplog: pyte
     with caplog.at_level(logging.ERROR, logger="ph_stocks_advisor.web.tasks"):
         _email_report("TEL", "BUY", 70, "summary", "u@example.com")  # must not raise
     assert "Failed to email" in caplog.text
+
+
+def test_email_report_never_raises_on_unexpected_errors(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Not just EmailSendError — a bug anywhere in the mail path (builder,
+    settings, sender) must be logged, never fail the finished analysis."""
+    sender = MagicMock()
+    sender.send.side_effect = TypeError("unexpected bug")
+    monkeypatch.setattr("ph_stocks_advisor.infra.config.get_email_sender", lambda *a, **k: sender)
+    with caplog.at_level(logging.ERROR, logger="ph_stocks_advisor.web.tasks"):
+        _email_report("TEL", "BUY", 70, "summary", "u@example.com")  # must not raise
+    assert "Failed to email" in caplog.text
+
+
+def test_email_report_tolerates_a_none_user_id() -> None:
+    _email_report("TEL", "BUY", 70, "summary", None)  # type: ignore[arg-type]  # must not raise
