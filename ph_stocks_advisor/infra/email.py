@@ -97,6 +97,35 @@ def build_email_sender(api_key: str | None, from_address: str) -> EmailSender:
     return ConsoleEmailSender()
 
 
+def build_verification_email(*, code: str, expires_minutes: int) -> tuple[str, str]:
+    """Build ``(subject, html)`` for a registration verification code.
+
+    The code is in the subject too: many mail clients preview only the subject,
+    and the whole point is getting the digits in front of the user fast.
+    """
+    subject = f"{code} is your PH Stock Advisor verification code"
+    body = f"""\
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2933;">
+  <h2 style="margin:0 0 8px;">Confirm your email</h2>
+  <p style="margin:0 0 16px;">
+    Enter this code to finish creating your PH Stock Advisor account:
+  </p>
+  <p style="font-size:32px;letter-spacing:8px;font-weight:bold;margin:0 0 16px;
+            background:#f3f4f6;border-radius:8px;padding:14px 18px;text-align:center;">
+    {_html.escape(code)}
+  </p>
+  <p style="margin:0 0 4px;color:#6b7280;">
+    The code expires in {expires_minutes} minutes.
+  </p>
+  <p style="margin:16px 0 0;font-size:12px;color:#6b7280;">
+    If you didn't try to create an account, you can ignore this email —
+    nothing happens without the code.
+  </p>
+</div>
+"""
+    return subject, body
+
+
 def build_report_email(
     *,
     symbol: str,

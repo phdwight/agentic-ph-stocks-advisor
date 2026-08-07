@@ -2446,7 +2446,14 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
   font-size: 0.82rem; cursor: pointer; padding: 0.25rem; text-align: center;
 }
 .passkey-link:hover { color: var(--accent-800); text-decoration: underline; }
+.passkey-link:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
 #pk-error { margin-top: 0.2rem; }
+
+/* Email verification (registration step 2) */
+#pk-code-block { display: flex; flex-direction: column; gap: 0.6rem; }
+.code-hint { font-size: 0.85rem; line-height: 1.45; color: var(--text-muted); margin: 0.15rem 0 0; }
+#pk-code { text-align: center; letter-spacing: 0.45em; font-variant-numeric: tabular-nums; }
+#pk-code:placeholder-shown { letter-spacing: normal; }
 
 /* Report: "market open — showing last report" note */
 .rail-note {

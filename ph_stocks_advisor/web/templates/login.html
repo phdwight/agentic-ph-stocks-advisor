@@ -61,6 +61,18 @@
         </p>
       </div>
 
+      {# Email verification — registration step 2. passkey.js reveals this
+         after the code is emailed; the server refuses to start the WebAuthn
+         ceremony for a new account without a matching, unexpired code. #}
+      <div id="pk-code-block" style="display:none;">
+        <p class="code-hint">We emailed a 6-digit code to <strong id="pk-code-email"></strong>.
+          Enter it below to confirm your email.</p>
+        <input type="text" id="pk-code" name="code" placeholder="6-digit code"
+               inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+               autocapitalize="off" spellcheck="false">
+        <button type="button" id="pk-resend" class="passkey-link">Didn't get it? Resend the code</button>
+      </div>
+
       <p id="pk-error" class="login-error" style="display:none;"><span></span></p>
     </form>
 
