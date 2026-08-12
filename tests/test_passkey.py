@@ -414,16 +414,10 @@ def test_resend_keeps_the_previous_code_valid(pk_client, mail):
     assert code_a != code_b
     payload = {"email": "new@example.com", "name": "N", "accept_disclaimer": True}
     assert (
-        pk_client.post(
-            "/auth/passkey/register/begin", json={**payload, "code": code_a}, headers=hdr
-        ).status_code
-        == 200
+        pk_client.post("/auth/passkey/register/begin", json={**payload, "code": code_a}, headers=hdr).status_code == 200
     )
     assert (
-        pk_client.post(
-            "/auth/passkey/register/begin", json={**payload, "code": code_b}, headers=hdr
-        ).status_code
-        == 200
+        pk_client.post("/auth/passkey/register/begin", json={**payload, "code": code_b}, headers=hdr).status_code == 200
     )
 
 
@@ -433,15 +427,10 @@ def test_only_the_newest_two_codes_survive(pk_client, mail):
     _request_code(pk_client, mail, "new@example.com", hdr)
     code_c = _request_code(pk_client, mail, "new@example.com", hdr)
     payload = {"email": "new@example.com", "name": "N", "accept_disclaimer": True}
-    resp = pk_client.post(
-        "/auth/passkey/register/begin", json={**payload, "code": code_a}, headers=hdr
-    )
+    resp = pk_client.post("/auth/passkey/register/begin", json={**payload, "code": code_a}, headers=hdr)
     assert resp.status_code == 400  # pushed out by the two later sends
     assert (
-        pk_client.post(
-            "/auth/passkey/register/begin", json={**payload, "code": code_c}, headers=hdr
-        ).status_code
-        == 200
+        pk_client.post("/auth/passkey/register/begin", json={**payload, "code": code_c}, headers=hdr).status_code == 200
     )
 
 
