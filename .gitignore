@@ -26,3 +26,6 @@ tests/test_memory.py
 scripts/pre-push
 scripts/install-git-hooks.sh
 docs/decisions.md
+
+# Machine-local NAS compose file — never track (see docker-compose.prod.yml)
+ugreen.docker-compose.yml

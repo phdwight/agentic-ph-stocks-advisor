@@ -57,7 +57,7 @@ trading day.
    Users (browser, mobile web)                Admins
           │  HTTPS                              │ HTTPS (LAN/tunnel)
           ▼                                     ▼
-   Cloudflare tunnel ──► web (Flask + gunicorn/gevent) ──► admin (SQLAdmin)
+   Cloudflare tunnel ──► web (Flask + gunicorn/gevent) ──► adminer (Adminer)
                               │        ▲    │
              enqueue (Celery) │        │SSE │ SQL
                               ▼        │    ▼
@@ -91,7 +91,7 @@ Seven Compose services: `db`, `redis`, `mcp`, `web`, `worker`, `admin`, `advisor
 | MCP server | FastMCP (streamable HTTP) | Sole data path; exposes `validate_symbol` + six `fetch_*` tools; typed error marker protocol for not-found |
 | Data layer | requests + scrapers | Services (one per dimension) orchestrating clients: DragonFi (primary), PSE EDGE ×3 (registry/OHLCV/dividends/financials — also outage fallback), TradingView, Tavily |
 | Persistence | PostgreSQL (prod) / SQLite (dev, CLI) | Repository ABC + two implementations; idempotent migrations at startup |
-| Admin | SQLAdmin (separate container) | Users (type promotion), passkey credential revocation, report inspection |
+| Admin | Adminer (stock `adminer:latest` container, LAN-only) | Direct SQL access with the Postgres credentials: user-type promotion, passkey credential revocation, report inspection |
 | Frontend | Jinja2 + vanilla JS | Tala design system (token-driven CSS); SSE client with polling fallback; WebAuthn ceremonies; report visual decoration |
 | Observability | Langfuse (optional), structured logging, `/healthz` | LLM tracing; Docker/uptime probes |
 

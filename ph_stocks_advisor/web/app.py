@@ -242,7 +242,7 @@ def create_app() -> Flask:
     # Create the schema now rather than leaving it to whichever request
     # happens to touch the repository first.  On a brand-new database that
     # window leaves the tables missing, and anything else reading them —
-    # the SQLAdmin panel, a passkey registration — fails with
+    # the Adminer panel, a passkey registration — fails with
     # UndefinedTable until an unrelated request wanders in.
     #
     # Non-fatal by design: if the database is unreachable at boot the app

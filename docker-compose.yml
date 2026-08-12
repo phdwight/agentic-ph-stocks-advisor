@@ -217,21 +217,20 @@ services:
     #   docker compose run --rm advisor SM BDO --pdf
     command: ["TEL"]
 
-  # ── SQLAdmin (database admin panel) ────────────────────────────────────────
-  admin:
-    build:
-      context: ./admin
-      dockerfile: Dockerfile
+  # ── Adminer (database admin UI) ────────────────────────────────────────────
+  # Log in with the Postgres credentials: System=PostgreSQL, Server=db,
+  # Username=${POSTGRES_USER}, Password=${POSTGRES_PASSWORD}, DB=${POSTGRES_DB}.
+  # Full read-write on every table — keep it LAN-only (never route the tunnel
+  # to it).
+  adminer:
+    image: adminer:latest
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${ADMIN_PORT:-5181}:8085"
+      - "${ADMIN_PORT:-5181}:8080"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ph_advisor}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ph_advisor}
-      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-sqladmin-dev-secret-change-me}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      ADMINER_DEFAULT_SERVER: db
     restart: unless-stopped
 
 volumes:

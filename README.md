@@ -307,7 +307,7 @@ Every user is assigned a **user type** that controls access privileges:
 | **Normal** | `0` | 5 analyses/day (configurable via `DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served | Once per stock per trading day (resets at 3:00 PM PHT) |
 | **Elevated** | `1` | Unlimited | Yes — can re-analyse stocks | Once per stock per trading day (resets at 3:00 PM PHT) |
 
-All new users start as **Normal**. An administrator can promote a user to **Elevated** via the SQLAdmin panel (Admin → Users → edit `user_type`). The user type is stored in the `users` table and read from the database on each login — it cannot be changed by the user themselves. Login upserts intentionally do **not** overwrite the `user_type` column.
+All new users start as **Normal**. An administrator can promote a user to **Elevated** via Adminer (`http://<host>:5181`, log in with the Postgres credentials, edit `users.user_type`). The user type is stored in the `users` table and read from the database on each login — it cannot be changed by the user themselves. Login upserts intentionally do **not** overwrite the `user_type` column.
 
 ### Portfolio Holdings (Elevated Users Only)
 
@@ -347,7 +347,7 @@ WEBAUTHN_RP_NAME="PH Stock Advisor AI"        # label shown in the OS passkey pr
 FLASK_SECRET_KEY=<random-secret>
 ```
 
-For local development use `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGIN=http://localhost:5180`. Changing the RP ID later invalidates all existing passkeys. Ceremonies verify against the *configured* origin (never request headers), so the flow is safe behind a reverse proxy or Cloudflare tunnel. The login flow is hardened against account enumeration (decoy credential lists + uniform errors), and anonymous callers cannot attach a passkey to an existing email. Endpoints under `/auth/passkey/*` cover register/login plus authenticated list/delete (passkeys can also be revoked from the admin panel's **Passkeys** view).
+For local development use `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGIN=http://localhost:5180`. Changing the RP ID later invalidates all existing passkeys. Ceremonies verify against the *configured* origin (never request headers), so the flow is safe behind a reverse proxy or Cloudflare tunnel. The login flow is hardened against account enumeration (decoy credential lists + uniform errors), and anonymous callers cannot attach a passkey to an existing email. Endpoints under `/auth/passkey/*` cover register/login plus authenticated list/delete (passkeys can also be revoked by deleting the row in `webauthn_credentials` via Adminer).
 
 #### Microsoft Entra ID
 
@@ -388,7 +388,7 @@ Deploy to **Azure Container Apps** with managed PostgreSQL and Redis. All infras
 | **Container Registry** | Stores the Docker image |
 | **Container Apps — web** | Flask web UI (HTTPS, auto-scaling) |
 | **Container Apps — worker** | Celery worker (scales with queue depth) |
-| **Container Apps — admin** | SQLAdmin database panel (HTTPS) |
+| **Container Apps — admin** | Adminer database UI (HTTPS) |
 | **Database for PostgreSQL** | Flexible Server (Burstable B1ms, 32 GB) |
 | **Cache for Redis** | Basic C0 (TLS only) |
 | **Log Analytics** | Container logs & monitoring |
@@ -412,9 +412,9 @@ export AZURE_PG_PASSWORD='<strong-password>'
 The script will:
 1. Create a resource group (`ph-stocks-advisor-rg` in `southeastasia`)
 2. Provision all Azure resources via Bicep
-3. Build the web and admin Docker images and push them to ACR
-4. Update all Container Apps (web, worker, admin) with the new images
-5. Print the public HTTPS URLs for the web UI and admin panel
+3. Build the web Docker image and push it to ACR
+4. Update all Container Apps (web, worker) with the new image
+5. Print the public HTTPS URL for the web UI
 
 #### Update after code changes
 
@@ -501,10 +501,6 @@ langgraph-flow.drawio              # Draw.io diagram of the LangGraph flow, MCP 
 └── workflows/
     ├── develop-ci.yml             # CI — lint, type-check, test (develop branch)
     ├── main-ci-cd.yml             # CI/CD — same checks + deploy to Azure / SSH (main branch)
-admin/                             # SQLAdmin database panel
-├── app.py                     #   Flask + SQLAdmin wiring & model views
-├── Dockerfile                 #   Container image for admin panel
-└── requirements.txt           #   Python dependencies
 infra/
 └── azure/                     # Azure deployment (IaC)
     ├── main.bicep             #   Bicep template (all resources)
@@ -685,7 +681,7 @@ has a matching `:X.Y.Z` image in GHCR.
 
 The `main` workflow supports **two deployment targets** that run in parallel. Each is auto-detected based on which secrets are configured — enable one, both, or neither:
 
-On every push to `main`, a **build-images** job builds Docker images and pushes them to **GitHub Container Registry** (`ghcr.io`). Builds are **path-gated** by a `changes` job: the app image rebuilds only when its build inputs change (`Dockerfile`, `.dockerignore`, `requirements.txt`, `pyproject.toml`, `ph_stocks_advisor/**`, `ph_stocks_mcp/**`), the admin image only on `admin/**`, and the deploy jobs run only when an image was actually rebuilt or `docker-compose.prod.yml` changed — docs/test-only merges skip the build entirely. Quality gates always run. The repository accepts **merge commits only** (squash/rebase disabled) so `develop` and `main` histories never diverge. The deploy jobs run after images are published:
+On every push to `main`, a **build-images** job builds Docker images and pushes them to **GitHub Container Registry** (`ghcr.io`). Builds are **path-gated** by a `changes` job: the app image rebuilds only when its build inputs change (`Dockerfile`, `.dockerignore`, `requirements.txt`, `pyproject.toml`, `ph_stocks_advisor/**`, `ph_stocks_mcp/**`), and the deploy jobs run only when the image was actually rebuilt or `docker-compose.prod.yml` changed — docs/test-only merges skip the build entirely. Quality gates always run. The repository accepts **merge commits only** (squash/rebase disabled) so `develop` and `main` histories never diverge. The deploy jobs run after images are published:
 
 | Target | Triggered when | How it works |
 |--------|---------------|--------------|
@@ -741,7 +737,6 @@ WEBAUTHN_RP_ID=your.domain.com
 WEBAUTHN_ORIGIN=https://your.domain.com
 WEBAUTHN_RP_NAME=PH Stock Advisor AI
 APP_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor:latest
-ADMIN_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor-admin:latest
 EOF
 
 # 3. Log in to GHCR (only needed for private repos)
@@ -811,10 +806,7 @@ All settings live in `.env` (see [.env.example](.env.example)). At least one LLM
 | `MCP_REQUEST_TIMEOUT` | No | `60` | Seconds to wait for a single MCP tool response |
 | `LOG_LEVEL` | No | `INFO` | Root log level for every Python service (CLI, MCP server, Celery worker, web). Accepts standard names: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
 | `WEB_PORT` | No | `5180` | Host port for the Flask web UI (Docker Compose only) |
-| `ADMIN_PORT` | No | `5181` | Host port for the SQLAdmin panel (Docker Compose only) |
-| `ADMIN_SECRET_KEY` | No | `sqladmin-dev-…` | Flask secret key for the admin panel |
-| `ADMIN_USERNAME` | No | `admin` | Admin panel username |
-| `ADMIN_PASSWORD` | No | _(empty — panel locked)_ | Admin panel password; when unset, no admin login is possible |
+| `ADMIN_PORT` | No | `5181` | Host port for the Adminer database UI (Docker Compose only; log in with the Postgres credentials) |
 | `ENTRA_CLIENT_ID` | No | — | Microsoft Entra ID application (client) ID (enables login) |
 | `ENTRA_CLIENT_SECRET` | No | — | Entra ID client secret |
 | `ENTRA_TENANT_ID` | No | `common` | Entra ID tenant ID (or `common` for multi-tenant) |
@@ -857,7 +849,6 @@ All settings live in `.env` (see [.env.example](.env.example)). At least one LLM
 | `REDIS_MAX_CONNECTIONS` | No | `10` | Maximum connections in the shared Redis pool |
 | `CELERY_CONCURRENCY` | No | `4` | Celery worker concurrency (prefork processes) |
 | `APP_IMAGE` | No | `ghcr.io/OWNER/agentic-ph-stocks-advisor:latest` | App Docker image for `docker-compose.prod.yml` |
-| `ADMIN_IMAGE` | No | `ghcr.io/OWNER/agentic-ph-stocks-advisor-admin:latest` | Admin Docker image for `docker-compose.prod.yml` |
 
 ## Scaling Tiers
 
