@@ -395,10 +395,63 @@ def test_expired_code_is_rejected(pk_client, mail):
     hdr = _csrf(pk_client)
     code = _request_code(pk_client, mail, "new@example.com", hdr)
     with pk_client.session_transaction() as sess:
-        sess["pk_vc_expires"] = 1.0  # long past
+        sess["pk_vc_codes"] = [{**c, "e": 1.0} for c in sess["pk_vc_codes"]]  # long past
     resp = pk_client.post(
         "/auth/passkey/register/begin",
         json={"email": "new@example.com", "name": "N", "accept_disclaimer": True, "code": code},
+        headers=hdr,
+    )
+    assert resp.status_code == 400
+
+
+def test_resend_keeps_the_previous_code_valid(pk_client, mail):
+    """A resend must not retire the code already in the user's inbox — the
+    emails look identical and the newest may not have arrived yet, so the
+    user may well type the older one. The newest two codes both work."""
+    hdr = _csrf(pk_client)
+    code_a = _request_code(pk_client, mail, "new@example.com", hdr)
+    code_b = _request_code(pk_client, mail, "new@example.com", hdr)
+    assert code_a != code_b
+    payload = {"email": "new@example.com", "name": "N", "accept_disclaimer": True}
+    assert (
+        pk_client.post(
+            "/auth/passkey/register/begin", json={**payload, "code": code_a}, headers=hdr
+        ).status_code
+        == 200
+    )
+    assert (
+        pk_client.post(
+            "/auth/passkey/register/begin", json={**payload, "code": code_b}, headers=hdr
+        ).status_code
+        == 200
+    )
+
+
+def test_only_the_newest_two_codes_survive(pk_client, mail):
+    hdr = _csrf(pk_client)
+    code_a = _request_code(pk_client, mail, "new@example.com", hdr)
+    _request_code(pk_client, mail, "new@example.com", hdr)
+    code_c = _request_code(pk_client, mail, "new@example.com", hdr)
+    payload = {"email": "new@example.com", "name": "N", "accept_disclaimer": True}
+    resp = pk_client.post(
+        "/auth/passkey/register/begin", json={**payload, "code": code_a}, headers=hdr
+    )
+    assert resp.status_code == 400  # pushed out by the two later sends
+    assert (
+        pk_client.post(
+            "/auth/passkey/register/begin", json={**payload, "code": code_c}, headers=hdr
+        ).status_code
+        == 200
+    )
+
+
+def test_a_different_email_starts_the_code_state_fresh(pk_client, mail):
+    hdr = _csrf(pk_client)
+    code_a = _request_code(pk_client, mail, "first@example.com", hdr)
+    _request_code(pk_client, mail, "second@example.com", hdr)
+    resp = pk_client.post(
+        "/auth/passkey/register/begin",
+        json={"email": "first@example.com", "name": "N", "accept_disclaimer": True, "code": code_a},
         headers=hdr,
     )
     assert resp.status_code == 400
@@ -442,7 +495,7 @@ def test_send_failure_is_a_502_and_leaves_no_code_state(pk_client, monkeypatch):
     )
     assert resp.status_code == 502
     with pk_client.session_transaction() as sess:
-        assert "pk_vc_hash" not in sess
+        assert "pk_vc_codes" not in sess
         assert "pk_vc_sent_at" not in sess  # a failed send must not start the cooldown
 
 
@@ -464,7 +517,7 @@ def test_unexpected_send_error_is_also_a_502_not_a_500(pk_client, monkeypatch):
     assert resp.status_code == 502
     assert "verification code" in resp.get_json()["error"]
     with pk_client.session_transaction() as sess:
-        assert "pk_vc_hash" not in sess
+        assert "pk_vc_codes" not in sess
 
 
 def test_login_page_has_the_code_step_ui(pk_client):
