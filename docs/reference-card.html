@@ -509,7 +509,7 @@
             <li>save_portfolio_report <span class="ret">→ <b>id</b></span></li>
           </ul>
         </div>
-        <div class="foot">SQLite (dev default) <span class="proto">or</span> Postgres (Docker) · schema created at startup, concurrency-safe · admin panel reflects it</div>
+        <div class="foot">SQLite (dev default) <span class="proto">or</span> Postgres (Docker) · schema created at startup, concurrency-safe · Adminer (:5181, LAN) for direct access</div>
       </div>
 
       <div class="card">
@@ -558,7 +558,7 @@
         <h3>Sign-in — passkey-first, verified email</h3>
         <div class="onion">
           <div class="shell"><span class="who">login page</span><div class="what">email-first · decoy credentials make unknown emails indistinguishable</div></div>
-          <div class="shell indent1"><span class="who">register/send-code</span><div class="what">consent + emailed 6-digit code — HMAC-hashed in session, 10 min, 5 attempts, 60 s resend</div></div>
+          <div class="shell indent1"><span class="who">register/send-code</span><div class="what">consent + emailed 6-digit code — HMAC-hashed in session, 10 min, 5 attempts, 60 s resend, newest 2 codes stay valid</div></div>
           <div class="shell indent1"><span class="who">register/begin · complete</span><div class="what">WebAuthn ceremony — code checked before the exists-check, so begin answers uniformly</div></div>
           <div class="shell indent2 core"><span class="who">session user</span><div class="what">user_id is the email — reports, limits, and result mail all key on it</div></div>
         </div>

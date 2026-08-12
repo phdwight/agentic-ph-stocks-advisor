@@ -194,7 +194,9 @@ GitHub Actions + GHCR · Cloudflare tunnel.
 
 ## 7. Security design
 
-- **Authentication:** WebAuthn passkeys primary (open self-signup, email-first);
+- **Authentication:** WebAuthn passkeys primary (open self-signup, email-first, address
+  ownership proven by an emailed 6-digit code — the newest two codes stay valid so a
+  resend never strands the email being read);
   server verifies against the **configured** RP ID/origin, never request headers (safe
   behind the tunnel). OAuth (Entra ID, Google) retained as recovery. Session cookies via
   Flask-Session (Redis-backed in prod).

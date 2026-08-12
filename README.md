@@ -730,7 +730,6 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/agentic-ph-stocks-advisor/m
 cat > .env <<'EOF'
 OPENAI_API_KEY=sk-...
 POSTGRES_PASSWORD=<strong-password>
-ADMIN_PASSWORD=<strong-password>
 FLASK_SECRET_KEY=<random-secret>
 # Passkey sign-in (binds to your public domain)
 WEBAUTHN_RP_ID=your.domain.com
@@ -748,7 +747,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 After this, every push to `main` will automatically pull new images and restart the services.
 
-> **Deploying to another device?** Copy `docker-compose.prod.yml` + `.env` to any machine with Docker, set `APP_IMAGE` and `ADMIN_IMAGE`, and run `docker compose -f docker-compose.prod.yml up -d`.
+> **Deploying to another device?** Copy `docker-compose.prod.yml` + `.env` to any machine with Docker, set `APP_IMAGE`, and run `docker compose -f docker-compose.prod.yml up -d`.
 
 ## Environment Variables
 
