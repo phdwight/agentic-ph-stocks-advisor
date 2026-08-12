@@ -74,6 +74,12 @@ _CODE_SEND_ERR = "Couldn't send the verification code right now. Try again in a 
 _CODE_TTL_SECONDS = 10 * 60
 _CODE_MAX_ATTEMPTS = 5
 _CODE_RESEND_COOLDOWN_SECONDS = 60
+# The newest N codes stay valid (each with its own TTL). A resend must not
+# retire the code already sitting in the user's inbox: the emails look
+# identical, delivery is not instant, and the user cannot tell which message
+# holds the "current" code — with only one valid at a time, opening the older
+# email makes its code look mysteriously used up.
+_CODE_KEEP = 2
 
 # This regex only rejects malformed input (local@domain.tld, no spaces, a dot
 # in the domain); deliverability is proven by the verification code itself.
@@ -144,26 +150,34 @@ def _verify_signup_code(email: str, code: str) -> bool:
 
     Deliberately NOT single-use: a dismissed/timed-out passkey prompt makes the
     browser re-run ``register/begin``, and forcing a fresh code there would
-    punish the common retry. The state is session-bound and short-lived; it is
-    cleared when registration actually completes (``register/complete``).
+    punish the common retry. The newest ``_CODE_KEEP`` codes are all accepted
+    (each within its own TTL) so a resend doesn't strand the email the user is
+    reading. The state is session-bound and short-lived; it is cleared when
+    registration actually completes (``register/complete``).
     """
-    sent_hash = session.get("pk_vc_hash")
+    codes = session.get("pk_vc_codes") or []
     sent_email = session.get("pk_vc_email")
-    expires = session.get("pk_vc_expires") or 0
     attempts = session.get("pk_vc_attempts") or 0
 
-    if not sent_hash or sent_email != email:
+    if not codes or sent_email != email:
         return False
-    if _now_ts() > expires or attempts >= _CODE_MAX_ATTEMPTS:
+    if attempts >= _CODE_MAX_ATTEMPTS:
         return False
-    if not code or not hmac.compare_digest(_code_hash(code, email), sent_hash):
-        session["pk_vc_attempts"] = attempts + 1
+    now = _now_ts()
+    live = [c["h"] for c in codes if now <= c["e"]]
+    if not live:
         return False
-    return True
+    if code:
+        guess = _code_hash(code, email)
+        # Compare against every live hash (no early exit) to keep timing flat.
+        if sum(hmac.compare_digest(guess, h) for h in live) > 0:
+            return True
+    session["pk_vc_attempts"] = attempts + 1
+    return False
 
 
 def _clear_signup_code_state() -> None:
-    for key in ("pk_vc_hash", "pk_vc_email", "pk_vc_expires", "pk_vc_attempts", "pk_vc_sent_at"):
+    for key in ("pk_vc_codes", "pk_vc_email", "pk_vc_attempts", "pk_vc_sent_at"):
         session.pop(key, None)
 
 
@@ -204,11 +218,19 @@ def register_send_code() -> ResponseReturnValue:
         logger.error("Failed to send verification code to %s", email, exc_info=True)
         return jsonify({"error": _CODE_SEND_ERR}), 502
 
-    session["pk_vc_hash"] = _code_hash(code, email)
+    # Keep earlier still-live codes for the same email so the user can enter
+    # whichever email they end up reading; a different email starts fresh
+    # (old hashes are bound to the old address and could never match anyway).
+    now = _now_ts()
+    codes = session.get("pk_vc_codes") or []
+    if session.get("pk_vc_email") != email:
+        codes = []
+    codes = [c for c in codes if now <= c["e"]]
+    codes.append({"h": _code_hash(code, email), "e": now + _CODE_TTL_SECONDS})
+    session["pk_vc_codes"] = codes[-_CODE_KEEP:]
     session["pk_vc_email"] = email
-    session["pk_vc_expires"] = _now_ts() + _CODE_TTL_SECONDS
     session["pk_vc_attempts"] = 0
-    session["pk_vc_sent_at"] = _now_ts()
+    session["pk_vc_sent_at"] = now
     return jsonify({"ok": True})
 
 

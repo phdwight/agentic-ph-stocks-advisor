@@ -1,4 +1,8 @@
-# Philippine Stock Market AI Advisor
+<div align="center">
+
+# PH Stocks Advisor
+
+**AI verdicts for Philippine Stock Exchange stocks — six specialist agents, one 0–100 buy-decision score.**
 
 [![CI/CD](https://github.com/phdwight/agentic-ph-stocks-advisor/actions/workflows/main-ci-cd.yml/badge.svg)](https://github.com/phdwight/agentic-ph-stocks-advisor/actions/workflows/main-ci-cd.yml)
 [![Release](https://img.shields.io/github/v/release/phdwight/agentic-ph-stocks-advisor?sort=semver)](https://github.com/phdwight/agentic-ph-stocks-advisor/releases)
@@ -6,9 +10,11 @@
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://www.python.org/)
 [![Container](https://img.shields.io/badge/ghcr.io-agentic--ph--stocks--advisor-informational)](https://github.com/phdwight/agentic-ph-stocks-advisor/pkgs/container/agentic-ph-stocks-advisor)
 
-An agentic AI application that analyses Philippine Stock Exchange (PSE) listed stocks and produces a **0–100 verdict score** on a buy-decision scale — **AVOID · DON'T BUY · WAIT · BUY · STRONG BUY** — in plain English. (A binary BUY / NOT BUY verdict is derived from the score internally for compatibility.)
+`AVOID` · `DON'T BUY` · `WAIT` · `BUY` · `STRONG BUY`
 
-Built with **LangGraph** + **LangChain** using a multi-agent architecture. Requires Python ≥ 3.14.
+Built with **LangGraph + LangChain** (OpenAI and/or Anthropic) · Python ≥ 3.14
+
+</div>
 
 > [!IMPORTANT]
 > **Educational use only — this is not financial advice.** This project is not a
@@ -17,132 +23,105 @@ Built with **LangGraph** + **LangChain** using a multi-agent architecture. Requi
 > errors**. Nothing here is a recommendation to buy, sell, or hold any security.
 > You use it voluntarily and at your own risk — always consult a licensed
 > financial professional before investing.
-> **[Read the full disclaimer →](#disclaimer)**
+> **[Read the full disclaimer →](#12--disclaimer)**
 
-## Table of Contents
+| | | | |
+|---|---|---|---|
+| [01 · What it does](#01--what-it-does) | [02 · Architecture](#02--architecture) | [03 · Quick start](#03--quick-start) | [04 · Using it](#04--using-it) |
+| [05 · How analysis works](#05--how-analysis-works) | [06 · Users, auth & portfolio](#06--users-auth--portfolio) | [07 · Configuration](#07--configuration) | [08 · Deployment](#08--deployment) |
+| [09 · CI/CD & versioning](#09--cicd--versioning) | [10 · Development](#10--development) | [11 · Security](#11--security) | [12 · Disclaimer](#12--disclaimer) · [13 · License](#13--license--acknowledgements) |
 
-- [Architecture](#architecture) · [Data Sources](#data-sources) · [SOLID Principles](#solid-principles-applied)
-- [Setup](#setup) — [Local](#local-without-docker) · [Docker](#docker-recommended-for-deployment)
-- [Usage](#usage) — [CLI](#analyse-a-stock) · [Web UI](#web-ui) · [Exports](#generate-a-pdf-report)
-- [Features](#analysis-cadence-pse-trading-session-aware) — [Cadence](#analysis-cadence-pse-trading-session-aware) · [Verdict Score](#verdict-score-0100-buy-decision-scale) · [User Types](#user-types) · [Portfolio](#portfolio-holdings-elevated-users-only) · [Auth](#authentication-passkeys--oauth-recovery)
-- [Operations](#health--version-endpoints) — [Health & Version](#health--version-endpoints) · [CI/CD](#cicd) · [Versioning & Releases](#automatic-versioning--releases) · [Deployment](#azure-cloud-deployment)
-- [Reference](#environment-variables) — [Environment Variables](#environment-variables) · [Project Structure](#project-structure) · [Testing](#testing) · [Scaling](#scaling-tiers)
-- [Project info](#contributing) — [Contributing](#contributing) · [Security](#security) · [Disclaimer](#disclaimer) · [License](#license) · [Acknowledgements](#acknowledgements)
+---
 
-## Architecture
+## 01 · What it does
 
-A **validation node** checks the stock symbol, then six specialist agents run **in parallel**, each responsible for a single analysis dimension. A **consolidator agent** synthesises their outputs into a final investor-friendly report.
+Enter a PSE ticker. A **validation node** checks the symbol, six specialist agents run **in parallel** — each owning one analysis dimension — and a **consolidator** synthesises their outputs into an investor-friendly report with a **0–100 verdict score**. The final score is a deterministic weighted average of six rubric-guided sub-scores (a binary BUY / NOT BUY verdict is derived internally for compatibility).
 
-```
-                        ┌── Price Agent ────────────┐
-                        ├── Dividend Agent ─────────┤
-                        ├── Movement Agent ─────────┤
-START → Validate ──────►├── Valuation Agent ────────┼──► Consolidator ──► END
-                        ├── Controversy Agent ──────┤
-                        └── Sentiment Agent ────────┘
+| Agent | Responsibility |
+|-------|---------------|
+| **Price** | Current price vs 52-week range, price catalysts |
+| **Dividend** | Yield, payout ratio, sustainability, REIT rules (RA 9856), income/revenue/FCF trends, structured dividend announcements (ex-date, rate, payment date) |
+| **Movement** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance |
+| **Valuation** | PE/PB/PEG ratios, Graham Number fair value estimate |
+| **Controversy** | Price spike detection, risk factors, news headlines surfaced via the MCP data tool |
+| **Sentiment** | Global events impact (wars, pandemics, economic shifts, climate); macro context via the MCP data tool |
+| **Consolidator** | Merges all analyses → prose summary + six per-dimension sub-scores (0–100). Weighted average → final score (env-tunable weights). Structured output with regex fallback |
+| **Portfolio** | Personalised hold / accumulate / trim advisory for elevated users based on their holdings (on-demand, not part of the main graph) |
+
+## 02 · Architecture
+
+```mermaid
+flowchart LR
+    S([START]) --> V[Validate symbol]
+    V --> P[Price] & D[Dividend] & M[Movement] & VA[Valuation] & C[Controversy] & SE[Sentiment]
+    P & D & M & VA & C & SE --> CO[Consolidator]
+    CO --> E([END])
 ```
 
 A detailed diagram of the LangGraph flow — including MCP tool calls and the per-node `GraphState` updates — is in [langgraph-flow.drawio](langgraph-flow.drawio) (open with [draw.io](https://app.diagrams.net/) or the VS Code Draw.io extension).
 
-| Agent | Responsibility |
-|-------|---------------|
-| **Price Agent** | Current price vs 52-week range, price catalysts |
-| **Dividend Agent** | Yield, payout ratio, sustainability, REIT rules (RA 9856), income/revenue/FCF trends, structured dividend announcements (ex-date, rate, payment date) |
-| **Movement Agent** | 1-year trend, max drawdown, candlestick patterns, TradingView multi-period performance |
-| **Valuation Agent** | PE/PB/PEG ratios, Graham Number fair value estimate |
-| **Controversy Agent** | Price spike detection, risk factors, news headlines surfaced via the MCP data tool |
-| **Sentiment Agent** | Global events impact (wars, pandemics, economic shifts, climate); macro context surfaced via the MCP data tool |
-| **Consolidator** | Merges all analyses → prose summary + six per-dimension sub-scores (0–100, rubric-guided). The final verdict score is a deterministic weighted average of the sub-scores (env-tunable weights); the binary verdict is derived from it. Structured output with regex fallback |
-| **Portfolio Agent** | Personalised hold / accumulate / trim advisory for elevated users based on their stock holdings (on-demand, not part of the main graph) |
+**Data sources** — the data layer cascades through multiple sources for resilience:
 
-### Data Sources
-
-The data layer cascades through multiple sources for resilience:
-
-| Source | API Key | Usage |
+| Source | API key | Usage |
 |--------|---------|-------|
 | **DragonFi** (`api.dragonfi.ph`) | Not required | Primary — price, dividends, valuation, financials, news, symbol validation |
-| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history, spike detection, declared dividend disclosures (SEC Form 6-1), and company dividend announcements page (ex-date, rate, payment date) |
+| **PSE EDGE** (`edge.pse.com.ph`) | Not required | Primary for daily OHLCV history, spike detection, declared dividend disclosures (SEC Form 6-1), and company dividend announcements (ex-date, rate, payment date); also the outage fallback for validation, price, financials, and REIT status |
 | **TradingView Scanner** | Not required | Multi-period performance & volatility |
 | **Tavily** | Optional | Server-side web-search enrichment for the sentiment data tool (not exposed as an LLM tool) |
 
-## SOLID Principles Applied
+<details>
+<summary><b>SOLID principles applied</b></summary>
 
-- **S**ingle Responsibility – each domain service (`price_service`, `dividend_service`, etc.) handles one data concern; `tools.py` is a thin re-export façade
-- **O**pen/Closed – new agents are added via `AGENT_REGISTRY` in `workflow.py`; new export formats are added by subclassing `OutputFormatter` and registering in `FORMATTER_REGISTRY`; existing code needs no changes
-- **L**iskov Substitution – `build_chat_model(spec)` returns `BaseChatModel` for either OpenAI or Anthropic; agents depend only on the abstract type, so any LangChain-compatible provider works. `PdfFormatter` and `HtmlFormatter` are drop-in replacements for `OutputFormatter`
-- **I**nterface Segregation – tool functions return narrow, typed Pydantic models; `OutputFormatter` exposes only `render()`, `write()`, and metadata properties
-- **D**ependency Inversion – LLM is injected into `build_graph(llm=...)` and closed over in nodes; repository layer uses an ABC with SQLite/Postgres implementations; export uses `OutputFormatter` ABC; data tools depend on the `data/tools.py` façade which transparently swaps the in-process service for a remote MCP client based on configuration
+- **S**ingle Responsibility — each domain service (`price_service`, `dividend_service`, …) handles one data concern; `tools.py` is a thin re-export façade
+- **O**pen/Closed — new agents are added via `AGENT_REGISTRY` in `workflow.py`; new export formats by subclassing `OutputFormatter` and registering in `FORMATTER_REGISTRY`; existing code needs no changes
+- **L**iskov Substitution — `build_chat_model(spec)` returns `BaseChatModel` for either OpenAI or Anthropic; agents depend only on the abstract type. `PdfFormatter` and `HtmlFormatter` are drop-in `OutputFormatter` replacements
+- **I**nterface Segregation — tool functions return narrow, typed Pydantic models; `OutputFormatter` exposes only `render()`, `write()`, and metadata properties
+- **D**ependency Inversion — the LLM is injected into `build_graph(llm=...)`; the repository layer is an ABC with SQLite/Postgres implementations; data tools depend on the `data/tools.py` façade, which transparently swaps the in-process service for a remote MCP client based on configuration
 
-## Setup
+</details>
 
-### Local (without Docker)
+## 03 · Quick start
 
-```bash
-# 1. Create virtual environment
-python -m venv .venv && source .venv/bin/activate
-
-# 2. Install dependencies
-pip install -e ".[dev]"
-
-# 3. Configure environment
-cp .env.example .env
-# Edit .env — set OPENAI_API_KEY (or ANTHROPIC_API_KEY if LLM_PROVIDER=anthropic)
-```
-
-For PostgreSQL support:
+**Docker (recommended):**
 
 ```bash
-pip install -e ".[postgres]"
-```
-
-### Docker (recommended for deployment)
-
-The project ships with a multi-stage `Dockerfile` and a Compose v2 file with five services:
-
-| Container | Role |
-|-----------|------|
-| **db** | PostgreSQL 18 — persistent report storage |
-| **redis** | Redis 7 — Celery message broker & result backend |
-| **mcp** | PH Stocks Advisor MCP server — PSE data tools over Streamable HTTP (container :8000, host :5184) |
-| **web** | Flask web UI via Gunicorn + gevent (port 5000) |
-| **worker** | Celery worker — runs stock analyses in the background |
-| **advisor** | One-shot CLI analysis (optional) |
-
-```bash
-# 1. Configure environment
-cp .env.example .env
-# Edit .env — set OPENAI_API_KEY (or ANTHROPIC_API_KEY if LLM_PROVIDER=anthropic)
-
-# 2. Start the web UI + worker + database + redis
+cp .env.example .env      # set OPENAI_API_KEY (or ANTHROPIC_API_KEY if LLM_PROVIDER=anthropic)
 docker compose up --build -d web worker
-
-# 3. Open the web UI
 open http://localhost:5180
 
-# 4. Or run a one-shot CLI analysis
-docker compose run --rm advisor TEL
-docker compose run --rm advisor SM BDO TEL --pdf
-
-# 5. Stop everything
-docker compose down            # keeps data in the pgdata18 volume
-docker compose down -v         # removes volumes too
+docker compose run --rm advisor TEL          # or a one-shot CLI analysis
+docker compose down                          # stop (keeps the pgdata18 volume; -v removes it)
 ```
 
-Exported files (PDF / HTML) are written to the `./output` directory on the host via a bind mount.
+| Container | Role | Port |
+|-----------|------|------|
+| **web** | Flask web UI via Gunicorn + gevent | host 5180 → 5000 |
+| **worker** | Celery worker — runs analyses in the background | — |
+| **db** | PostgreSQL 18 — persistent report storage | internal |
+| **redis** | Redis 7 — Celery broker & result backend | internal |
+| **mcp** | MCP server — PSE data tools over Streamable HTTP | host 5184 → 8000 |
+| **adminer** | Adminer database UI (log in with the Postgres credentials; LAN only) | host 5181 → 8080 |
+| **advisor** | One-shot CLI analysis (optional) | — |
 
-#### Optional: OpenTelemetry observability stack
+Exported files (PDF / HTML) land in `./output` on the host via a bind mount.
+
+**Local (without Docker):**
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"                      # add ".[postgres]" for PostgreSQL support
+cp .env.example .env                         # set OPENAI_API_KEY or ANTHROPIC_API_KEY
+```
+
+<details>
+<summary><b>Optional: OpenTelemetry observability stack</b></summary>
 
 Layer the OTel overlay on top of either compose file to add an OTLP collector, Jaeger (traces), Prometheus (metrics) and Grafana (dashboards). The application services are auto-instrumented at container start.
 
 ```bash
-# Dev
-docker compose -f docker-compose.yml -f docker-compose.otel.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.otel.yml up -d        # dev
+docker compose -f docker-compose.prod.yml -f docker-compose.otel.yml up -d   # prod
 
-# Prod
-docker compose -f docker-compose.prod.yml -f docker-compose.otel.yml up -d
-
-# UIs
 open http://localhost:6184    # Jaeger
 open http://localhost:6185    # Prometheus
 open http://localhost:6186    # Grafana (admin / admin)
@@ -150,9 +129,12 @@ open http://localhost:6186    # Grafana (admin / admin)
 
 For production, bake the OTel packages into the image (add `opentelemetry-distro[otlp]` and the relevant `opentelemetry-instrumentation-*` packages to `pyproject.toml`) and set `OTEL_BOOTSTRAP=0` to skip the runtime install.
 
-#### Optional: Langfuse LLM tracing
+</details>
 
-LLM traces (every agent call, tool invocation, token usage and cost) are sent to [Langfuse](https://langfuse.com) when API keys are present. Set the keys in `.env`:
+<details>
+<summary><b>Optional: Langfuse LLM tracing</b></summary>
+
+LLM traces (every agent call, tool invocation, token usage and cost) are sent to [Langfuse](https://langfuse.com) when API keys are present:
 
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-...
@@ -172,78 +154,24 @@ Each trace is enriched with:
 
 Set `LANGFUSE_TRACING_ENABLED=false` to disable tracing without removing the keys.
 
-> **Tip:** Override any env var in `.env` — the Compose file reads them automatically.
+</details>
 
-## Usage
+## 04 · Using it
 
-### Analyse a stock
+**CLI:**
 
-```bash
-ph-advisor TEL          # PLDT
-ph-advisor SM           # SM Investments
-ph-advisor BDO          # BDO Unibank
-ph-advisor ALI          # Ayala Land
-ph-advisor JFC          # Jollibee
-```
+| Command | Does |
+|---------|------|
+| `ph-advisor TEL` | Analyse one stock (also: `python -m ph_stocks_advisor.main TEL`) |
+| `ph-advisor SM BDO TEL` | Analyse several sequentially |
+| `ph-advisor SM --pdf` / `--html` / `--html --pdf` | Export alongside terminal output (`-o report.pdf` for a custom path) |
+| `ph-advisor-pdf MREIT` | Export the latest **saved** report to PDF (`--id 3` for a specific one, `-o` for a path) |
+| `ph-advisor-html MREIT` | Same, to HTML |
+| `ph-advisor-web` | Web UI on http://127.0.0.1:5000 (`--port`, `--host 0.0.0.0`, `--debug` for the Flask dev server) |
 
-### Analyse multiple stocks at once
+**Web UI** — enter a symbol, the analysis runs in the background, and each workflow step (validation, data fetching, agent execution, consolidation, saving) streams to the browser in real time via **Server-Sent Events** (`/stream/<task_id>`, backed by Redis Pub/Sub; polling fallback at `/status/<task_id>`). The finished report renders in place.
 
-```bash
-ph-advisor SM BDO TEL               # analyse three stocks sequentially
-ph-advisor SM BDO --pdf              # each stock gets its own PDF
-ph-advisor SM BDO TEL --html --pdf   # PDF + HTML for every stock
-```
-
-Or via module:
-
-```bash
-python -m ph_stocks_advisor.main TEL
-```
-
-### Generate a PDF report
-
-```bash
-ph-advisor SM --pdf                   # PDF saved alongside terminal output
-ph-advisor SM --pdf -o report.pdf     # custom output path
-```
-
-### Generate an HTML report
-
-```bash
-ph-advisor SM --html                  # HTML saved alongside terminal output
-ph-advisor SM --html -o report.html   # custom output path
-```
-
-### Export a saved report to PDF
-
-```bash
-ph-advisor-pdf MREIT                  # latest report for the symbol
-ph-advisor-pdf MREIT --id 3           # specific report by ID
-ph-advisor-pdf MREIT -o mreit.pdf     # custom output path
-```
-
-### Export a saved report to HTML
-
-```bash
-ph-advisor-html MREIT                 # latest report for the symbol
-ph-advisor-html MREIT --id 3          # specific report by ID
-ph-advisor-html MREIT -o mreit.html   # custom output path
-```
-
-### Web UI
-
-```bash
-ph-advisor-web                        # start with Gunicorn on http://127.0.0.1:5000
-ph-advisor-web --port 8080            # custom port
-ph-advisor-web --host 0.0.0.0         # expose to network
-ph-advisor-web --debug                # use Flask dev server with auto-reload
-```
-
-The web interface lets you enter a stock symbol, kicks off the analysis in the background, and streams real-time progress to the browser via **Server-Sent Events (SSE)**. Each workflow step (validation, data fetching, agent execution, consolidation, saving) publishes events through Redis Pub/Sub; the frontend receives them instantly via `/stream/<task_id>`. A polling fallback (`/status/<task_id>`) is available for browsers without SSE support. Once complete, the report is displayed in the browser.
-
-### Health & Version Endpoints
-
-Three public endpoints (no authentication) support monitoring and support requests:
+**Public endpoints** (no authentication — used by Docker healthchecks and monitoring):
 
 | Endpoint | Returns |
 |---|---|
@@ -257,34 +185,19 @@ curl -s http://localhost:5180/version
 # {"version":"2.1.8","asset_rev":"9f39825ba8"}
 ```
 
-The version shown here always equals the git tag and the published image tag —
-see [Automatic Versioning & Releases](#automatic-versioning--releases).
+The version shown always equals the git tag and the published image tag — see [09 · CI/CD & versioning](#09--cicd--versioning).
 
-A `/healthz` heartbeat endpoint verifies that both Redis and the database are reachable:
+## 05 · How analysis works
 
-```bash
-curl http://localhost:5000/healthz
-# {"checks":{"database":"ok","redis":"ok"},"status":"healthy"}
-```
+**Trading-session cadence** — freshness follows the PSE calendar (9:00 AM–3:00 PM PHT, Mon–Fri):
 
-Returns **200** when all dependencies are healthy, **503** otherwise. This endpoint does not require authentication and is used by Docker healthchecks and Azure Container Apps liveness/readiness probes to detect and restart unhealthy replicas.
-
-Reports are automatically persisted to a local SQLite database (`reports.db` by default) after each analysis. Reports are **shared** — they are not tied to any user — but each authenticated user only sees the stocks they have personally requested to analyse. A `user_symbols` table tracks which symbols each user has analysed; anonymous users (auth disabled) see all reports. Authenticated user profiles (name, email, provider, login timestamps) are saved to a `users` table on every sign-in (upserted by `oid`).
-
-### Analysis Cadence (PSE trading-session aware)
-
-Freshness follows the PSE trading calendar (9:00 AM–3:00 PM PHT, Mon–Fri):
-
-- A report is **fresh** if it was generated after the **most recent trading-day 3:00 PM PHT close**. Weekends roll back to Friday's close — a report generated Friday 4 PM stays fresh through the whole weekend and Monday until 3 PM.
-- **No new analyses run while the market is open** (9 AM–3 PM PHT on trading days). During the session, the newest report is served with a "refreshes after the 3 PM close" note; only when *no* report exists at all does the request return a "come back after the close" response.
+- A report is **fresh** if generated after the **most recent trading-day 3:00 PM PHT close**. Weekends roll back to Friday's close — a report generated Friday 4 PM stays fresh through the weekend and Monday until 3 PM.
+- **No new analyses run while the market is open.** During the session the newest report is served with a "refreshes after the 3 PM close" note; only when *no* report exists does the request return a "come back after the close" response.
 - Outside market hours — before 9 AM, after 3 PM, and all weekend — a stale or missing report triggers a fresh run.
-- **Concurrent requests for the same symbol produce exactly one run**: an atomic Redis claim admits one dispatch; everyone else joins the same task id and streams its live progress (SSE) — same result, no duplicate LLM spend.
+- **Concurrent requests for the same symbol produce exactly one run**: an atomic Redis claim admits one dispatch; everyone else joins the same task id and streams its live progress — same result, no duplicate LLM spend.
+- Holidays are not yet in the calendar (weekends only); PSE non-trading dates can be added to `NON_TRADING_DATES` in `infra/trading_calendar.py`.
 
-Holidays are not yet in the calendar (weekends only); PSE non-trading dates can be added to `NON_TRADING_DATES` in `infra/trading_calendar.py`.
-
-### Verdict Score (0–100 buy-decision scale)
-
-The consolidator LLM judges each of the six dimensions against an explicit rubric and emits **per-dimension sub-scores** (0–100). The final score is a **deterministic weighted average** — the LLM never does the arithmetic — and drives the report's Avoid ↔ Buy meter (marker sits at `score%`).
+**Verdict score** — the consolidator judges each dimension against an explicit rubric and emits per-dimension sub-scores (0–100). The final score is a **deterministic weighted average** — the LLM never does the arithmetic — and drives the report's Avoid ↔ Buy meter (marker at `score%`):
 
 | Score | Band | Meaning |
 |-------|------|---------|
@@ -294,51 +207,22 @@ The consolidator LLM judges each of the six dimensions against an explicit rubri
 | 20–39 | **DON'T BUY** | Unfavourable at the current price |
 | 0–19 | **AVOID** | Strong do-not-buy evidence |
 
-Labels are deliberately framed for a **buy decision** — the app never assumes you already own the stock, so there are no "sell"/"hold" words. Colours follow the same semantics: **green = buy, red = avoid**.
+Labels are deliberately framed for a **buy decision** — the app never assumes you already own the stock, so there are no "sell"/"hold" words. Colours follow the same semantics: **green = buy, red = avoid**. Tuning levers (env): `SCORE_WEIGHT_*` (normalised by their sum) and `BUY_SCORE_THRESHOLD` (default 60). Dimensions with no data are **excluded from the score** and disclosed in the report rather than guessed.
 
-Tuning levers (env): `SCORE_WEIGHT_PRICE/VALUATION/DIVIDEND/MOVEMENT/CONTROVERSY/SENTIMENT` (normalised by their sum) and `BUY_SCORE_THRESHOLD` (score at/above which the derived binary verdict is BUY; default 60). Dimensions with no data are **excluded from the score** and disclosed in the report rather than guessed.
+**Persistence & visibility** — reports are saved after each analysis (SQLite by default, Postgres in Docker). Reports are **shared** — not tied to any user — but each authenticated user only sees the stocks they personally analysed (`user_symbols`); anonymous users (auth disabled) see all reports. User profiles are upserted by `oid` into `users` on every sign-in.
 
-### User Types
+## 06 · Users, auth & portfolio
 
-Every user is assigned a **user type** that controls access privileges:
+**User types** — every user has a type controlling access:
 
-| Type | Value | Rate Limit | Cache Bypass | Per-Stock Cooldown |
-|------|-------|------------|--------------|-------------------|
-| **Normal** | `0` | 5 analyses/day (configurable via `DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served | Once per stock per trading day (resets at 3:00 PM PHT) |
-| **Elevated** | `1` | Unlimited | Yes — can re-analyse stocks | Once per stock per trading day (resets at 3:00 PM PHT) |
+| Type | Value | Rate limit | Cache bypass | Per-stock cooldown |
+|------|-------|------------|--------------|--------------------|
+| **Normal** | `0` | 5 analyses/day (`DAILY_ANALYSIS_LIMIT`) | No — fresh cached reports are served | Once per stock per trading day (resets 3:00 PM PHT) |
+| **Elevated** | `1` | Unlimited | Yes — can re-analyse | Once per stock per trading day (resets 3:00 PM PHT) |
 
-All new users start as **Normal**. An administrator can promote a user to **Elevated** via the SQLAdmin panel (Admin → Users → edit `user_type`). The user type is stored in the `users` table and read from the database on each login — it cannot be changed by the user themselves. Login upserts intentionally do **not** overwrite the `user_type` column.
+All new users start as **Normal**. An administrator promotes via Adminer (`http://<host>:5181`, Postgres credentials, edit `users.user_type`). The type is read from the database on each login, cannot be self-changed, and login upserts never overwrite it.
 
-### Portfolio Holdings (Elevated Users Only)
-
-Elevated users can record their stock positions and receive **personalised portfolio advice**.
-
-1. **My Position** button appears on any report page for elevated users
-2. A modal asks for **number of shares** and **average cost per share**
-3. Holdings are saved per user per symbol and persist across sessions
-4. Clicking **Save & Analyse** triggers a dedicated **Portfolio Agent** (only available **after 3:00 PM PHT**) that considers:
-   - The user's cost basis and unrealised P/L
-   - The latest stock analysis report
-   - Current market price
-5. If no fresh base analysis exists for the stock, one is **automatically dispatched first** (visible to all users in history), then the portfolio analysis runs
-6. The agent produces a **Hold / Accumulate / Trim** recommendation with key price levels and risk considerations
-7. The portfolio advisory is **private** — only visible to the elevated user who created it
-
-| API Endpoint | Method | Description |
-|-------------|--------|-------------|
-| `/api/holdings/<symbol>` | `GET` | Retrieve user's holding for a symbol |
-| `/api/holdings/<symbol>` | `POST` | Save/update shares & average cost |
-| `/api/holdings/<symbol>` | `DELETE` | Remove a holding |
-| `/api/portfolio-analyse/<symbol>` | `POST` | Trigger portfolio analysis (async Celery task) |
-| `/api/portfolio-report/<symbol>` | `GET` | Retrieve latest portfolio advisory |
-
-### Authentication (Passkeys + OAuth recovery)
-
-The primary sign-in is a **passkey (WebAuthn/FIDO2)** — open self-signup, email-first: a new user enters their email + name and registers a passkey (Touch ID / Windows Hello / phone); returning users type their email and authenticate with their device. Microsoft Entra ID and Google OAuth remain available as **recovery sign-ins** (a lost device isn't a lockout). When at least one method is configured, users must sign in before accessing any page.
-
-#### Passkeys (WebAuthn)
-
-Passkeys are enabled by setting the relying-party ID and origin (off by default):
+**Authentication** — the primary sign-in is a **passkey (WebAuthn/FIDO2)**: open self-signup, email-first. A new user enters email + name, accepts the terms, **confirms the email with a 6-digit code** (the newest two codes stay valid, so a resend never strands the email being read), then registers a passkey (Touch ID / Windows Hello / phone). Returning users type their email and authenticate with their device. Microsoft Entra ID and Google OAuth remain as **recovery sign-ins** — a lost device isn't a lockout. When at least one method is configured, sign-in is required for every page; when none is, all routes are public (useful for local development).
 
 ```bash
 WEBAUTHN_RP_ID=your.domain.com                # host only — passkeys BIND to this domain
@@ -347,9 +231,12 @@ WEBAUTHN_RP_NAME="PH Stock Advisor AI"        # label shown in the OS passkey pr
 FLASK_SECRET_KEY=<random-secret>
 ```
 
-For local development use `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGIN=http://localhost:5180`. Changing the RP ID later invalidates all existing passkeys. Ceremonies verify against the *configured* origin (never request headers), so the flow is safe behind a reverse proxy or Cloudflare tunnel. The login flow is hardened against account enumeration (decoy credential lists + uniform errors), and anonymous callers cannot attach a passkey to an existing email. Endpoints under `/auth/passkey/*` cover register/login plus authenticated list/delete (passkeys can also be revoked from the admin panel's **Passkeys** view).
+For local development use `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGIN=http://localhost:5180`. Changing the RP ID later invalidates all existing passkeys. Ceremonies verify against the *configured* origin (never request headers), so the flow is safe behind a reverse proxy or Cloudflare tunnel. The login flow is hardened against account enumeration (decoy credential lists + uniform errors), and anonymous callers cannot attach a passkey to an existing email. Endpoints under `/auth/passkey/*` cover register/login plus authenticated list/delete (passkeys can also be revoked by deleting the row in `webauthn_credentials` via Adminer).
 
-#### Microsoft Entra ID
+<details>
+<summary><b>OAuth recovery setup (Microsoft Entra ID, Google)</b></summary>
+
+**Microsoft Entra ID**
 
 1. **Register an app** in the [Azure portal](https://portal.azure.com) → Microsoft Entra ID → App registrations:
    - **Redirect URI** → `http://localhost:5180/auth/callback` (Web platform)
@@ -364,7 +251,7 @@ ENTRA_TENANT_ID=<your-tenant-id>   # or "common" for multi-tenant
 FLASK_SECRET_KEY=<random-secret>
 ```
 
-#### Google OAuth2
+**Google OAuth2**
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
 2. Create an **OAuth 2.0 Client ID** (Web application type):
@@ -377,387 +264,29 @@ GOOGLE_CLIENT_ID=<your-google-client-id>
 GOOGLE_CLIENT_SECRET=<your-google-client-secret>
 ```
 
-When **no** sign-in method is configured (no `WEBAUTHN_RP_ID`, `ENTRA_CLIENT_ID`, or `GOOGLE_CLIENT_ID`), authentication is disabled and all routes are publicly accessible (useful for local development).
+</details>
 
-### Azure (Cloud Deployment)
+**Portfolio holdings (elevated users only)** — record positions, get personalised advice:
 
-Deploy to **Azure Container Apps** with managed PostgreSQL and Redis. All infrastructure is defined as code via Bicep.
+1. A **My Position** button appears on any report page for elevated users; a modal asks for **shares** and **average cost**
+2. Holdings persist per user per symbol; **Save & Analyse** triggers the **Portfolio Agent** (only after 3:00 PM PHT), which weighs the cost basis and unrealised P/L, the latest analysis report, and the current price
+3. If no fresh base analysis exists, one is dispatched first (visible to all users), then the portfolio analysis runs
+4. Output: a **Hold / Accumulate / Trim** recommendation with key price levels and risk considerations — **private** to the user who created it
 
-| Azure Service | Role |
-|---------------|------|
-| **Container Registry** | Stores the Docker image |
-| **Container Apps — web** | Flask web UI (HTTPS, auto-scaling) |
-| **Container Apps — worker** | Celery worker (scales with queue depth) |
-| **Container Apps — admin** | SQLAdmin database panel (HTTPS) |
-| **Database for PostgreSQL** | Flexible Server (Burstable B1ms, 32 GB) |
-| **Cache for Redis** | Basic C0 (TLS only) |
-| **Log Analytics** | Container logs & monitoring |
+| API endpoint | Method | Description |
+|-------------|--------|-------------|
+| `/api/holdings/<symbol>` | `GET` / `POST` / `DELETE` | Retrieve / save / remove the user's holding |
+| `/api/portfolio-analyse/<symbol>` | `POST` | Trigger portfolio analysis (async Celery task) |
+| `/api/portfolio-report/<symbol>` | `GET` | Retrieve the latest portfolio advisory |
 
-#### Prerequisites
+## 07 · Configuration
 
-- [Azure CLI](https://aka.ms/install-az-cli) installed and logged in (`az login`)
-- Docker running locally
-- `OPENAI_API_KEY` in `.env` (or exported)
+All settings live in `.env` (see [.env.example](.env.example)). At least one LLM key is required — `OPENAI_API_KEY` for the default provider, or `ANTHROPIC_API_KEY` when any agent uses an `anthropic` spec. `MCP_SERVER_URL` is required for analyses — all market-data calls dispatch through the MCP server, with no in-process fallback.
 
-#### First-time deploy
+LLM specs are `[provider:]tier` (provider ∈ `openai`|`anthropic`, tier ∈ `large`|`medium`|`small`) and can be set **per agent** — e.g. `LLM_CONSOLIDATOR=anthropic:large` with the specialists on `openai:small`, mixed in one run.
 
-```bash
-# Set a password for the managed PostgreSQL server
-export AZURE_PG_PASSWORD='<strong-password>'
-
-# Deploy everything (infra + build + push + update apps)
-./infra/azure/deploy.sh
-```
-
-The script will:
-1. Create a resource group (`ph-stocks-advisor-rg` in `southeastasia`)
-2. Provision all Azure resources via Bicep
-3. Build the web and admin Docker images and push them to ACR
-4. Update all Container Apps (web, worker, admin) with the new images
-5. Print the public HTTPS URLs for the web UI and admin panel
-
-#### Update after code changes
-
-```bash
-./infra/azure/deploy.sh --update   # rebuild image & redeploy (skips infra)
-```
-
-#### Provision infrastructure only (no image push)
-
-```bash
-./infra/azure/deploy.sh --infra-only
-```
-
-#### Tear down
-
-```bash
-./infra/azure/teardown.sh          # interactive confirmation
-./infra/azure/teardown.sh --yes    # skip confirmation
-```
-
-#### Customisation
-
-Override defaults via environment variables before running `deploy.sh`:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AZURE_RESOURCE_GROUP` | `ph-stocks-advisor-rg` | Resource group name |
-| `AZURE_LOCATION` | `southeastasia` | Azure region |
-| `AZURE_APP_NAME` | `phstocks` | Name prefix for all resources |
-| `AZURE_PG_ADMIN_USER` | `phadmin` | PostgreSQL admin login |
-| `AZURE_PG_PASSWORD` | _(required)_ | PostgreSQL admin password |
-| `IMAGE_TAG` | `latest` | Docker image tag |
-
-## Testing
-
-```bash
-# Run all unit tests (fast, fully mocked, no API keys needed)
-pytest tests/ -v -m "not integration"
-
-# Run integration tests (requires OPENAI_API_KEY)
-pytest tests/ -v -m "integration"
-
-# Run everything
-pytest tests/ -v
-```
-
-### Test Structure
-
-| Category | Marker | What it tests | LLM calls |
-|----------|--------|---------------|-----------|
-| **Unit** | _(default)_ | Deterministic logic, mocked LLMs, data models | Fully mocked |
-| **Trajectory** | _(default)_ | Agent step sequences (which nodes ran, prompt content, call order) | Fully mocked |
-| **Integration** | `@pytest.mark.integration` | End-to-end with real LLM calls | Real API calls |
-
-Unit and trajectory tests run in CI on every push. Integration tests run only when secrets are available (push to `develop`, not fork PRs).
-
-### Trajectory Testing
-
-Instead of asserting on the exact LLM output string, trajectory tests verify the **steps** the agent took:
-
-- Which data-fetching functions were called and with what arguments
-- Whether the LLM was invoked with the correct context (symbol, data)
-- That the graph executed all expected nodes in the right order
-- That invalid inputs short-circuit the pipeline correctly
-
-Use `make_trajectory_tracker()` from `conftest.py` to instrument any agent.
-
-All tests run offline with mocked data sources and mocked LLM calls — no API key required.
-
-## Project Structure
-
-```
-Dockerfile                         # Multi-stage container image
-docker-compose.yml                 # Compose v2 — local dev (builds from source)
-docker-compose.prod.yml            # Compose v2 — production (pulls pre-built GHCR images)
-docker-compose.otel.yml            # Compose v2 overlay — OpenTelemetry collector, Jaeger, Prometheus, Grafana
-.dockerignore                      # Files excluded from Docker build context
-otel/                              # OpenTelemetry overlay configs
-├── otel-collector-config.yaml #   OTLP collector pipeline (traces → Jaeger, metrics → Prometheus)
-├── prometheus.yml             #   Prometheus scrape config
-└── grafana/provisioning/      #   Grafana datasource provisioning
-langgraph-flow.drawio              # Draw.io diagram of the LangGraph flow, MCP tools & state updates
-.github/
-└── workflows/
-    ├── develop-ci.yml             # CI — lint, type-check, test (develop branch)
-    ├── main-ci-cd.yml             # CI/CD — same checks + deploy to Azure / SSH (main branch)
-admin/                             # SQLAdmin database panel
-├── app.py                     #   Flask + SQLAdmin wiring & model views
-├── Dockerfile                 #   Container image for admin panel
-└── requirements.txt           #   Python dependencies
-infra/
-└── azure/                     # Azure deployment (IaC)
-    ├── main.bicep             #   Bicep template (all resources)
-    ├── main.bicepparam        #   Default parameter values
-    ├── deploy.sh              #   One-command deploy script
-    └── teardown.sh            #   Destroy all Azure resources
-ph_stocks_advisor/
-├── __init__.py
-├── main.py                    # CLI entry point (ph-advisor)
-├── web/                       # Flask web application + Celery worker
-│   ├── __init__.py
-│   ├── app.py                 #   Flask factory, routes, CLI (ph-advisor-web)
-│   ├── auth.py                #   Entra ID + Google OAuth2 authentication blueprint
-│   ├── rate_limit.py          #   Per-user daily analysis rate limiting (Redis)
-│   ├── celery_app.py          #   Celery instance & configuration
-│   ├── tasks.py               #   Celery task definitions (analyse_stock)
-│   ├── progress.py            #   Redis Pub/Sub progress publisher + subscriber (SSE)
-│   ├── worker.py              #   Custom Gunicorn gevent worker that skips SSL monkey-patch (Py 3.12 fix)
-│   ├── templates/             #   Jinja2 HTML templates
-│   │   ├── base.html          #     Shared layout
-│   │   ├── index.html         #     Landing page with analysis form
-│   │   ├── login.html         #     Sign-in page (Microsoft + Google buttons)
-│   │   ├── report.html        #     Single report view
-│   │   ├── history.html       #     Report history table
-│   │   └── no_report.html     #     404 / no report found
-│   └── static/                #   Static assets
-│       ├── style.css          #     Main stylesheet (dark glassmorphism theme)
-│       ├── app.js             #     Client-side SSE streaming (polling fallback)
-│       ├── portfolio.js       #     Holdings modal & portfolio analysis (elevated users)
-│       └── report-viz.js      #     Report data visualization enhancements
-├── export/                    # Pluggable output formatters (Open/Closed)
-│   ├── __init__.py            #   FORMATTER_REGISTRY & get_formatter()
-│   ├── formatter.py           #   OutputFormatter ABC, parse_sections(), export_cli()
-│   ├── pdf.py                 #   PdfFormatter  (fpdf2, ph-advisor-pdf)
-│   └── html.py                #   HtmlFormatter (pure-Python, ph-advisor-html)
-├── agents/
-│   ├── __init__.py
-│   ├── specialists.py         # 6 specialist agent classes (data via MCP tools)
-│   ├── consolidator.py        # Consolidator agent
-│   ├── portfolio.py           # Portfolio agent (personalised hold/accumulate/trim)
-│   └── prompts.py             # Prompt templates per agent
-├── data/
-│   ├── __init__.py
-│   ├── models.py              # Pydantic data models & graph state
-│   ├── tools.py               # Façade — dispatches to MCP server or in-process services
-│   ├── mcp_client.py          # Synchronous client for the PH Stocks Advisor MCP server
-│   ├── clients/               # External API clients
-│   │   ├── dragonfi.py        #   DragonFi API (price, dividends, valuation, news)
-│   │   ├── pse_edge.py        #   PSE EDGE daily OHLCV history
-│   │   ├── pse_edge_dividends.py  # PSE EDGE declared dividend scraper (SEC Form 6-1)
-│   │   ├── pse_edge_company_dividends.py  # PSE EDGE company dividends page scraper (ex-date, rate, payment)
-│   │   ├── tradingview.py     #   TradingView scanner (performance & volatility)
-│   │   └── tavily_search.py   #   Tavily web search integration
-│   ├── services/              # Domain services (orchestrate clients → models)
-│   │   ├── price.py           #   Current price & catalyst detection
-│   │   ├── dividend.py        #   Dividend data & sustainability analysis
-│   │   ├── movement.py        #   1-year movement, candlestick, TV perf
-│   │   ├── valuation.py       #   Fair-value estimation (Graham Number)
-│   │   ├── controversy.py     #   Price anomalies & risk news
-│   │   └── sentiment.py       #   Global events & macro-risk sentiment
-│   └── analysis/              # Pure data analysis (no I/O)
-│       └── candlestick.py     #   Candlestick pattern detection
-├── graph/
-│   ├── __init__.py
-│   └── workflow.py            # LangGraph workflow & agent registry
-├── infra/
-│   ├── __init__.py
-│   ├── config.py              # Settings, LLM / repository factory & Redis pool
-│   ├── logging.py             # Unified log formatter shared by every entry point
-│   ├── tracing.py             # Langfuse callback config (optional, no-op when disabled)
-│   ├── repository.py          # Abstract repository interface
-│   ├── repository_sqlite.py   # SQLite implementation (default)
-│   ├── repository_postgres.py # PostgreSQL implementation
-│   └── trading_calendar.py    # PSE session calendar (market hours, trading-day close cutoffs)
-└── memory/                    # Long-term project memory (Copilot context store)
-    ├── __init__.py
-    ├── __main__.py            #   CLI: rebuild / update / query / stats
-    ├── embeddings.py          #   Embedder Protocol + OpenAI implementation
-    ├── ingest.py              #   Walk the workspace and chunk files for indexing
-    └── vector_store.py        #   SQLite + sqlite-vec vector store façade
-ph_stocks_mcp/                     # MCP server exposing the data tools
-├── __init__.py
-├── __main__.py                #   Entry point (ph-advisor-mcp)
-└── server.py                  #   FastMCP server wiring
-
-tests/
-├── conftest.py                # Shared fixtures, mock helpers & trajectory tracker
-├── dummy_responses.py         # Canned API responses for offline tests
-├── test_tools.py
-├── test_mcp_server.py         # MCP server tools + façade dispatch behaviour
-├── test_agents.py
-├── test_auth.py               # Entra ID auth blueprint tests
-├── test_company_dividends.py  # DividendAnnouncement model & company page scraper tests
-├── test_consolidator.py
-├── test_export.py             # OutputFormatter, PDF, HTML, CLI tests
-├── test_graph.py
-├── test_trajectory.py         # Trajectory tests (agent step sequences & graph order)
-├── test_dedup.py              # Concurrent analysis deduplication tests
-├── test_healthz.py            # Heartbeat endpoint tests
-├── test_logging.py            # Unified log formatter tests
-├── test_memory.py             # Long-term project memory store tests
-├── test_rate_limit.py         # Per-user daily rate limiting tests
-├── test_portfolio.py          # Portfolio holdings & advisory feature tests
-├── test_repository.py
-├── test_sidebar.py            # Recent-history sidebar rendering tests
-├── test_sse.py                # SSE progress streaming tests
-├── test_tracing.py            # Langfuse tracing integration tests
-└── test_user_type.py          # User type system (elevated bypass) tests
-```
-
-### CI/CD
-
-Two GitHub Actions workflows follow a **develop → main** promotion strategy:
-
-| Workflow | Branch / Trigger | Jobs | Deploys? |
-|----------|------------------|------|----------|
-| `develop-ci.yml` | push to `develop` | Lint, type-check, unit tests, integration tests | No |
-| `main-ci-cd.yml` | push to `main` (+ manual dispatch) | Same CI checks → **auto version bump & tag** → build & push GHCR images → deploy | Yes |
-
-Both use `uv` for fast dependency installation and share the same quality gates:
-
-1. **Ruff** — lint (style + security rules) & format check
-2. **Pyright** — type checking in basic mode
-3. **Unit tests** — all `pytest` tests except `@pytest.mark.integration` (no secrets needed)
-4. **Integration tests** — real LLM calls (only when `OPENAI_API_KEY` secret is available)
-
-#### Automatic Versioning & Releases
-
-Three things stay in lockstep automatically on every merge to `main` — **the
-version the running app reports**, **the git tag**, and **the published image
-tag**. There is no manual version bump.
-
-**Source of truth: git tags (`vX.Y.Z`).** `pyproject.toml` keeps a committed
-version that acts as the *floor* (and seeds the very first release, and lets
-local/offline builds work).
-
-The `bump` job in `main-ci-cd.yml` runs after the tests on a push to `main`:
-
-```
-next = max( latest vX.Y.Z tag with the patch incremented ,
-            pyproject.toml version (floor) )
-```
-
-It creates an **annotated tag on the merge commit and pushes only the tag** —
-never a commit to `main`. Tags aren't branch-protected, so this works with the
-stock `GITHUB_TOKEN` + `contents: write`, with no protection changes and no
-bot PAT. The job is idempotent (an existing tag is skipped, so re-runs are
-safe).
-
-`build-images` then **bakes that version into `pyproject.toml` before building**
-— so the image carries the version its tag claims — and tags the image
-`latest` **and** `X.Y.Z` from the bump job's output (not from a tag-push
-event). After pushing, CI **pulls the published `:X.Y.Z` and `:latest` images
-and asserts the version reported inside equals the tag**, failing the build on
-any drift.
-
-At runtime the app reads that shipped `pyproject.toml`, renders it in the
-footer, and exposes it at **`GET /version`** (public, no auth):
-
-```bash
-curl -s https://<host>/version
-# {"version":"2.1.8","asset_rev":"9f39825ba8"}
-```
-
-**Bump policy**
-
-| You want | Do this |
-|---|---|
-| Patch release (default) | Nothing — merge to `main`, get `vX.Y.Z+1` |
-| Minor / major release | Raise the floor in `pyproject.toml` (e.g. `2.2.0`) **before** merging; the floor wins over patch+1 |
-| A GitHub Release | The tag already exists — `gh release create vX.Y.Z --verify-tag --notes "…"` (never let it create a new tag) |
-
-**Note:** the bump is gated on the same path filter as the app image, so a
-docs-only merge creates neither a tag nor an image — every `vX.Y.Z` tag always
-has a matching `:X.Y.Z` image in GHCR.
-
-#### Deployment Targets
-
-The `main` workflow supports **two deployment targets** that run in parallel. Each is auto-detected based on which secrets are configured — enable one, both, or neither:
-
-On every push to `main`, a **build-images** job builds Docker images and pushes them to **GitHub Container Registry** (`ghcr.io`). Builds are **path-gated** by a `changes` job: the app image rebuilds only when its build inputs change (`Dockerfile`, `.dockerignore`, `requirements.txt`, `pyproject.toml`, `ph_stocks_advisor/**`, `ph_stocks_mcp/**`), the admin image only on `admin/**`, and the deploy jobs run only when an image was actually rebuilt or `docker-compose.prod.yml` changed — docs/test-only merges skip the build entirely. Quality gates always run. The repository accepts **merge commits only** (squash/rebase disabled) so `develop` and `main` histories never diverge. The deploy jobs run after images are published:
-
-| Target | Triggered when | How it works |
-|--------|---------------|--------------|
-| **Azure Container Apps** | `AZURE_CREDENTIALS` secret is set | Runs `deploy.sh --update`, tags images with commit SHA |
-| **Docker Compose via SSH** | `DEPLOY_SSH_KEY` secret is set | SSHs into the server, pulls pre-built GHCR images via `docker-compose.prod.yml`, restarts services, runs health check |
-
-#### GitHub Secrets
-
-| Secret | Used by | Required? | Purpose |
-|--------|---------|-----------|---------|
-| `OPENAI_API_KEY` | CI (both workflows) | Yes | LLM calls in integration tests |
-| `LANGFUSE_PUBLIC_KEY` | CI (both workflows) | No | Langfuse tracing in integration tests |
-| `LANGFUSE_SECRET_KEY` | CI (both workflows) | No | Langfuse tracing in integration tests |
-| `LANGFUSE_HOST` | CI (both workflows) | No | Langfuse host (e.g. `https://cloud.langfuse.com`) |
-| **Azure deployment** | | | |
-| `AZURE_CREDENTIALS` | `deploy-azure` job | For Azure | Service principal JSON (`az ad sp create-for-rbac --json-auth`) |
-| `TAVILY_API_KEY` | `deploy-azure` job | No | Web search (passed to Azure env vars) |
-| **SSH deployment** | | | |
-| `DEPLOY_HOST` | `deploy-ssh` job | For SSH | Production server hostname or IP |
-| `DEPLOY_USER` | `deploy-ssh` job | For SSH | SSH username |
-| `DEPLOY_SSH_KEY` | `deploy-ssh` job | For SSH | SSH private key (e.g. `id_ed25519`) |
-| `DEPLOY_PORT` | `deploy-ssh` job | No | SSH port (default: `22`) |
-
-#### GitHub Variables (optional)
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `AZURE_RESOURCE_GROUP` | `ph-stocks-advisor-rg` | Azure resource group name |
-| `AZURE_APP_NAME` | `phstocks` | Azure Container Apps name prefix |
-| `DEPLOY_PATH` | `~/ph-stocks-advisor` | Project directory on the SSH server |
-
-#### SSH Server Setup (Pre-built Images)
-
-The SSH deploy job uses **pre-built images from GHCR** — the server does **not** need the source code or Git.
-
-On the target machine, do a one-time setup:
-
-```bash
-mkdir -p ~/ph-stocks-advisor && cd ~/ph-stocks-advisor
-
-# 1. Copy docker-compose.prod.yml from the repo (or download it)
-curl -fsSL https://raw.githubusercontent.com/<owner>/agentic-ph-stocks-advisor/main/docker-compose.prod.yml \
-  -o docker-compose.prod.yml
-
-# 2. Create .env
-cat > .env <<'EOF'
-OPENAI_API_KEY=sk-...
-POSTGRES_PASSWORD=<strong-password>
-ADMIN_PASSWORD=<strong-password>
-FLASK_SECRET_KEY=<random-secret>
-# Passkey sign-in (binds to your public domain)
-WEBAUTHN_RP_ID=your.domain.com
-WEBAUTHN_ORIGIN=https://your.domain.com
-WEBAUTHN_RP_NAME=PH Stock Advisor AI
-APP_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor:latest
-ADMIN_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor-admin:latest
-EOF
-
-# 3. Log in to GHCR (only needed for private repos)
-echo $GITHUB_PAT | docker login ghcr.io -u <username> --password-stdin
-
-# 4. First launch
-docker compose -f docker-compose.prod.yml up -d
-```
-
-After this, every push to `main` will automatically pull new images and restart the services.
-
-> **Deploying to another device?** Copy `docker-compose.prod.yml` + `.env` to any machine with Docker, set `APP_IMAGE` and `ADMIN_IMAGE`, and run `docker compose -f docker-compose.prod.yml up -d`.
-
-## Environment Variables
-
-All settings live in `.env` (see [.env.example](.env.example)). At least one LLM key is required — `OPENAI_API_KEY` for the default provider, or `ANTHROPIC_API_KEY` when any agent uses an `anthropic` spec.
+<details>
+<summary><b>All environment variables</b></summary>
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -794,7 +323,7 @@ All settings live in `.env` (see [.env.example](.env.example)). At least one LLM
 | `TREND_UP_THRESHOLD` | No | `5` | % change above which trend = uptrend |
 | `TREND_DOWN_THRESHOLD` | No | `-5` | % change below which trend = downtrend |
 | `SPIKE_STD_MULTIPLIER` | No | `3` | × daily-return std-dev to flag a spike |
-| `SPIKE_MIN_ABS_RETURN` | No | `0.05` | Minimum |return| to count as a spike |
+| `SPIKE_MIN_ABS_RETURN` | No | `0.05` | Minimum absolute return to count as a spike |
 | `HIGH_VOLATILITY_THRESHOLD` | No | `0.03` | Daily std above this = "high volatility" |
 | `OVERVALUATION_MULTIPLIER` | No | `1.3` | price / avg > this = overvaluation risk |
 | `DISTRESS_MULTIPLIER` | No | `0.7` | price / avg < this = distress risk |
@@ -804,17 +333,14 @@ All settings live in `.env` (see [.env.example](.env.example)). At least one LLM
 | `CATALYST_NEAR_HIGH_PCT` | No | `5` | % gap to 52-week high for "near high" catalyst |
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection URL (broker + result backend for Celery) |
 | `REDIS_PORT` | No | `6379` | Host port for Redis (Docker Compose only) |
-| `MCP_SERVER_URL` | **Yes** | _(empty)_ | URL of the PH Stocks Advisor MCP server (e.g. `http://mcp:8000/mcp/` from sibling containers, or `http://localhost:5184/mcp/` from the host). All market-data calls dispatch through this server — there is no in-process fallback. An unset value raises `MCPNotConfiguredError` on the first data call. |
+| `MCP_SERVER_URL` | **Yes** | _(empty)_ | URL of the MCP server (e.g. `http://mcp:8000/mcp/` from sibling containers, `http://localhost:5184/mcp/` from the host). All market-data calls dispatch through it — an unset value raises `MCPNotConfiguredError` on the first data call |
 | `MCP_PORT` | No | `8000` | Port the MCP server listens on **inside the container** |
-| `MCP_HOST_PORT` | No | `5184` | Host port mapped to the MCP container (Docker Compose only — exposes MCP to external clients) |
-| `MCP_CONNECT_TIMEOUT` | No | `60` | Seconds to wait for the MCP session to initialise (raise when the server is slow under concurrent load) |
+| `MCP_HOST_PORT` | No | `5184` | Host port mapped to the MCP container (Docker Compose only) |
+| `MCP_CONNECT_TIMEOUT` | No | `60` | Seconds to wait for the MCP session to initialise |
 | `MCP_REQUEST_TIMEOUT` | No | `60` | Seconds to wait for a single MCP tool response |
-| `LOG_LEVEL` | No | `INFO` | Root log level for every Python service (CLI, MCP server, Celery worker, web). Accepts standard names: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
+| `LOG_LEVEL` | No | `INFO` | Root log level for every Python service (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
 | `WEB_PORT` | No | `5180` | Host port for the Flask web UI (Docker Compose only) |
-| `ADMIN_PORT` | No | `5181` | Host port for the SQLAdmin panel (Docker Compose only) |
-| `ADMIN_SECRET_KEY` | No | `sqladmin-dev-…` | Flask secret key for the admin panel |
-| `ADMIN_USERNAME` | No | `admin` | Admin panel username |
-| `ADMIN_PASSWORD` | No | _(empty — panel locked)_ | Admin panel password; when unset, no admin login is possible |
+| `ADMIN_PORT` | No | `5181` | Host port for the Adminer database UI (Docker Compose only; log in with the Postgres credentials) |
 | `ENTRA_CLIENT_ID` | No | — | Microsoft Entra ID application (client) ID (enables login) |
 | `ENTRA_CLIENT_SECRET` | No | — | Entra ID client secret |
 | `ENTRA_TENANT_ID` | No | `common` | Entra ID tenant ID (or `common` for multi-tenant) |
@@ -822,9 +348,12 @@ All settings live in `.env` (see [.env.example](.env.example)). At least one LLM
 | `GOOGLE_CLIENT_ID` | No | — | Google OAuth2 client ID (enables Google login) |
 | `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth2 client secret |
 | `GOOGLE_REDIRECT_PATH` | No | `/auth/google/callback` | OAuth2 redirect path (Google) |
-| `WEBAUTHN_RP_ID` | No | _(empty — passkeys off)_ | Passkey relying-party ID (host only, e.g. `your.domain.com`; `localhost` for dev). Setting this enables passkey sign-in |
+| `WEBAUTHN_RP_ID` | No | _(empty — passkeys off)_ | Passkey relying-party ID (host only; `localhost` for dev). Setting this enables passkey sign-in |
 | `WEBAUTHN_ORIGIN` | No | `http://localhost:5180` | Exact origin used to verify WebAuthn ceremonies server-side |
 | `WEBAUTHN_RP_NAME` | No | `PH Stock Advisor AI` | Label shown in the OS/browser passkey prompt |
+| `ZEPTOMAIL_API_KEY` | No | _(unset — console sender)_ | ZeptoMail key for transactional email (report results + signup verification codes). Unset → emails are logged, not sent |
+| `EMAIL_FROM_ADDRESS` | No | `customer.success@sakayandgo.com` | Sender address (the exact domain must be verified in ZeptoMail) |
+| `APP_BASE_URL` | No | _(falls back to `WEBAUTHN_ORIGIN`)_ | Base URL used for links inside emails |
 | `SCORE_WEIGHT_PRICE` | No | `0.15` | Weight of the price sub-score in the 0–100 verdict score |
 | `SCORE_WEIGHT_VALUATION` | No | `0.25` | Weight of the valuation sub-score |
 | `SCORE_WEIGHT_DIVIDEND` | No | `0.15` | Weight of the dividend sub-score |
@@ -832,14 +361,15 @@ All settings live in `.env` (see [.env.example](.env.example)). At least one LLM
 | `SCORE_WEIGHT_CONTROVERSY` | No | `0.15` | Weight of the controversy sub-score |
 | `SCORE_WEIGHT_SENTIMENT` | No | `0.15` | Weight of the sentiment sub-score (weights are normalised by their sum) |
 | `BUY_SCORE_THRESHOLD` | No | `60` | Score at/above which the derived binary verdict is BUY |
-| `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key |
-| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per trading day (failed queries are not counted; resets at 3:00 PM PHT / 07:00 UTC) |
-| `LANGFUSE_PUBLIC_KEY` | No | — | Langfuse public key (enables LLM tracing when set together with the secret key) |
+| `FLASK_SECRET_KEY` | No | _(dev placeholder)_ | Flask session encryption key (also keys the verification-code and decoy-credential HMACs) |
+| `DAILY_ANALYSIS_LIMIT` | No | `5` | Max successful first-time analyses per user per trading day (failed queries not counted; resets 3:00 PM PHT / 07:00 UTC) |
+| `LANGFUSE_PUBLIC_KEY` | No | — | Langfuse public key (enables LLM tracing with the secret key) |
 | `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key |
 | `LANGFUSE_HOST` | No | `https://cloud.langfuse.com` | Langfuse host URL |
-| `LANGFUSE_TRACING_ENABLED` | No | `true` | Set to `false` to disable Langfuse tracing even when keys are present |
-| `LANGFUSE_TRACING_ENVIRONMENT` | No | `development` | Environment label attached to traces (e.g. `production`, `ci`) || `OTEL_ENV` | No | `dev` | `deployment.environment` resource attribute attached to all telemetry (OpenTelemetry overlay only) |
-| `OTEL_BOOTSTRAP` | No | `1` | When `1`, the OTel overlay pip-installs instrumentation packages at container start. Set to `0` once they are baked into the image |
+| `LANGFUSE_TRACING_ENABLED` | No | `true` | Set `false` to disable tracing even when keys are present |
+| `LANGFUSE_TRACING_ENVIRONMENT` | No | `development` | Environment label attached to traces (e.g. `production`, `ci`) |
+| `OTEL_ENV` | No | `dev` | `deployment.environment` resource attribute (OpenTelemetry overlay only) |
+| `OTEL_BOOTSTRAP` | No | `1` | When `1`, the OTel overlay pip-installs instrumentation at container start; `0` once baked into the image |
 | `OTEL_GRPC_PORT` | No | `6182` | Host port for the OTel Collector OTLP/gRPC receiver |
 | `OTEL_HTTP_PORT` | No | `6183` | Host port for the OTel Collector OTLP/HTTP receiver |
 | `JAEGER_UI_PORT` | No | `6184` | Host port for the Jaeger UI |
@@ -847,21 +377,91 @@ All settings live in `.env` (see [.env.example](.env.example)). At least one LLM
 | `GRAFANA_PORT` | No | `6186` | Host port for the Grafana UI |
 | `OTEL_SELF_METRICS_PORT` | No | `6187` | Host port for the OTel Collector's self-metrics endpoint |
 | `GRAFANA_USER` | No | `admin` | Grafana admin username |
-| `GRAFANA_PASSWORD` | No | `admin` | Grafana admin password || `WEB_WORKERS` | No | `4` | Gunicorn worker processes |
-| `WEB_WORKER_CLASS` | No | `gevent` (compose: `ph_stocks_advisor.web.worker.GeventWorkerNoSSL`) | Gunicorn worker class. Compose uses a custom gevent worker that skips SSL monkey-patching (avoids a Py 3.12 + OpenSSL ≥ 3.5 recursion bug). |
+| `GRAFANA_PASSWORD` | No | `admin` | Grafana admin password |
+| `WEB_WORKERS` | No | `4` | Gunicorn worker processes |
+| `WEB_WORKER_CLASS` | No | `gevent` (compose: `ph_stocks_advisor.web.worker.GeventWorkerNoSSL`) | Gunicorn worker class. Compose uses a custom gevent worker that skips SSL monkey-patching (avoids a Py 3.12 + OpenSSL ≥ 3.5 recursion bug) |
 | `WEB_WORKER_CONNECTIONS` | No | `1000` | Max simultaneous connections per gevent worker |
-| `WEB_THREADS` | No | `2` | Threads per Gunicorn worker (only used with `gthread` worker class) |
+| `WEB_THREADS` | No | `2` | Threads per Gunicorn worker (only with the `gthread` worker class) |
 | `WEB_TIMEOUT` | No | `120` | Gunicorn worker timeout in seconds |
 | `PG_POOL_MIN` | No | `2` | Minimum PostgreSQL connections in pool |
 | `PG_POOL_MAX` | No | `5` | Maximum PostgreSQL connections in pool |
 | `REDIS_MAX_CONNECTIONS` | No | `10` | Maximum connections in the shared Redis pool |
 | `CELERY_CONCURRENCY` | No | `4` | Celery worker concurrency (prefork processes) |
 | `APP_IMAGE` | No | `ghcr.io/OWNER/agentic-ph-stocks-advisor:latest` | App Docker image for `docker-compose.prod.yml` |
-| `ADMIN_IMAGE` | No | `ghcr.io/OWNER/agentic-ph-stocks-advisor-admin:latest` | Admin Docker image for `docker-compose.prod.yml` |
 
-## Scaling Tiers
+</details>
 
-The Bicep template defaults to minimal resources. Override via deploy parameters to scale up — no code changes needed.
+## 08 · Deployment
+
+**Pre-built images** are published to GHCR on every merge to `main` (multi-arch amd64 + arm64). A production host needs only `docker-compose.prod.yml` + `.env` — no source code, no Git:
+
+```bash
+mkdir -p ~/ph-stocks-advisor && cd ~/ph-stocks-advisor
+
+# 1. Copy docker-compose.prod.yml from the repo (or download it)
+curl -fsSL https://raw.githubusercontent.com/<owner>/agentic-ph-stocks-advisor/main/docker-compose.prod.yml \
+  -o docker-compose.prod.yml
+
+# 2. Create .env
+cat > .env <<'EOF'
+OPENAI_API_KEY=sk-...
+POSTGRES_PASSWORD=<strong-password>
+FLASK_SECRET_KEY=<random-secret>
+# Passkey sign-in (binds to your public domain)
+WEBAUTHN_RP_ID=your.domain.com
+WEBAUTHN_ORIGIN=https://your.domain.com
+WEBAUTHN_RP_NAME=PH Stock Advisor AI
+APP_IMAGE=ghcr.io/<owner>/agentic-ph-stocks-advisor:latest
+EOF
+
+# 3. Log in to GHCR (only needed for private repos)
+echo $GITHUB_PAT | docker login ghcr.io -u <username> --password-stdin
+
+# 4. First launch
+docker compose -f docker-compose.prod.yml up -d
+```
+
+To update: `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`. With the SSH deploy secrets configured (see below), every push to `main` does this automatically.
+
+<details>
+<summary><b>Azure Container Apps (Bicep IaC)</b></summary>
+
+Deploy to **Azure Container Apps** with managed PostgreSQL and Redis. All infrastructure is defined as code via Bicep.
+
+| Azure service | Role |
+|---------------|------|
+| **Container Registry** | Stores the Docker image |
+| **Container Apps — web** | Flask web UI (HTTPS, auto-scaling) |
+| **Container Apps — worker** | Celery worker (scales with queue depth) |
+| **Container Apps — admin** | Adminer database UI (HTTPS) |
+| **Database for PostgreSQL** | Flexible Server (Burstable B1ms, 32 GB) |
+| **Cache for Redis** | Basic C0 (TLS only) |
+| **Log Analytics** | Container logs & monitoring |
+
+Prerequisites: [Azure CLI](https://aka.ms/install-az-cli) logged in (`az login`), Docker running, `OPENAI_API_KEY` in `.env`.
+
+```bash
+export AZURE_PG_PASSWORD='<strong-password>'
+./infra/azure/deploy.sh              # first-time: infra + build + push + update apps
+./infra/azure/deploy.sh --update     # rebuild image & redeploy (skips infra)
+./infra/azure/deploy.sh --infra-only # provision infrastructure only
+./infra/azure/teardown.sh            # destroy everything (--yes to skip confirmation)
+```
+
+The deploy script creates a resource group (`ph-stocks-advisor-rg` in `southeastasia`), provisions all resources via Bicep, builds and pushes the web image to ACR, updates the Container Apps, and prints the public HTTPS URL.
+
+Customisation via env vars before running `deploy.sh`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AZURE_RESOURCE_GROUP` | `ph-stocks-advisor-rg` | Resource group name |
+| `AZURE_LOCATION` | `southeastasia` | Azure region |
+| `AZURE_APP_NAME` | `phstocks` | Name prefix for all resources |
+| `AZURE_PG_ADMIN_USER` | `phadmin` | PostgreSQL admin login |
+| `AZURE_PG_PASSWORD` | _(required)_ | PostgreSQL admin password |
+| `IMAGE_TAG` | `latest` | Docker image tag |
+
+**Scaling tiers** — the Bicep template defaults to minimal resources; override via deploy parameters, no code changes needed:
 
 | Parameter | Hobby (~100/mo) | Small (~1K users) | Scale (100K+) |
 |-----------|----------------:|-------------------:|--------------:|
@@ -877,8 +477,6 @@ The Bicep template defaults to minimal resources. Override via deploy parameters
 | `webMaxReplicas` | 1 | 3 | 10 |
 | `workerMaxReplicas` | 1 | 3 | 10 |
 | **Est. monthly cost** | **~$100** | **~$176** | **~$340** |
-
-Deploy defaults are the **Hobby** tier. To scale up:
 
 ```bash
 # Small tier (~1K users)
@@ -896,50 +494,166 @@ az deployment group create ... --parameters main.bicepparam \
     celeryConcurrency='4' webMaxReplicas=10 workerMaxReplicas=10
 ```
 
----
+</details>
 
-## Contributing
+## 09 · CI/CD & versioning
 
-Contributions are welcome. The project uses a **`develop` → `main`** promotion flow.
+Two GitHub Actions workflows follow a **develop → main** promotion strategy:
 
-1. Branch from `develop`, or commit directly to `develop` for small changes.
-2. Keep the quality gates green — CI runs exactly these:
+| Workflow | Trigger | Jobs | Deploys? |
+|----------|---------|------|----------|
+| `develop-ci.yml` | push to `develop` | Lint, type-check, unit tests, integration tests | No |
+| `main-ci-cd.yml` | push to `main` (+ manual dispatch) | Same checks → **auto version bump & tag** → build & push the GHCR image → deploy | Yes |
 
-   ```bash
-   uv run ruff check .          # lint (style + security rules)
-   uv run ruff format --check . # formatting
-   uv run pyright               # type check (basic mode)
-   uv run pytest tests/ -m "not integration"   # unit tests
-   ```
+Quality gates on every push/PR: **Ruff** (lint + format), **Pyright** (basic mode), **unit tests** (no secrets needed), **integration tests** (real LLM calls, only when the `OPENAI_API_KEY` secret is available). Builds are **path-gated**: the app image rebuilds only when its build inputs change (`Dockerfile`, `.dockerignore`, `requirements.txt`, `pyproject.toml`, `ph_stocks_advisor/**`, `ph_stocks_mcp/**`); deploy jobs run only when the image was rebuilt or `docker-compose.prod.yml` changed — docs/test-only merges skip the build entirely. The repository accepts **merge commits only** (squash/rebase disabled) so `develop` and `main` histories never diverge.
 
-3. Open a PR into `main`. The repository accepts **merge commits only** (squash
-   and rebase are disabled) so `develop` and `main` histories never diverge.
-4. On merge, CI automatically bumps the version, tags, builds, and publishes —
-   see [Automatic Versioning & Releases](#automatic-versioning--releases). You
-   do not bump the version by hand (except to raise the floor for a
-   minor/major release).
+**Automatic versioning** — three things stay in lockstep on every merge to `main`: the version the running app reports, the git tag, and the published image tag. There is no manual bump.
 
-**Conventions worth knowing**
+- **Source of truth: git tags (`vX.Y.Z`).** `pyproject.toml` keeps a committed version that acts as the *floor* (seeds the first release; keeps local/offline builds working).
+- The `bump` job computes `next = max(latest tag patch+1, pyproject floor)` and pushes **only an annotated tag** — never a commit. Idempotent; works with the stock `GITHUB_TOKEN`.
+- `build-images` **bakes that version into `pyproject.toml` before building**, tags the image `latest` and `X.Y.Z` in the same run, then pulls both published tags and **asserts the version reported inside equals the tag** — failing the build on any drift.
+- The bump is gated on the same path filter as the image, so a docs-only merge creates neither a tag nor an image — every `vX.Y.Z` tag has a matching `:X.Y.Z` image in GHCR.
+- At runtime the app reads the shipped `pyproject.toml`, renders it in the footer, and exposes it at `GET /version`.
 
-- **LLMs judge, code computes.** Any number the app depends on (ratios, scores,
-  fair-value inputs) is calculated deterministically in Python. Prompts ask the
-  model for judgement and prose, never arithmetic.
-- **Agent data contract.** A prompt may only reference fields that exist on the
-  Pydantic payload serialised into it, and must state the negative case
-  explicitly (e.g. what to do when `is_reit` is false). Facts are data, never
-  inferred by the model.
-- **Degrade honestly.** A missing data source becomes a disclosed gap excluded
-  from the score — never a fabricated number or a silent failure.
-- **UI changes are verified in Docker** (the container serves the installed
-  package, so rebuild to see template/CSS changes), not the Flask dev server.
-- Dependencies are locked with
-  `uv pip compile --extra=postgres --upgrade -o requirements.txt pyproject.toml`
-  — the `postgres` extra is **mandatory** or `psycopg2` silently disappears.
+| You want | Do this |
+|---|---|
+| Patch release (default) | Nothing — merge to `main`, get `vX.Y.Z+1` |
+| Minor / major release | Raise the floor in `pyproject.toml` (e.g. `2.2.0`) **before** merging; the floor wins over patch+1 |
+| A GitHub Release | The tag already exists — `gh release create vX.Y.Z --verify-tag --notes "…"` (never let it create a new tag) |
 
-Architecture background: [`docs/agent-developer-onboarding.md`](docs/agent-developer-onboarding.md)
-and [`docs/high-level-design.md`](docs/high-level-design.md).
+<details>
+<summary><b>Deployment targets, GitHub secrets & variables</b></summary>
 
-## Security
+Two deployment targets run in parallel after images are published; each is auto-detected from which secrets are configured — enable one, both, or neither:
+
+| Target | Triggered when | How it works |
+|--------|---------------|--------------|
+| **Azure Container Apps** | `AZURE_CREDENTIALS` secret is set | Runs `deploy.sh --update`, tags images with commit SHA |
+| **Docker Compose via SSH** | `DEPLOY_SSH_KEY` secret is set | SSHs into the server, pulls the pre-built GHCR image via `docker-compose.prod.yml`, restarts services, runs a health check |
+
+| Secret | Used by | Required? | Purpose |
+|--------|---------|-----------|---------|
+| `OPENAI_API_KEY` | CI (both workflows) | Yes | LLM calls in integration tests |
+| `LANGFUSE_PUBLIC_KEY` | CI (both workflows) | No | Langfuse tracing in integration tests |
+| `LANGFUSE_SECRET_KEY` | CI (both workflows) | No | Langfuse tracing in integration tests |
+| `LANGFUSE_HOST` | CI (both workflows) | No | Langfuse host (e.g. `https://cloud.langfuse.com`) |
+| `AZURE_CREDENTIALS` | `deploy-azure` job | For Azure | Service principal JSON (`az ad sp create-for-rbac --json-auth`) |
+| `TAVILY_API_KEY` | `deploy-azure` job | No | Web search (passed to Azure env vars) |
+| `DEPLOY_HOST` | `deploy-ssh` job | For SSH | Production server hostname or IP |
+| `DEPLOY_USER` | `deploy-ssh` job | For SSH | SSH username |
+| `DEPLOY_SSH_KEY` | `deploy-ssh` job | For SSH | SSH private key (e.g. `id_ed25519`) |
+| `DEPLOY_PORT` | `deploy-ssh` job | No | SSH port (default: `22`) |
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AZURE_RESOURCE_GROUP` | `ph-stocks-advisor-rg` | Azure resource group name |
+| `AZURE_APP_NAME` | `phstocks` | Azure Container Apps name prefix |
+| `DEPLOY_PATH` | `~/ph-stocks-advisor` | Project directory on the SSH server |
+
+</details>
+
+## 10 · Development
+
+```bash
+uv run ruff check .                          # lint (style + security rules)
+uv run ruff format --check .                 # formatting
+uv run pyright                               # type check (basic mode)
+uv run pytest tests/ -m "not integration"    # unit tests (fast, fully mocked, no API keys)
+uv run pytest tests/ -m "integration"        # integration tests (requires OPENAI_API_KEY)
+```
+
+| Test category | Marker | What it tests | LLM calls |
+|----------|--------|---------------|-----------|
+| **Unit** | _(default)_ | Deterministic logic, mocked LLMs, data models | Fully mocked |
+| **Trajectory** | _(default)_ | Agent step sequences (which nodes ran, prompt content, call order) | Fully mocked |
+| **Integration** | `@pytest.mark.integration` | End-to-end with real LLM calls | Real API calls |
+
+Trajectory tests assert on the **steps** the agent took — which data functions were called and with what arguments, whether the LLM got the right context, that the graph ran all expected nodes in order, and that invalid inputs short-circuit — instead of exact LLM output strings. Use `make_trajectory_tracker()` from `conftest.py` to instrument any agent. Unit and trajectory tests run in CI on every push; integration tests run only when secrets are available (push to `develop`, not fork PRs).
+
+**Contributing** — the project uses the **`develop` → `main`** promotion flow: branch from `develop` (or commit directly for small changes), keep the quality gates green, open a PR into `main` (merge commits only). On merge, CI bumps, tags, builds, and publishes automatically — you never bump the version by hand except to raise the floor for a minor/major release.
+
+Conventions worth knowing:
+
+- **LLMs judge, code computes.** Any number the app depends on (ratios, scores, fair-value inputs) is calculated deterministically in Python. Prompts ask the model for judgement and prose, never arithmetic.
+- **Agent data contract.** A prompt may only reference fields that exist on the Pydantic payload serialised into it, and must state the negative case explicitly (e.g. what to do when `is_reit` is false). Facts are data, never inferred by the model.
+- **Degrade honestly.** A missing data source becomes a disclosed gap excluded from the score — never a fabricated number or a silent failure.
+- **UI changes are verified in Docker** (the container serves the installed package, so rebuild to see template/CSS changes), not the Flask dev server.
+- **Dependencies** are locked with `uv pip compile --extra=postgres --upgrade -o requirements.txt pyproject.toml` — the `postgres` extra is **mandatory** or `psycopg2` silently disappears.
+
+Architecture background: [`docs/agent-developer-onboarding.md`](docs/agent-developer-onboarding.md) and [`docs/high-level-design.md`](docs/high-level-design.md).
+
+<details>
+<summary><b>Project structure</b></summary>
+
+```
+Dockerfile                         # Multi-stage container image
+docker-compose.yml                 # Compose v2 — local dev (builds from source)
+docker-compose.prod.yml            # Compose v2 — production (pulls pre-built GHCR images)
+docker-compose.otel.yml            # Compose v2 overlay — OTel collector, Jaeger, Prometheus, Grafana
+.dockerignore                      # Files excluded from Docker build context
+otel/                              # OpenTelemetry overlay configs
+├── otel-collector-config.yaml #   OTLP collector pipeline (traces → Jaeger, metrics → Prometheus)
+├── prometheus.yml             #   Prometheus scrape config
+└── grafana/provisioning/      #   Grafana datasource provisioning
+langgraph-flow.drawio              # Draw.io diagram of the LangGraph flow, MCP tools & state updates
+.github/
+└── workflows/
+    ├── develop-ci.yml             # CI — lint, type-check, test (develop branch)
+    ├── main-ci-cd.yml             # CI/CD — same checks + version bump + images + deploy (main)
+infra/
+└── azure/                     # Azure deployment (IaC)
+    ├── main.bicep             #   Bicep template (all resources)
+    ├── main.bicepparam        #   Default parameter values
+    ├── deploy.sh              #   One-command deploy script
+    └── teardown.sh            #   Destroy all Azure resources
+ph_stocks_advisor/
+├── main.py                    # CLI entry point (ph-advisor)
+├── web/                       # Flask web application + Celery worker
+│   ├── app.py                 #   Flask factory, routes, CLI (ph-advisor-web)
+│   ├── auth.py                #   Entra ID + Google OAuth2 authentication blueprint
+│   ├── passkey.py             #   WebAuthn passkey blueprint (register/login + signup codes)
+│   ├── rate_limit.py          #   Per-user daily analysis rate limiting (Redis)
+│   ├── celery_app.py          #   Celery instance & configuration
+│   ├── tasks.py               #   Celery task definitions (analyse_stock + report emails)
+│   ├── progress.py            #   Redis Pub/Sub progress publisher + subscriber (SSE)
+│   ├── worker.py              #   Custom Gunicorn gevent worker skipping SSL monkey-patch
+│   ├── templates/             #   Jinja2 HTML templates (base, index, login, report, history…)
+│   └── static/                #   style.css (Tala design system), app.js (SSE),
+│                              #   passkey.js, portfolio.js, report-viz.js
+├── export/                    # Pluggable output formatters (Open/Closed)
+│   ├── formatter.py           #   OutputFormatter ABC, parse_sections(), export_cli()
+│   ├── pdf.py                 #   PdfFormatter  (fpdf2, ph-advisor-pdf)
+│   └── html.py                #   HtmlFormatter (pure-Python, ph-advisor-html)
+├── agents/
+│   ├── specialists.py         # 6 specialist agent classes (data via MCP tools)
+│   ├── consolidator.py        # Consolidator agent
+│   ├── portfolio.py           # Portfolio agent (personalised hold/accumulate/trim)
+│   └── prompts.py             # Prompt templates per agent
+├── data/
+│   ├── models.py              # Pydantic data models & graph state
+│   ├── tools.py               # Façade — dispatches to MCP server or in-process services
+│   ├── mcp_client.py          # Synchronous client for the MCP server
+│   ├── clients/               # DragonFi, PSE EDGE (×3 scrapers), TradingView, Tavily
+│   ├── services/              # One domain service per analysis dimension
+│   └── analysis/              # Pure data analysis (candlestick patterns, no I/O)
+├── graph/
+│   └── workflow.py            # LangGraph workflow & agent registry
+├── infra/
+│   ├── config.py              # Settings, LLM / repository factory & Redis pool
+│   ├── email.py               # EmailSender protocol — ZeptoMail / console senders
+│   ├── logging.py             # Unified log formatter shared by every entry point
+│   ├── tracing.py             # Langfuse callback config (optional, no-op when disabled)
+│   ├── repository*.py         # Repository ABC + SQLite / PostgreSQL implementations
+│   └── trading_calendar.py    # PSE session calendar (market hours, close cutoffs)
+└── memory/                    # Long-term project memory (Copilot context store)
+ph_stocks_mcp/                     # MCP server exposing the data tools
+└── server.py                  #   FastMCP server wiring (entry: ph-advisor-mcp)
+tests/                             # Unit, trajectory & integration tests (see conftest.py)
+```
+
+</details>
+
+## 11 · Security
 
 **Do not open a public issue for security vulnerabilities.** Report them
 privately via [GitHub Security Advisories](https://github.com/phdwight/agentic-ph-stocks-advisor/security/advisories/new).
@@ -953,14 +667,14 @@ Notes on the security model:
   request headers, so the app is safe behind a reverse proxy or tunnel.
 - Sign-in is hardened against account enumeration (decoy credential lists,
   uniform error messages) and against attaching a passkey to someone else's
-  email.
+  email. New accounts must prove email ownership with an emailed 6-digit code.
 - Secrets are injected at runtime and are **never baked into images**. `.env`
   must never be committed.
 - Do not enter confidential or personally sensitive information into the
   application — analysis requests are sent to third-party LLM and data
   providers.
 
-## Disclaimer
+## 12 · Disclaimer
 
 **This software is for educational and informational purposes only. It is not
 financial advice.**
@@ -1009,7 +723,7 @@ these terms. **If you do not agree, do not use it.**
 > commercially, or serve users in a regulated capacity, have a qualified lawyer
 > in your jurisdiction review your terms.
 
-## License
+## 13 · License & acknowledgements
 
 Licensed under the **Apache License, Version 2.0** — see [LICENSE](LICENSE) for
 the full text, or <https://www.apache.org/licenses/LICENSE-2.0>.
@@ -1035,8 +749,6 @@ and includes an express patent grant. It requires preservation of copyright and
 licence notices and a statement of significant changes. It provides **no
 warranty and no liability** — see [§7 and §8 of the licence](LICENSE).
 
-## Acknowledgements
-
 This project builds on work by others:
 
 | | |
@@ -1050,4 +762,4 @@ This project builds on work by others:
 
 Data providers are **independent third parties**. No affiliation, endorsement,
 or partnership with them, with any listed issuer, or with the Philippine Stock
-Exchange is claimed or implied. All trademarks belong to their respective owners.
+Exchange is implied.

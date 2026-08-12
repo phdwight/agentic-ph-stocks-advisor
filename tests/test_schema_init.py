@@ -4,7 +4,7 @@ Tests for eager schema initialisation at application startup.
 The repository owns the schema (``initialize()`` runs ``CREATE TABLE IF
 NOT EXISTS``), but it used to be reached only from inside request
 handlers.  On a brand-new database that left a window where the tables
-did not exist yet, and anything else reading them — the SQLAdmin panel,
+did not exist yet, and anything else reading them — the Adminer panel,
 a passkey registration — failed with ``UndefinedTable`` until some
 unrelated request happened to arrive.
 

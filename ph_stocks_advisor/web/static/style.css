@@ -2576,11 +2576,18 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 .consent-scroll .section-body p,
 .consent-scroll .section-body li { font-size: 0.78rem; line-height: 1.5; }
 .consent-scroll .section-body ul { margin: 0.3rem 0 0.3rem 1rem; }
+/* The agree row is the gate that enables the button below it — style it as a
+   card so it reads as a required step, not as fine print under the terms. */
 .consent-check {
   display: flex; gap: 0.55rem; align-items: flex-start;
   margin: 0.75rem 0 0.35rem; font-size: 0.8rem; line-height: 1.45; cursor: pointer;
+  border: 1px solid var(--accent-300); background: var(--accent-100);
+  border-radius: 6px; padding: 0.6rem 0.75rem;
 }
-.consent-check input { margin-top: 0.2rem; flex-shrink: 0; }
+.consent-check input {
+  margin-top: 0.2rem; flex-shrink: 0;
+  width: 1.05rem; height: 1.05rem; accent-color: var(--accent-500);
+}
 .consent-link { font-size: 0.74rem; color: var(--text-muted); margin: 0 0 0.25rem; }
 .passkey-btn.is-disabled, .signin-btn:disabled {
   opacity: 0.5; cursor: not-allowed;

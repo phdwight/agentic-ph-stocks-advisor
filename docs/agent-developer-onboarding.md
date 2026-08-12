@@ -45,9 +45,9 @@ Three design commitments shape almost every module:
                                  └───────▲──────────────────────▲──────────────┘
                                          │ HTTP                 │ SSE (/stream/<task_id>)
 ┌───────────────┐                ┌───────┴──────────────────────┴──────────────┐
-│    admin      │                │                 web (Flask)                  │
-│  (SQLAdmin,   │                │  ph_stocks_advisor.web.app — routes, auth,  │
-│   separate    │                │  dedup claim, rate limit, SSE relay         │
+│   adminer     │                │                 web (Flask)                  │
+│  (Adminer,    │                │  ph_stocks_advisor.web.app — routes, auth,  │
+│   stock       │                │  dedup claim, rate limit, SSE relay         │
 │   container)  │                └──┬───────────────┬──────────────┬───────────┘
 └──────┬────────┘                   │ apply_async   │ pub/sub +    │ SQL
        │ SQL                        ▼               │ locks        ▼
@@ -87,7 +87,7 @@ without the web UI.
 | `ph_stocks_advisor/infra/` | Cross-cutting infra | `config.py` (Settings + LLM factory), `repository*.py` (persistence), `trading_calendar.py`, `tracing.py` (Langfuse) |
 | `ph_stocks_advisor/web/` | Web app + async plumbing | `app.py` (routes), `tasks.py` (Celery), `progress.py` (SSE), `rate_limit.py`, `auth.py`, `passkey.py`, templates + static JS |
 | `ph_stocks_advisor/export/` | Report rendering/export | `formatter.py` (`parse_sections`), `html.py`, `pdf.py` |
-| `admin/` | Back-office | Separate SQLAdmin app (users, passkeys, reports) |
+| _(none — back-office)_ | Back-office | Adminer (stock image in docker-compose, no source in this repo) for direct DB access (users, passkeys, reports) |
 
 ### 2.3 How the components communicate
 
