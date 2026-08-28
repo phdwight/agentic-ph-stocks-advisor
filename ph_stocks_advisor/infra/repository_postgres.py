@@ -250,7 +250,7 @@ class PostgresReportRepository(AbstractReportRepository):
         broken = False
         try:
             yield conn
-        except psycopg2.OperationalError, psycopg2.InterfaceError:
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
             # Connection died mid-request (server closed socket, network
             # blip, or it was already closed).  Don't return it to the pool.
             broken = True

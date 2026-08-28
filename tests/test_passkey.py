@@ -212,6 +212,18 @@ def test_login_begin_known_and_unknown_are_indistinguishable(pk_client):
     assert known["allowCredentials"] and unknown["allowCredentials"]
 
 
+def test_login_begin_offers_hybrid_for_cross_device(pk_client):
+    # A passkey stored with only "internal" transport must still be offered
+    # via "hybrid" so it can be used to sign in from another device.
+    _seed_user_with_credential("cross@example.com")
+    hdr = _csrf(pk_client)
+    data = pk_client.post(
+        "/auth/passkey/login/begin", json={"email": "cross@example.com"}, headers=hdr
+    ).get_json()
+    transports = data["allowCredentials"][0].get("transports") or []
+    assert "hybrid" in transports
+
+
 def test_login_complete_unknown_credential_is_generic_401(pk_client):
     hdr = _csrf(pk_client)
     pk_client.post("/auth/passkey/login/begin", json={"email": "nobody@example.com"}, headers=hdr)

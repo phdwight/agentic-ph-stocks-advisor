@@ -147,7 +147,7 @@ def subscribe_progress(task_id: str) -> Generator[dict[str, Any]]:
             yield event
             if event.get("done"):
                 return
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             pass
 
     # ── 2. Subscribe and poll with timeout ──────────────────────────────────
@@ -163,7 +163,7 @@ def subscribe_progress(task_id: str) -> Generator[dict[str, Any]]:
             if msg and msg["type"] == "message":
                 try:
                     event = json.loads(msg["data"])  # type: ignore[arg-type]
-                except json.JSONDecodeError, TypeError:
+                except (json.JSONDecodeError, TypeError):
                     continue
 
                 if event.get("step", -1) > last_step_seen:
@@ -180,7 +180,7 @@ def subscribe_progress(task_id: str) -> Generator[dict[str, Any]]:
             if stored:
                 try:
                     event = json.loads(stored)  # type: ignore[arg-type]
-                except json.JSONDecodeError, TypeError:
+                except (json.JSONDecodeError, TypeError):
                     continue
 
                 if event.get("step", -1) > last_step_seen:
