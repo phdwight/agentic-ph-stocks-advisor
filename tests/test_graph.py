@@ -260,3 +260,32 @@ class TestGracefulDegradation:
         assert result.get("error") is not None
         assert "No specialist agent could produce data" in result["error"]
         MockConsolidator.return_value.run.assert_not_called()
+
+    def test_invalid_api_key_surfaces_actionable_error(self):
+        """An expired/invalid LLM key fails every agent — the run must report
+        the real, actionable reason, not the generic 'no data' abort."""
+        from ph_stocks_advisor.infra.llm_errors import AUTH_ERROR_MESSAGE
+
+        class _AuthError(Exception):
+            def __init__(self, message: str) -> None:
+                super().__init__(message)
+                self.status_code = 401
+
+        registry = self._registry_with_failing(
+            {"PriceAgent", "DividendAgent", "MovementAgent", "ValuationAgent", "ControversyAgent", "SentimentAgent"},
+            _AuthError("Error code: 401 - Incorrect API key provided"),
+        )
+        MockConsolidator = MagicMock()
+        mock_llm = MagicMock()
+
+        with (
+            patch.object(workflow_mod, "AGENT_REGISTRY", registry),
+            patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
+            patch.object(workflow_mod, "validate_symbol", return_value="TEL"),
+        ):
+            result = run_analysis("TEL", llm=mock_llm, mini_llm=mock_llm)
+
+        assert result.get("final_report") is None
+        assert result.get("error") == AUTH_ERROR_MESSAGE
+        assert "No specialist agent could produce data" not in result["error"]
+        MockConsolidator.return_value.run.assert_not_called()
