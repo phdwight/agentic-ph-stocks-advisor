@@ -532,7 +532,32 @@ def test_unexpected_send_error_is_also_a_502_not_a_500(pk_client, monkeypatch):
         assert "pk_vc_codes" not in sess
 
 
-def test_login_page_has_the_code_step_ui(pk_client):
+def test_quota_exhausted_send_is_a_503_with_actionable_message(pk_client, monkeypatch):
+    """When the mail provider is out of credit, a retry can't help — the user
+    gets a distinct, actionable message (not the generic "try again")."""
+    from ph_stocks_advisor.infra.email import EmailSendError
+
+    class QuotaSender:
+        def send(self, **_kw) -> None:
+            raise EmailSendError(
+                "ZeptoMail rejected the send (429) from='x@y.com': Credit exhausted",
+                status_code=429,
+                provider_body='{"error":{"code":"TM_5001","details":[{"code":"LE_102","message":"Credit exhausted"}]}}',
+            )
+
+    monkeypatch.setattr("ph_stocks_advisor.web.passkey.get_email_sender", lambda: QuotaSender())
+    hdr = _csrf(pk_client)
+    resp = pk_client.post(
+        "/auth/passkey/register/send-code",
+        json={"email": "new@example.com", "accept_disclaimer": True},
+        headers=hdr,
+    )
+    assert resp.status_code == 503
+    assert "administrator" in resp.get_json()["error"].lower()
+    with pk_client.session_transaction() as sess:
+        assert "pk_vc_codes" not in sess
+        assert "pk_vc_sent_at" not in sess
+
     html = pk_client.get("/auth/login").get_data(as_text=True)
     assert 'id="pk-code"' in html
     assert 'id="pk-resend"' in html
