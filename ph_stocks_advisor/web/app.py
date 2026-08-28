@@ -341,6 +341,13 @@ def create_app() -> Flask:
         )
         if not token or token != session.get("_csrf_token"):
             logger.warning("CSRF validation failed for %s %s", request.method, request.path)
+            # fetch()/JSON callers can't render an HTML 403, so a generic
+            # front-end fallback misreports the real cause (e.g. a dropped
+            # session cookie shows as "couldn't send the code"). Answer JSON
+            # requests with an actionable message; keep HTML abort otherwise.
+            wants_json = request.is_json or "application/json" in (request.headers.get("Accept") or "")
+            if wants_json:
+                return jsonify({"error": "Your session expired. Refresh the page and try again."}), 403
             abort(403)
         return None
 

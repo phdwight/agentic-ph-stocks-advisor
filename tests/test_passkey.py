@@ -290,6 +290,19 @@ def test_manage_endpoints_require_auth(pk_client):
     assert pk_client.post("/auth/passkey/delete", json={"credential_id": "x"}, headers=hdr).status_code == 401
 
 
+def test_csrf_failure_on_json_request_returns_actionable_json(pk_client):
+    # A fetch/JSON POST without a valid CSRF token (e.g. a dropped session
+    # cookie) must get a JSON error the UI can show — not an HTML 403 that
+    # the front-end misreports as a generic "couldn't send" failure.
+    resp = pk_client.post(
+        "/auth/passkey/register/send-code",
+        json={"email": "new@example.com", "accept_disclaimer": True},
+    )
+    assert resp.status_code == 403
+    assert resp.is_json
+    assert "session expired" in resp.get_json()["error"].lower()
+
+
 @pytest.mark.parametrize(
     "bad_email",
     ["", "nope", "a@b", "a b@c.com", "@example.com", "x@", "x@y.", "two@@at.com"],
