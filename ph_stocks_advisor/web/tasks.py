@@ -149,7 +149,9 @@ def analyse_stock(self, symbol: str, user_id: str = "anonymous") -> dict:
             "report_id": report_id,
         }
     except Exception as exc:
-        publish_progress(task_id, STEP_SAVING, done=True, error=str(exc))
+        from ph_stocks_advisor.infra.llm_errors import friendly_llm_error
+
+        publish_progress(task_id, STEP_SAVING, done=True, error=friendly_llm_error(exc) or str(exc))
         raise
     finally:
         # Always clear the inflight dedup lock so a new analysis can run
@@ -253,8 +255,10 @@ def portfolio_analyse_stock(
             "status": "done",
         }
     except Exception as exc:
+        from ph_stocks_advisor.infra.llm_errors import friendly_llm_error
+
         logger.error("Portfolio analysis failed for %s: %s", symbol, exc)
-        return {"symbol": symbol, "error": str(exc)}
+        return {"symbol": symbol, "error": friendly_llm_error(exc) or str(exc)}
     finally:
         # Clear the portfolio in-flight lock so the page shows the
         # result instead of the spinner on the next load.

@@ -81,9 +81,15 @@ def _analyse_single(symbol: str, requested_formats: list[str], output_path: str 
         print("\n⚠️  Analysis interrupted by user.")
         sys.exit(130)
     except Exception as exc:
-        print(f"❌ An unexpected error occurred while analysing {symbol}:")
-        print(f"   {type(exc).__name__}: {exc}")
-        print("\n   Please check your internet connection and API keys, then try again.")
+        from ph_stocks_advisor.infra.llm_errors import friendly_llm_error
+
+        friendly = friendly_llm_error(exc)
+        if friendly:
+            print(f"❌ {friendly}")
+        else:
+            print(f"❌ An unexpected error occurred while analysing {symbol}:")
+            print(f"   {type(exc).__name__}: {exc}")
+            print("\n   Please check your internet connection and API keys, then try again.")
         return False
 
     # Check if the symbol validation failed
