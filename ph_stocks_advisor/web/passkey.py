@@ -45,7 +45,7 @@ from webauthn.helpers.structs import (
 )
 
 from ph_stocks_advisor.infra.config import get_email_sender, get_repository, get_settings
-from ph_stocks_advisor.infra.email import build_verification_email
+from ph_stocks_advisor.infra.email import EmailSendError, build_verification_email, email_failure_is_quota
 from ph_stocks_advisor.infra.repository import UserRecord, WebAuthnCredentialRecord
 from ph_stocks_advisor.web.auth import _safe_redirect_url
 
@@ -71,6 +71,11 @@ _NO_CONSENT_ERR = "You must read and accept the Disclaimer & Terms of Use to cre
 _BAD_CODE_ERR = "That verification code is incorrect or has expired. Request a new one."
 _CODE_COOLDOWN_ERR = "A code was just sent to that email. Wait a minute before requesting another."
 _CODE_SEND_ERR = "Couldn't send the verification code right now. Try again in a moment."
+# The provider ran out of send credit/quota — retrying won't help, so say so
+# plainly and point at the operator instead of the user.
+_CODE_UNAVAILABLE_ERR = (
+    "Sign-up email is temporarily unavailable. Please try again later or contact the site administrator."
+)
 _CODE_TTL_SECONDS = 10 * 60
 _CODE_MAX_ATTEMPTS = 5
 _CODE_RESEND_COOLDOWN_SECONDS = 60
@@ -222,13 +227,18 @@ def register_send_code() -> ResponseReturnValue:
     try:
         subject, html = build_verification_email(code=code, expires_minutes=_CODE_TTL_SECONDS // 60)
         get_email_sender().send(to=email, subject=subject, html=html)
+    except EmailSendError as exc:
+        # Provider quota/credit exhausted retries can't fix this, so tell the
+        # user plainly and log the real cause (not a generic "send failed").
+        if email_failure_is_quota(exc):
+            logger.error("Verification code blocked — email provider quota/credit exhausted (to=%s): %s", email, exc)
+            return jsonify({"error": _CODE_UNAVAILABLE_ERR}), 503
+        logger.error("Failed to send verification code to %s: %s", email, exc, exc_info=True)
+        return jsonify({"error": _CODE_SEND_ERR}), 502
     except Exception:
-        # ANY failure — provider rejection (EmailSendError) or an unexpected
-        # bug — answers the same way: loud in the log (an unsendable code
-        # means signup is silently broken), actionable for the user instead
-        # of a raw 500, and no session state is written so a retry starts
-        # clean.
-        logger.error("Failed to send verification code to %s", email, exc_info=True)
+        # An unexpected bug in the mail path — never a raw 500 to the user, and
+        # the traceback names the real fault in the log.
+        logger.error("Unexpected error sending verification code to %s", email, exc_info=True)
         return jsonify({"error": _CODE_SEND_ERR}), 502
 
     # Keep earlier still-live codes for the same email so the user can enter

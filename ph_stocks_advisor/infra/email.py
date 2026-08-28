@@ -28,8 +28,24 @@ class EmailSendError(RuntimeError):
     """The provider refused or could not be reached.
 
     Its own type so callers can tell "the mail provider is unhappy" from a
-    genuine bug, and choose how loudly to react.
+    genuine bug, and choose how loudly to react. Carries the provider's HTTP
+    status and (truncated) body so callers can classify the failure (e.g. an
+    exhausted quota) and logs can name the real cause.
     """
+
+    def __init__(self, message: str, *, status_code: int | None = None, provider_body: str | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.provider_body = provider_body
+
+
+def email_failure_is_quota(exc: EmailSendError) -> bool:
+    """True when *exc* is the provider refusing because its send quota / credit
+    is exhausted (a retry won't help — the operator must top up)."""
+    if exc.status_code == 429:
+        return True
+    body = (exc.provider_body or str(exc)).lower()
+    return any(k in body for k in ("credit exhausted", "resource limit", "quota", "le_102", "tm_5001"))
 
 
 class EmailSender(Protocol):
@@ -81,7 +97,9 @@ class ZeptoMailSender:
             # covered by its verified parent.
             raise EmailSendError(
                 f"ZeptoMail rejected the send ({response.status_code}) "
-                f"from={self._from!r}: {response.text[:200] or '<empty body>'}"
+                f"from={self._from!r}: {response.text[:200] or '<empty body>'}",
+                status_code=response.status_code,
+                provider_body=response.text[:200],
             )
         # Logged because "did the email actually go out?" is the first question when
         # a user says they never got their report. The body is not logged, and the

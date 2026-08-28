@@ -87,6 +87,24 @@ def test_zeptomail_network_failure_raises_email_send_error() -> None:
         sender.send(to="u@example.com", subject="s", html="h")
 
 
+def test_zeptomail_rejection_carries_status_and_body() -> None:
+    sender = ZeptoMailSender("k", "from@example.com", http=_fake_session(429, '{"code":"TM_5001"}'))
+    with pytest.raises(EmailSendError) as ei:
+        sender.send(to="u@example.com", subject="s", html="h")
+    assert ei.value.status_code == 429
+    assert "TM_5001" in (ei.value.provider_body or "")
+
+
+def test_email_failure_is_quota_classifier() -> None:
+    from ph_stocks_advisor.infra.email import email_failure_is_quota
+
+    assert email_failure_is_quota(EmailSendError("x", status_code=429)) is True
+    assert email_failure_is_quota(EmailSendError("... Credit exhausted ...")) is True
+    assert email_failure_is_quota(EmailSendError("TM_5001 / LE_102")) is True
+    assert email_failure_is_quota(EmailSendError("ZeptoMail unreachable: boom")) is False
+    assert email_failure_is_quota(EmailSendError("rejected (500) <empty body>", status_code=500)) is False
+
+
 # ---------------------------------------------------------------------------
 # Report email builder
 # ---------------------------------------------------------------------------
