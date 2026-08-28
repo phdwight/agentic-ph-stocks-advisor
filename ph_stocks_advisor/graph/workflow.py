@@ -49,6 +49,7 @@ from ph_stocks_advisor.data.models import (
     ValuationAnalysis,
 )
 from ph_stocks_advisor.data.tools import SymbolNotFoundError, validate_symbol
+from ph_stocks_advisor.infra.llm_errors import friendly_llm_error
 from ph_stocks_advisor.infra.tracing import build_langfuse_config, flush_langfuse
 
 logger = logging.getLogger(__name__)
@@ -213,6 +214,21 @@ def _make_specialist_node(
             _publish_agent_done()
             return {state_key: fallback, "data_gaps": [state_key]}  # type: ignore[return-value]
         except Exception as exc:
+            # An invalid/expired API key (or exhausted quota) fails every
+            # specialist identically — surface that real, actionable reason
+            # as a run-wide error so the user isn't shown the generic
+            # "no specialist could produce data" abort from the consolidator.
+            friendly = friendly_llm_error(exc)
+            if friendly:
+                logger.error(
+                    "%s failed for %s (LLM auth/quota): %s",
+                    agent_class.__name__,
+                    state["symbol"],
+                    exc,
+                    exc_info=True,
+                )
+                _publish_agent_done()
+                return {"error": friendly, "data_gaps": [state_key]}  # type: ignore[return-value]
             # Transient failure (MCP timeout, network blip, upstream API
             # error). Also non-fatal: continue with a placeholder, exclude
             # the dimension from the score, and let the report state the
@@ -310,7 +326,16 @@ def _make_consolidate_node(
             sentiment_analysis=state.get("sentiment_analysis"),
             data_gaps=sorted(set(gaps)),
         )
-        result = agent.run(advisor_state)
+        try:
+            result = agent.run(advisor_state)
+        except Exception as exc:
+            # Map an invalid/expired key (or exhausted quota) to a clear
+            # message; re-raise anything else for the task's own handling.
+            friendly = friendly_llm_error(exc)
+            if friendly:
+                logger.error("Consolidation failed for %s (LLM auth/quota): %s", state["symbol"], exc, exc_info=True)
+                return {"error": friendly}  # type: ignore[return-value]
+            raise
         return {"final_report": result}  # type: ignore[return-value]
 
     return _consolidate

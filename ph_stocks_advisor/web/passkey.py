@@ -129,6 +129,19 @@ def _transports_from(raw_json: str) -> list[str]:
         return []
 
 
+def _login_transports(stored: list[str]) -> list[AuthenticatorTransport] | None:
+    """Stored transports plus ``hybrid``, so a passkey held on another device
+    can still be offered via the cross-device (QR/Bluetooth) sign-in flow."""
+    names = list(dict.fromkeys([*(t for t in stored if t), "hybrid"]))
+    out: list[AuthenticatorTransport] = []
+    for name in names:
+        try:
+            out.append(AuthenticatorTransport(name))
+        except ValueError:
+            continue
+    return out or None
+
+
 # ---------------------------------------------------------------------------
 # Email verification (self-signup only)
 # ---------------------------------------------------------------------------
@@ -282,7 +295,11 @@ def register_begin() -> ResponseReturnValue:
         user_display_name=name,
         exclude_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id)) for c in existing],
         authenticator_selection=AuthenticatorSelectionCriteria(
-            resident_key=ResidentKeyRequirement.DISCOURAGED,
+            # PREFERRED makes this a discoverable passkey, so it syncs across
+            # the user's devices (iCloud Keychain / Google Password Manager)
+            # and can be used to sign in from another device. DISCOURAGED
+            # would bind it to one authenticator and block cross-device login.
+            resident_key=ResidentKeyRequirement.PREFERRED,
             user_verification=UserVerificationRequirement.PREFERRED,
         ),
     )
@@ -381,7 +398,10 @@ def login_begin() -> ResponseReturnValue:
         allow = [
             PublicKeyCredentialDescriptor(
                 id=base64url_to_bytes(c.credential_id),
-                transports=[AuthenticatorTransport(t) for t in c.transports if t] or None,
+                # Always offer "hybrid" alongside the stored transports so the
+                # browser surfaces the cross-device (phone → this device via
+                # QR/Bluetooth) flow when the passkey lives on another device.
+                transports=_login_transports(c.transports),
             )
             for c in creds
         ]
