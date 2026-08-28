@@ -217,9 +217,7 @@ def test_login_begin_offers_hybrid_for_cross_device(pk_client):
     # via "hybrid" so it can be used to sign in from another device.
     _seed_user_with_credential("cross@example.com")
     hdr = _csrf(pk_client)
-    data = pk_client.post(
-        "/auth/passkey/login/begin", json={"email": "cross@example.com"}, headers=hdr
-    ).get_json()
+    data = pk_client.post("/auth/passkey/login/begin", json={"email": "cross@example.com"}, headers=hdr).get_json()
     transports = data["allowCredentials"][0].get("transports") or []
     assert "hybrid" in transports
 

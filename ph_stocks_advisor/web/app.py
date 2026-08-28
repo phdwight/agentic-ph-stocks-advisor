@@ -63,7 +63,7 @@ def _read_pyproject_version() -> str | None:
     try:
         with pyproject.open("rb") as fh:
             data = tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return None
     project = data.get("project")
     if not isinstance(project, dict):
@@ -968,7 +968,7 @@ def create_app() -> Flask:
         try:
             shares = float(data.get("shares", 0))
             avg_cost = float(data.get("avg_cost", 0))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return jsonify({"error": "Invalid shares or avg_cost"}), 400
 
         if shares <= 0 or avg_cost <= 0:

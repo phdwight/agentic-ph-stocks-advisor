@@ -24,9 +24,7 @@ class _FakeRateLimitError(Exception):
 
 
 def test_openai_expired_key_is_recognised():
-    exc = _FakeAuthenticationError(
-        "Error code: 401 - {'error': {'message': 'Incorrect API key provided'}}"
-    )
+    exc = _FakeAuthenticationError("Error code: 401 - {'error': {'message': 'Incorrect API key provided'}}")
     assert friendly_llm_error(exc) == AUTH_ERROR_MESSAGE
 
 
@@ -48,9 +46,7 @@ def test_expired_wording_in_message():
 
 
 def test_insufficient_quota_maps_to_quota_message():
-    exc = _FakeRateLimitError(
-        "Error code: 429 - {'error': {'code': 'insufficient_quota'}}"
-    )
+    exc = _FakeRateLimitError("Error code: 429 - {'error': {'code': 'insufficient_quota'}}")
     assert friendly_llm_error(exc) == QUOTA_ERROR_MESSAGE
 
 
