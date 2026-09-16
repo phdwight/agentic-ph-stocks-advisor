@@ -64,7 +64,9 @@ class TestConsolidatorStructuredOutput:
         agent = ConsolidatorAgent(make_structured_mock_llm(response))
         report = agent.run(sample_advisor_state)
 
-        assert report.movement_monthly_prices == sample_advisor_state.movement_analysis.data.monthly_prices
+        movement = sample_advisor_state.movement_analysis
+        assert movement is not None
+        assert report.movement_monthly_prices == movement.data.monthly_prices
         assert len(report.movement_monthly_prices) > 1
 
     def test_not_buy_via_structured_output(self, sample_advisor_state: AdvisorState):
