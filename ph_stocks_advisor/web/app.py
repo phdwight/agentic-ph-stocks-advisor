@@ -706,11 +706,19 @@ def create_app() -> Flask:
             )
 
         if result.state == "FAILURE":
+            # ``result.info`` is the raw exception the task raised (e.g. an
+            # ``anthropic.AuthenticationError``). Never surface it verbatim —
+            # map known LLM auth/quota failures to a clear, actionable message
+            # and fall back to a generic retry message for anything else.
+            from ph_stocks_advisor.infra.llm_errors import friendly_llm_error
+
+            info = result.info
+            friendly = friendly_llm_error(info) if isinstance(info, BaseException) else None
             return jsonify(
                 {
                     "state": "FAILURE",
                     "done": True,
-                    "error": str(result.info),
+                    "error": friendly or "Analysis failed unexpectedly. Please try again in a moment.",
                 }
             )
 
@@ -883,6 +891,7 @@ def create_app() -> Flask:
             verdict_band=verdict_band,
             marker_pct=marker_pct,
             band_class=band_class,
+            movement_monthly_prices=record.movement_monthly_prices,
         )
 
     @app.route("/history/<symbol>")
@@ -929,6 +938,7 @@ def create_app() -> Flask:
             timestamp=ts,
             data_sources=DATA_SOURCES,
             disclaimer=DISCLAIMER,
+            movement_monthly_prices=record.movement_monthly_prices,
         )
 
     # ------------------------------------------------------------------

@@ -417,6 +417,9 @@ class FinalReport(BaseModel):
     valuation_section: str = ""
     controversy_section: str = ""
     sentiment_section: str = ""
+    # 1-year monthly close series captured at analysis time, so the report's
+    # trend line is a snapshot of the run rather than a later live fetch.
+    movement_monthly_prices: list[float] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

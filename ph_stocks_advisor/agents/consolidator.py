@@ -81,6 +81,7 @@ class ConsolidatorAgent:
             valuation_section=state.valuation_analysis.analysis if state.valuation_analysis else "",
             controversy_section=state.controversy_analysis.analysis if state.controversy_analysis else "",
             sentiment_section=state.sentiment_analysis.analysis if state.sentiment_analysis else "",
+            movement_monthly_prices=(state.movement_analysis.data.monthly_prices if state.movement_analysis else []),
         )
 
     # ------------------------------------------------------------------

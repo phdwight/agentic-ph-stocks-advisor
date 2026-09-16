@@ -178,6 +178,7 @@ class ReportRecord:
         sentiment_section: str = "",
         created_at: datetime | None = None,
         score: int | None = None,
+        movement_monthly_prices: list[float] | None = None,
     ) -> None:
         self.id = id
         self.symbol = symbol
@@ -192,6 +193,9 @@ class ReportRecord:
         self.created_at = created_at or datetime.now(tz=UTC)
         # 0–100 avoid→buy verdict score; None for pre-scoring legacy rows.
         self.score = score
+        # 1-year monthly close snapshot for the trend line; empty for legacy
+        # rows saved before the snapshot was captured (trend line stays blank).
+        self.movement_monthly_prices = movement_monthly_prices or []
 
     @classmethod
     def from_final_report(cls, report: FinalReport) -> ReportRecord:
@@ -207,6 +211,7 @@ class ReportRecord:
             controversy_section=report.controversy_section,
             sentiment_section=report.sentiment_section,
             score=report.score,
+            movement_monthly_prices=report.movement_monthly_prices,
         )
 
     def __repr__(self) -> str:

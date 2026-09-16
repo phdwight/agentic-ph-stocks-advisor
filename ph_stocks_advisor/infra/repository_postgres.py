@@ -11,6 +11,7 @@ database connections instead of opening one per request.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 from collections.abc import Generator
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS reports (
     controversy_section TEXT        NOT NULL DEFAULT '',
     sentiment_section   TEXT        NOT NULL DEFAULT '',
     score               INTEGER,
+    movement_monthly_prices TEXT    NOT NULL DEFAULT '[]',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 """
@@ -145,6 +147,11 @@ _MIGRATIONS_SQL = [
     """
     ALTER TABLE reports
         ADD COLUMN IF NOT EXISTS sentiment_section TEXT NOT NULL DEFAULT '';
+    """,
+    # 1-year monthly close snapshot for the trend line (captured at run time)
+    """
+    ALTER TABLE reports
+        ADD COLUMN IF NOT EXISTS movement_monthly_prices TEXT NOT NULL DEFAULT '[]';
     """,
 ]
 
@@ -297,8 +304,8 @@ class PostgresReportRepository(AbstractReportRepository):
                     INSERT INTO reports
                         (symbol, verdict, summary, price_section, dividend_section,
                          movement_section, valuation_section, controversy_section,
-                         sentiment_section, score, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         sentiment_section, score, movement_monthly_prices, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -312,6 +319,7 @@ class PostgresReportRepository(AbstractReportRepository):
                         record.controversy_section,
                         record.sentiment_section,
                         record.score,
+                        json.dumps(record.movement_monthly_prices),
                         record.created_at or datetime.now(tz=UTC),
                     ),
                 )
@@ -572,6 +580,11 @@ class PostgresReportRepository(AbstractReportRepository):
             controversy_section=row["controversy_section"],
             sentiment_section=row.get("sentiment_section", "") if hasattr(row, "get") else "",
             score=row.get("score") if hasattr(row, "get") else None,
+            movement_monthly_prices=(
+                json.loads(row["movement_monthly_prices"])
+                if hasattr(row, "get") and row.get("movement_monthly_prices")
+                else []
+            ),
             created_at=row["created_at"],
         )
 

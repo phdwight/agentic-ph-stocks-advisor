@@ -2438,7 +2438,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.015em; line-height
 }
 .passkey-form input::placeholder { color: var(--text-muted); }
 .passkey-form input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-100); }
-.passkey-btn { background: var(--accent); color: #fff; border: 1px solid var(--accent); justify-content: center; }
+.passkey-btn { background: var(--accent); color: #fff; border: 1px solid var(--accent); justify-content: center; width: 100%; }
 .passkey-btn:hover { background: var(--accent-600); border-color: var(--accent-600); }
 .passkey-btn:disabled { opacity: 0.7; cursor: default; }
 .passkey-link {

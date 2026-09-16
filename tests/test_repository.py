@@ -42,6 +42,7 @@ def sample_report() -> FinalReport:
         valuation_section="Undervalued by 10%.",
         controversy_section="Minor spike in June.",
         sentiment_section="Global outlook is neutral.",
+        movement_monthly_prices=[10.0, 10.5, 11.2, 11.8, 12.5],
     )
 
 
@@ -155,9 +156,31 @@ class TestSQLiteRepository:
         assert fetched.controversy_section == "Minor spike in June."
         assert fetched.sentiment_section == "Global outlook is neutral."
 
-    # ------------------------------------------------------------------
-    # Per-user symbol tracking
-    # ------------------------------------------------------------------
+    def test_save_preserves_movement_snapshot(self, sqlite_repo, sample_report):
+        """The 1-year trend snapshot survives a save/read round-trip."""
+        record = ReportRecord.from_final_report(sample_report)
+        record_id = sqlite_repo.save(record)
+        fetched = sqlite_repo.get_by_id(record_id)
+
+        assert fetched.movement_monthly_prices == [10.0, 10.5, 11.2, 11.8, 12.5]
+
+    def test_legacy_report_has_blank_snapshot(self, sqlite_repo):
+        """A report saved without a snapshot reads back as an empty list."""
+        record = ReportRecord(
+            id=None,
+            symbol="TEL",
+            verdict="BUY",
+            summary="Legacy row.",
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+        )
+        record_id = sqlite_repo.save(record)
+        fetched = sqlite_repo.get_by_id(record_id)
+
+        assert fetched.movement_monthly_prices == []
 
     def test_add_user_symbol_is_idempotent(self, sqlite_repo, sample_report):
         """Calling add_user_symbol twice for the same pair must not raise."""

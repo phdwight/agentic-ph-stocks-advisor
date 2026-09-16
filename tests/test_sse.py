@@ -318,3 +318,51 @@ class TestStreamEndpoint:
 
         assert resp.headers.get("Cache-Control") == "no-cache"
         assert resp.headers.get("X-Accel-Buffering") == "no"
+
+
+# ---------------------------------------------------------------------------
+# Tests — /status/<task_id> failure classification
+# ---------------------------------------------------------------------------
+
+
+class _FakeAuthError(Exception):
+    """Mimics ``anthropic.AuthenticationError`` (class name + 401 status)."""
+
+    def __init__(self) -> None:
+        super().__init__("Error code: 401 - {'error': {'message': 'API key is invalid.'}}")
+        self.status_code = 401
+
+
+class TestStatusFailureBranch:
+    """A failed Celery task must never leak the raw provider exception."""
+
+    def _patch_result(self, state: str, info: object):
+        fake_result = MagicMock()
+        fake_result.state = state
+        fake_result.info = info
+        fake_task = MagicMock()
+        fake_task.AsyncResult.return_value = fake_result
+        return patch("ph_stocks_advisor.web.tasks.analyse_stock", fake_task)
+
+    def test_auth_error_is_classified_not_leaked(self, client):
+        """A 401 auth failure yields the friendly message, not the raw error."""
+        from ph_stocks_advisor.infra.llm_errors import AUTH_ERROR_MESSAGE
+
+        with self._patch_result("FAILURE", _FakeAuthError()):
+            resp = client.get("/status/task-auth-fail")
+
+        data = resp.get_json()
+        assert data["state"] == "FAILURE"
+        assert data["error"] == AUTH_ERROR_MESSAGE
+        assert "401" not in data["error"]
+        assert "Error code" not in data["error"]
+
+    def test_unknown_error_gets_generic_message(self, client):
+        """A non-LLM failure yields a generic retry message, not the raw text."""
+        with self._patch_result("FAILURE", RuntimeError("psycopg2.OperationalError: boom")):
+            resp = client.get("/status/task-db-fail")
+
+        data = resp.get_json()
+        assert data["state"] == "FAILURE"
+        assert "psycopg2" not in data["error"]
+        assert "try again" in data["error"].lower()

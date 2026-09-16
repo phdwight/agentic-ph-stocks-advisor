@@ -54,6 +54,21 @@ class TestConsolidatorStructuredOutput:
         assert report.controversy_section == "Minor risk."
         assert report.sentiment_section == "Neutral global outlook."
 
+    def test_captures_movement_snapshot(self, sample_advisor_state: AdvisorState):
+        """The 1-year monthly series is copied into the report for the trend line."""
+        response = ConsolidationResponse(
+            verdict=Verdict.BUY,
+            justification="Strong fundamentals.",
+            summary=CONSOLIDATOR_BUY_RESPONSE,
+        )
+        agent = ConsolidatorAgent(make_structured_mock_llm(response))
+        report = agent.run(sample_advisor_state)
+
+        movement = sample_advisor_state.movement_analysis
+        assert movement is not None
+        assert report.movement_monthly_prices == movement.data.monthly_prices
+        assert len(report.movement_monthly_prices) > 1
+
     def test_not_buy_via_structured_output(self, sample_advisor_state: AdvisorState):
         response = ConsolidationResponse(
             verdict=Verdict.NOT_BUY,
