@@ -183,6 +183,9 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+  window.__movementPrices = {{ (movement_monthly_prices or []) | tojson }};
+</script>
 <script src="{{ url_for('static', filename='report-viz.js') }}?v={{ asset_rev }}"></script>
 {% if is_elevated %}
 <script>

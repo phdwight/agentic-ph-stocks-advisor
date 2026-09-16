@@ -8,6 +8,7 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   enhanceReportSections();
+  injectMovementTrendline();
 });
 
 function enhanceReportSections() {
@@ -302,3 +303,94 @@ function enhancePriceValues(section) {
     }
   });
 }
+
+/* ====================================================================== */
+/*  1-Year Trend Line (Movement card)                                      */
+/* ====================================================================== */
+
+function injectMovementTrendline() {
+  // The 1-year series is a snapshot embedded at render time (blank for
+  // legacy reports saved before the snapshot was captured).
+  const prices = Array.isArray(window.__movementPrices) ? window.__movementPrices : [];
+  if (prices.length < 2) return;
+
+  // Find the "Price Movement Analysis" card by its agent name.
+  const cards = document.querySelectorAll(".agent-card");
+  let body = null;
+  cards.forEach((card) => {
+    if (body) return;
+    const name = card.querySelector(".agent-name")?.textContent.toLowerCase() || "";
+    if (name.includes("movement") || name.includes("trend")) {
+      body = card.querySelector(".section-body");
+    }
+  });
+  if (!body) return;
+
+  const chart = createTrendline(prices);
+  body.insertBefore(chart, body.firstChild);
+}
+
+function createTrendline(prices) {
+  const w = 520;
+  const h = 96;
+  const padX = 6;
+  const padY = 12;
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+  const stepX = (w - padX * 2) / (prices.length - 1);
+
+  const points = prices.map((p, i) => {
+    const x = padX + i * stepX;
+    const y = padY + (1 - (p - min) / range) * (h - padY * 2);
+    return [x, y];
+  });
+
+  const up = prices[prices.length - 1] >= prices[0];
+  const stroke = up ? "#3D8A7E" : "#D85E52";
+  const fillTop = up ? "rgba(61,138,126,0.16)" : "rgba(216,94,82,0.16)";
+  const changePct = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+
+  const linePath = points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L${points[points.length - 1][0].toFixed(1)} ${h - padY} L${points[0][0].toFixed(1)} ${h - padY} Z`;
+  const [lastX, lastY] = points[points.length - 1];
+
+  const container = document.createElement("div");
+  container.className = "trendline-card";
+  container.style.cssText = `
+    margin: 0 0 1.2rem;
+    padding: 0.85rem 1rem;
+    background: rgba(46,74,86,0.03);
+    border: 1px solid rgba(46,74,86,0.08);
+    border-radius: 10px;
+  `;
+
+  const label = document.createElement("div");
+  label.style.cssText = `
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:0.4rem;font-size:0.72rem;font-weight:600;
+    color:#6b7088;text-transform:uppercase;letter-spacing:0.04em;
+  `;
+  const sign = changePct >= 0 ? "+" : "";
+  label.innerHTML = `
+    <span>1-Year Trend</span>
+    <span style="color:${stroke};font-variant-numeric:tabular-nums;">${up ? "↑" : "↓"} ${sign}${changePct.toFixed(1)}%</span>
+  `;
+
+  const svg = `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="72"
+         role="img" aria-label="1-year price trend, ${sign}${changePct.toFixed(1)} percent">
+      <path d="${areaPath}" fill="${fillTop}" stroke="none"/>
+      <path d="${linePath}" fill="none" stroke="${stroke}" stroke-width="2"
+            stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3" fill="${stroke}"/>
+    </svg>
+  `;
+  const chart = document.createElement("div");
+  chart.innerHTML = svg;
+
+  container.appendChild(label);
+  container.appendChild(chart.firstElementChild);
+  return container;
+}
+

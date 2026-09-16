@@ -6,6 +6,7 @@ Used as the default backend for local development.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS reports (
     controversy_section TEXT NOT NULL DEFAULT '',
     sentiment_section TEXT NOT NULL DEFAULT '',
     score           INTEGER,
+    movement_monthly_prices TEXT NOT NULL DEFAULT '[]',
     created_at      TEXT    NOT NULL
 );
 """
@@ -143,6 +145,8 @@ class SQLiteReportRepository(AbstractReportRepository):
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(reports)")}
         if "score" not in cols:
             conn.execute("ALTER TABLE reports ADD COLUMN score INTEGER")
+        if "movement_monthly_prices" not in cols:
+            conn.execute("ALTER TABLE reports ADD COLUMN movement_monthly_prices TEXT NOT NULL DEFAULT '[]'")
 
         # Idempotent migration: sign-up consent columns for users created
         # before the disclaimer had to be accepted.
@@ -160,8 +164,8 @@ class SQLiteReportRepository(AbstractReportRepository):
             INSERT INTO reports
                 (symbol, verdict, summary, price_section, dividend_section,
                  movement_section, valuation_section, controversy_section,
-                 sentiment_section, score, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 sentiment_section, score, movement_monthly_prices, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.symbol,
@@ -174,6 +178,7 @@ class SQLiteReportRepository(AbstractReportRepository):
                 record.controversy_section,
                 record.sentiment_section,
                 record.score,
+                json.dumps(record.movement_monthly_prices),
                 record.created_at.isoformat() if record.created_at else datetime.now(tz=UTC).isoformat(),
             ),
         )
@@ -436,6 +441,12 @@ class SQLiteReportRepository(AbstractReportRepository):
                 else ""
             ),
             score=row["score"] if "score" in row.keys() else None,  # noqa: SIM118
+            movement_monthly_prices=(
+                json.loads(row["movement_monthly_prices"])
+                if "movement_monthly_prices" in row.keys()  # noqa: SIM118
+                and row["movement_monthly_prices"]
+                else []
+            ),
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
