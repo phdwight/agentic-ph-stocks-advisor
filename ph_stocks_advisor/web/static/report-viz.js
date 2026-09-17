@@ -309,10 +309,17 @@ function enhancePriceValues(section) {
 /* ====================================================================== */
 
 function injectMovementTrendline() {
-  // The 1-year series is a snapshot embedded at render time (blank for
-  // legacy reports saved before the snapshot was captured).
-  const prices = Array.isArray(window.__movementPrices) ? window.__movementPrices : [];
-  if (prices.length < 2) return;
+  // The 1-year series is a snapshot embedded at render time on the agent grid
+  // (a data attribute, not an inline script, to satisfy the page CSP). Blank
+  // for legacy reports saved before the snapshot was captured.
+  const grid = document.querySelector(".agent-grid[data-movement-prices]");
+  let prices = [];
+  try {
+    prices = JSON.parse(grid?.dataset.movementPrices || "[]");
+  } catch {
+    prices = [];
+  }
+  if (!Array.isArray(prices) || prices.length < 2) return;
 
   // Find the "Price Movement Analysis" card by its agent name.
   const cards = document.querySelectorAll(".agent-card");
