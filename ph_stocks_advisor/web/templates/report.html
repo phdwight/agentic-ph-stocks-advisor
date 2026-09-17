@@ -60,7 +60,7 @@
   </aside>
 
   <!-- ── Agent cards ───────────────────────────────────────────────── -->
-  <section class="agent-grid" data-movement-prices='{{ (movement_monthly_prices or []) | tojson }}'>
+  <section class="agent-grid" data-movement-prices='{{ (movement_monthly_prices or []) | tojson }}' data-report-date="{{ record.created_at.isoformat() if record.created_at else '' }}">
     {% for title, body in sections %}
       {% if not title.lower().startswith('verdict') %}
         {% set tl = title.lower() %}
