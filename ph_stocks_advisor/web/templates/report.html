@@ -60,7 +60,7 @@
   </aside>
 
   <!-- ── Agent cards ───────────────────────────────────────────────── -->
-  <section class="agent-grid">
+  <section class="agent-grid" data-movement-prices='{{ (movement_monthly_prices or []) | tojson }}' data-report-date="{{ record.created_at.isoformat() if record.created_at else '' }}">
     {% for title, body in sections %}
       {% if not title.lower().startswith('verdict') %}
         {% set tl = title.lower() %}
@@ -183,9 +183,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  window.__movementPrices = {{ (movement_monthly_prices or []) | tojson }};
-</script>
 <script src="{{ url_for('static', filename='report-viz.js') }}?v={{ asset_rev }}"></script>
 {% if is_elevated %}
 <script>

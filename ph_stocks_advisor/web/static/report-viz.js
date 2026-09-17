@@ -309,10 +309,17 @@ function enhancePriceValues(section) {
 /* ====================================================================== */
 
 function injectMovementTrendline() {
-  // The 1-year series is a snapshot embedded at render time (blank for
-  // legacy reports saved before the snapshot was captured).
-  const prices = Array.isArray(window.__movementPrices) ? window.__movementPrices : [];
-  if (prices.length < 2) return;
+  // The 1-year series is a snapshot embedded at render time on the agent grid
+  // (a data attribute, not an inline script, to satisfy the page CSP). Blank
+  // for legacy reports saved before the snapshot was captured.
+  const grid = document.querySelector(".agent-grid[data-movement-prices]");
+  let prices = [];
+  try {
+    prices = JSON.parse(grid?.dataset.movementPrices || "[]");
+  } catch {
+    prices = [];
+  }
+  if (!Array.isArray(prices) || prices.length < 2) return;
 
   // Find the "Price Movement Analysis" card by its agent name.
   const cards = document.querySelectorAll(".agent-card");
@@ -326,11 +333,34 @@ function injectMovementTrendline() {
   });
   if (!body) return;
 
-  const chart = createTrendline(prices);
+  const chart = createTrendline(prices, grid?.dataset.reportDate || "");
   body.insertBefore(chart, body.firstChild);
 }
 
-function createTrendline(prices) {
+// Month labels for the x-axis. The series is one point per month ending at the
+// report date, so point i maps to (report month − (n−1−i)). Returns a subset of
+// evenly-spaced ticks with their horizontal position (%) along the line.
+function buildMonthTicks(n, endDateStr) {
+  const d = endDateStr ? new Date(endDateStr) : null;
+  if (!d || isNaN(d.getTime())) return [];
+  const base = new Date(d.getFullYear(), d.getMonth(), 1);
+  const months = [];
+  for (let i = n - 1; i >= 0; i--) {
+    months.push(new Date(base.getFullYear(), base.getMonth() - i, 1));
+  }
+  const fmt = (m, withYear) =>
+    m.toLocaleString("en-US", { month: "short" }) + (withYear ? " '" + String(m.getFullYear()).slice(2) : "");
+  const step = Math.max(1, Math.ceil((n - 1) / 6));
+  const idx = [];
+  for (let i = 0; i < n; i += step) idx.push(i);
+  if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
+  return idx.map((i) => ({
+    pct: (i / (n - 1)) * 100,
+    text: fmt(months[i], i === 0 || i === n - 1 || months[i].getMonth() === 0),
+  }));
+}
+
+function createTrendline(prices, reportDate) {
   const w = 520;
   const h = 96;
   const padX = 6;
@@ -350,6 +380,7 @@ function createTrendline(prices) {
   const stroke = up ? "#3D8A7E" : "#D85E52";
   const fillTop = up ? "rgba(61,138,126,0.16)" : "rgba(216,94,82,0.16)";
   const changePct = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+  const money = (v) => "₱" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const linePath = points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
   const areaPath = `${linePath} L${points[points.length - 1][0].toFixed(1)} ${h - padY} L${points[0][0].toFixed(1)} ${h - padY} Z`;
@@ -365,32 +396,43 @@ function createTrendline(prices) {
     border-radius: 10px;
   `;
 
-  const label = document.createElement("div");
-  label.style.cssText = `
-    display:flex;justify-content:space-between;align-items:center;
-    margin-bottom:0.4rem;font-size:0.72rem;font-weight:600;
-    color:#6b7088;text-transform:uppercase;letter-spacing:0.04em;
-  `;
   const sign = changePct >= 0 ? "+" : "";
-  label.innerHTML = `
-    <span>1-Year Trend</span>
-    <span style="color:${stroke};font-variant-numeric:tabular-nums;">${up ? "↑" : "↓"} ${sign}${changePct.toFixed(1)}%</span>
+  const ticks = buildMonthTicks(prices.length, reportDate);
+  const xAxisHtml = ticks
+    .map((t) => {
+      const shift = t.pct <= 0 ? "0" : t.pct >= 100 ? "-100%" : "-50%";
+      return `<span style="position:absolute;left:${t.pct}%;transform:translateX(${shift});white-space:nowrap;">${t.text}</span>`;
+    })
+    .join("");
+
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;
+      margin-bottom:0.5rem;font-size:0.72rem;font-weight:600;color:#6b7088;
+      text-transform:uppercase;letter-spacing:0.04em;">
+      <span>1-Year Trend</span>
+      <span style="color:${stroke};font-variant-numeric:tabular-nums;">${up ? "↑" : "↓"} ${sign}${changePct.toFixed(1)}%</span>
+    </div>
+    <div style="display:flex;align-items:stretch;gap:0.4rem;">
+      <div style="display:flex;flex-direction:column;justify-content:space-between;
+        height:72px;font-size:0.66rem;color:#8a8f9c;text-align:right;
+        font-variant-numeric:tabular-nums;min-width:3.4em;">
+        <span>${money(max)}</span>
+        <span>${money(min)}</span>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="72"
+             role="img" aria-label="1-year price trend, ${sign}${changePct.toFixed(1)} percent">
+          <path d="${areaPath}" fill="${fillTop}" stroke="none"/>
+          <path d="${linePath}" fill="none" stroke="${stroke}" stroke-width="2"
+                stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3" fill="${stroke}"/>
+        </svg>
+        <div style="position:relative;height:1em;margin-top:0.35rem;font-size:0.66rem;
+          color:#8a8f9c;font-variant-numeric:tabular-nums;">${xAxisHtml}</div>
+      </div>
+    </div>
   `;
 
-  const svg = `
-    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="72"
-         role="img" aria-label="1-year price trend, ${sign}${changePct.toFixed(1)} percent">
-      <path d="${areaPath}" fill="${fillTop}" stroke="none"/>
-      <path d="${linePath}" fill="none" stroke="${stroke}" stroke-width="2"
-            stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3" fill="${stroke}"/>
-    </svg>
-  `;
-  const chart = document.createElement("div");
-  chart.innerHTML = svg;
-
-  container.appendChild(label);
-  container.appendChild(chart.firstElementChild);
   return container;
 }
 
