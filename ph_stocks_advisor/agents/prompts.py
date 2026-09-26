@@ -109,8 +109,8 @@ Given the 1-year price movement data for **{symbol}**, write a concise analysis
   positive year-change while hiding a large mid-year crash — always surface
   this for the investor.**
 - Volatility concerns.
-- Any notable monthly patterns (look at ``monthly_prices`` for sudden jumps
-  or dips).
+- Any notable patterns (look at ``monthly_prices`` — a daily close series —
+  for sudden jumps or dips).
 - **If ``price_catalysts`` is non-empty, incorporate them into your analysis.**
   For example, if the stock is a high-dividend or REIT stock approaching its
   52-week high, the uptrend is likely being driven by investors accumulating

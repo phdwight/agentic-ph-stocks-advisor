@@ -55,7 +55,7 @@ class TestConsolidatorStructuredOutput:
         assert report.sentiment_section == "Neutral global outlook."
 
     def test_captures_movement_snapshot(self, sample_advisor_state: AdvisorState):
-        """The 1-year monthly series is copied into the report for the trend line."""
+        """The 1-year daily close series is copied into the report for the trend line."""
         response = ConsolidationResponse(
             verdict=Verdict.BUY,
             justification="Strong fundamentals.",

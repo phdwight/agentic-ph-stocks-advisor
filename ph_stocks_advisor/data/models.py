@@ -185,7 +185,12 @@ class PriceMovement(BaseModel):
         description="Largest peak-to-trough decline (%) during the year. "
         "A value like -30.0 means the stock fell 30% from its high.",
     )
-    monthly_prices: list[float] = Field(default_factory=list)
+    monthly_prices: list[float] = Field(
+        default_factory=list,
+        description="Daily closing prices for the ~1-year trend line (up to the "
+        "last 365 trading days). The field name is kept for schema/DB "
+        "compatibility even though it now holds daily — not monthly — data.",
+    )
 
     # -- Trend & catalysts -----------------------------------------------------
     trend: TrendDirection = TrendDirection.SIDEWAYS
@@ -417,8 +422,9 @@ class FinalReport(BaseModel):
     valuation_section: str = ""
     controversy_section: str = ""
     sentiment_section: str = ""
-    # 1-year monthly close series captured at analysis time, so the report's
-    # trend line is a snapshot of the run rather than a later live fetch.
+    # 1-year daily close series (up to 365 trading days) captured at analysis
+    # time, so the report's trend line is a snapshot of the run rather than a
+    # later live fetch. Field/column name kept as-is for DB compatibility.
     movement_monthly_prices: list[float] = Field(default_factory=list)
 
 

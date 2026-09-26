@@ -84,8 +84,9 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
         tv = fetch_tradingview_snapshot(symbol)
         perf_summary = format_tv_performance_summary(tv)
 
-        monthly = hist["Close"].resample("ME").mean()
-        monthly_prices = [round(float(p), 2) for p in monthly.tolist()]
+        # Daily closes for the trend line — up to the last 365 daily points.
+        daily = hist["Close"].dropna()
+        monthly_prices = [round(float(p), 2) for p in daily.tolist()][-365:]
 
         trend = _classify_trend(year_change_pct)
 

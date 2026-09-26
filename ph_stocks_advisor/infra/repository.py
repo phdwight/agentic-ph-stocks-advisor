@@ -193,7 +193,7 @@ class ReportRecord:
         self.created_at = created_at or datetime.now(tz=UTC)
         # 0–100 avoid→buy verdict score; None for pre-scoring legacy rows.
         self.score = score
-        # 1-year monthly close snapshot for the trend line; empty for legacy
+        # 1-year daily close snapshot for the trend line; empty for legacy
         # rows saved before the snapshot was captured (trend line stays blank).
         self.movement_monthly_prices = movement_monthly_prices or []
 

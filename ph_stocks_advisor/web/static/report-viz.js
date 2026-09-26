@@ -337,27 +337,29 @@ function injectMovementTrendline() {
   body.insertBefore(chart, body.firstChild);
 }
 
-// Month labels for the x-axis. The series is one point per month ending at the
-// report date, so point i maps to (report month − (n−1−i)). Returns a subset of
-// evenly-spaced ticks with their horizontal position (%) along the line.
+// Month labels for the x-axis. The series is a run of daily points spanning
+// roughly one year ending at the report date, so horizontal position maps
+// linearly onto that year. Returns evenly-spaced month ticks with their
+// horizontal position (%) along the line.
 function buildMonthTicks(n, endDateStr) {
-  const d = endDateStr ? new Date(endDateStr) : null;
-  if (!d || isNaN(d.getTime())) return [];
-  const base = new Date(d.getFullYear(), d.getMonth(), 1);
-  const months = [];
-  for (let i = n - 1; i >= 0; i--) {
-    months.push(new Date(base.getFullYear(), base.getMonth() - i, 1));
-  }
+  const end = endDateStr ? new Date(endDateStr) : null;
+  if (!end || isNaN(end.getTime())) return [];
+  const start = new Date(end.getFullYear() - 1, end.getMonth(), end.getDate());
+  const span = end.getTime() - start.getTime();
+  const dateAt = (frac) => new Date(start.getTime() + frac * span);
   const fmt = (m, withYear) =>
     m.toLocaleString("en-US", { month: "short" }) + (withYear ? " '" + String(m.getFullYear()).slice(2) : "");
-  const step = Math.max(1, Math.ceil((n - 1) / 6));
-  const idx = [];
-  for (let i = 0; i < n; i += step) idx.push(i);
-  if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
-  return idx.map((i) => ({
-    pct: (i / (n - 1)) * 100,
-    text: fmt(months[i], i === 0 || i === n - 1 || months[i].getMonth() === 0),
-  }));
+  const count = 7;
+  const ticks = [];
+  for (let k = 0; k < count; k++) {
+    const frac = k / (count - 1);
+    const m = dateAt(frac);
+    ticks.push({
+      pct: frac * 100,
+      text: fmt(m, k === 0 || k === count - 1 || m.getMonth() === 0),
+    });
+  }
+  return ticks;
 }
 
 function createTrendline(prices, reportDate) {
