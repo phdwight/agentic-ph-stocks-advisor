@@ -186,17 +186,19 @@ function enhancePercentages(section) {
         const ctxEnd = Math.min(plainText.length, (plainIdx >= 0 ? plainIdx : 0) + match.length + 80);
         const surroundingText = plainText.substring(ctxStart, ctxEnd);
 
-        // Words like "below", "down", "decline", "drop", "loss", "fell",
-        // "decrease" near a positive number mean the sentiment is actually
-        // negative (e.g. "16% below its 52-week high").
-        // Conversely, "above", "up", "gain", "rise", "grew", "increase"
-        // near a negative number would flip to positive sentiment.
+        // Decline vocabulary near a positive number means the sentiment is
+        // actually negative (e.g. "16% below its 52-week high", "drawdown of
+        // 30%", "8.8% slide", "12.8% rout"). Stems use \w* so inflections
+        // (declines, dropped, falling) and financial terms are all caught.
+        // Conversely, gain vocabulary near a negative number flips to positive.
         //
         // EXCEPTION: an explicit "+" prefix (e.g. "+28.9%") is an
         // unambiguous positive signal from the LLM — honour it directly
         // and skip context-word heuristics.
-        const negativeContext = /\b(below|down|decline|drop|loss|fell|decrease|lost|lower)\b/;
-        const positiveContext = /\b(above|up|gain|rise|grew|increase|higher|over)\b/;
+        const negativeContext =
+          /\b(below|down|drawdown|declin\w*|drop\w*|dip\w*|loss\w*|lost|f[ae]ll\w*|decreas\w*|lower|slid\w*|slump\w*|plung\w*|rout|sell-?off|selloff|selling|crash\w*|tumbl\w*|sank|sink\w*|retreat\w*|pullback|correction|shed|wiped|slipp\w*|slip)\b/;
+        const positiveContext =
+          /\b(above|up|gain\w*|rise\w*|rose|grew|grow\w*|increas\w*|higher|surge\w*|rall\w*|jump\w*|climb\w*|soar\w*)\b/;
         const hasExplicitSign = /^[+-]/.test(num.trim());
 
         let sentiment;  // true = positive, false = negative, null = neutral
