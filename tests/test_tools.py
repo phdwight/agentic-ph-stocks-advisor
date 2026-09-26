@@ -274,10 +274,36 @@ class TestFetchPriceMovement:
         assert result.year_change_pct > 15
         assert result.candlestick_patterns  # candlestick analysis activated
 
+    @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv")
+    def test_trend_series_uses_daily_points(self, mock_pse, mock_profile, _tv):
+        """The trend series carries one point per trading day, not monthly means."""
+        mock_profile.return_value = _DRAGONFI_PROFILE.copy()
+        dates = pd.bdate_range(end=_BDATE_END, periods=252)
+        prices = np.linspace(10.0, 12.0, 252)
+        hist = pd.DataFrame({"Close": prices}, index=dates)
+        mock_pse.return_value = hist
+        result = fetch_price_movement("DMC")
+        # One point per input row — far more than the ~12 monthly means before.
+        assert len(result.monthly_prices) == 252
+        assert result.monthly_prices[0] == pytest.approx(10.0, abs=0.01)
+        assert result.monthly_prices[-1] == pytest.approx(12.0, abs=0.01)
 
-# ---------------------------------------------------------------------------
-# Fair value
-# ---------------------------------------------------------------------------
+    @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv")
+    def test_trend_series_capped_at_365_points(self, mock_pse, mock_profile, _tv):
+        """A history longer than a year keeps only the last 365 daily points."""
+        mock_profile.return_value = _DRAGONFI_PROFILE.copy()
+        dates = pd.bdate_range(end=_BDATE_END, periods=500)
+        prices = np.linspace(10.0, 20.0, 500)
+        hist = pd.DataFrame({"Close": prices}, index=dates)
+        mock_pse.return_value = hist
+        result = fetch_price_movement("DMC")
+        assert len(result.monthly_prices) == 365
+        assert result.monthly_prices[-1] == pytest.approx(20.0, abs=0.01)
+
 
 
 class TestFetchFairValue:

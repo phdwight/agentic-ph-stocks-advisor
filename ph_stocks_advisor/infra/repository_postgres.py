@@ -148,7 +148,7 @@ _MIGRATIONS_SQL = [
     ALTER TABLE reports
         ADD COLUMN IF NOT EXISTS sentiment_section TEXT NOT NULL DEFAULT '';
     """,
-    # 1-year monthly close snapshot for the trend line (captured at run time)
+    # 1-year daily close snapshot for the trend line (captured at run time)
     """
     ALTER TABLE reports
         ADD COLUMN IF NOT EXISTS movement_monthly_prices TEXT NOT NULL DEFAULT '[]';
@@ -257,7 +257,7 @@ class PostgresReportRepository(AbstractReportRepository):
         broken = False
         try:
             yield conn
-        except psycopg2.OperationalError, psycopg2.InterfaceError:
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
             # Connection died mid-request (server closed socket, network
             # blip, or it was already closed).  Don't return it to the pool.
             broken = True
