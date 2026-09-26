@@ -305,7 +305,6 @@ class TestFetchPriceMovement:
         assert result.monthly_prices[-1] == pytest.approx(20.0, abs=0.01)
 
 
-
 class TestFetchFairValue:
     @patch("ph_stocks_advisor.data.services.valuation.fetch_security_valuation")
     @patch("ph_stocks_advisor.data.services.valuation.fetch_stock_profile")
