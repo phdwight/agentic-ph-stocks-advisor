@@ -79,11 +79,14 @@ class TestGraphTrajectory:
         def _make_mock_agent(cls_name, state_key, return_model):
             mock_cls = MagicMock()
 
-            def _run_side_effect(symbol):
+            def _analyze_side_effect(symbol, data):
                 executed_agents.append(cls_name)
                 return return_model
 
-            mock_cls.return_value.run.side_effect = _run_side_effect
+            inst = mock_cls.return_value
+            inst.fetch.return_value = return_model.data
+            inst.analyze.side_effect = _analyze_side_effect
+            inst.wrap.side_effect = lambda data, note: return_model
             return mock_cls
 
         MockPriceAgent = _make_mock_agent(

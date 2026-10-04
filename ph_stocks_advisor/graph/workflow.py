@@ -162,6 +162,23 @@ def _fallback_analysis(state_key: str, symbol: str, *, transient: bool):
     return builders[state_key]()
 
 
+def _narrative_unavailable_note(state_key: str, symbol: str) -> str:
+    """Note used when the data WAS fetched but the LLM narrative failed.
+
+    Unlike :func:`_fallback_analysis` (which carries an empty data model),
+    this keeps the real fetched data — so data-driven visualisations such as
+    the movement 1-year trend line still render. The dimension is still
+    excluded from the verdict score because there is no LLM assessment.
+    """
+    label = _DIMENSION_LABELS.get(state_key, state_key)
+    return (
+        f"NARRATIVE UNAVAILABLE: The {label} data for {symbol} was retrieved "
+        "(any charts/figures shown are valid), but the AI narrative could not "
+        "be generated this run due to a temporary error. This dimension was "
+        "excluded from the verdict score; state this gap and its effect in the report."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Node factory — creates closures that share the injected LLM
 # ---------------------------------------------------------------------------
@@ -197,9 +214,7 @@ def _make_specialist_node(
 
         try:
             agent = agent_class(llm)
-            result = agent.run(state["symbol"])
-            _publish_agent_done()
-            return {state_key: result}  # type: ignore[return-value]
+            data = agent.fetch(state["symbol"])
         except EmptyAgentDataError:
             # No data exists for this dimension (e.g. a stock that pays no
             # dividends). That is information, not a failure — continue with
@@ -214,10 +229,11 @@ def _make_specialist_node(
             _publish_agent_done()
             return {state_key: fallback, "data_gaps": [state_key]}  # type: ignore[return-value]
         except Exception as exc:
-            # An invalid/expired API key (or exhausted quota) fails every
-            # specialist identically — surface that real, actionable reason
-            # as a run-wide error so the user isn't shown the generic
-            # "no specialist could produce data" abort from the consolidator.
+            # Data retrieval itself failed (MCP timeout, network blip, or an
+            # invalid/expired API key when the fetch hits an LLM-backed tool).
+            # An auth/quota error fails every specialist identically — surface
+            # it as a run-wide error; otherwise degrade to a placeholder with
+            # no data to preserve.
             friendly = friendly_llm_error(exc)
             if friendly:
                 logger.error(
@@ -229,14 +245,8 @@ def _make_specialist_node(
                 )
                 _publish_agent_done()
                 return {"error": friendly, "data_gaps": [state_key]}  # type: ignore[return-value]
-            # Transient failure (MCP timeout, network blip, upstream API
-            # error). Also non-fatal: continue with a placeholder, exclude
-            # the dimension from the score, and let the report state the
-            # gap. The prompt forbids inventing numbers for gap dimensions,
-            # and a run where EVERY dimension failed still aborts in the
-            # consolidate node (systemic-failure guard).
             logger.error(
-                "%s failed for %s: %s — continuing without this dimension.",
+                "%s data fetch failed for %s: %s — continuing without this dimension.",
                 agent_class.__name__,
                 state["symbol"],
                 exc,
@@ -245,6 +255,38 @@ def _make_specialist_node(
             fallback = _fallback_analysis(state_key, state["symbol"], transient=True)
             _publish_agent_done()
             return {state_key: fallback, "data_gaps": [state_key]}  # type: ignore[return-value]
+
+        # Data is in hand. Narrate it with the LLM — but if narration fails,
+        # KEEP the fetched data so data-driven visualisations (e.g. the
+        # movement 1-year trend line) still render; only the narrative is lost.
+        try:
+            result = agent.analyze(state["symbol"], data)
+            _publish_agent_done()
+            return {state_key: result}  # type: ignore[return-value]
+        except Exception as exc:
+            friendly = friendly_llm_error(exc)
+            if friendly:
+                # Auth/quota — fails every specialist identically; abort run-wide.
+                logger.error(
+                    "%s narration failed for %s (LLM auth/quota): %s",
+                    agent_class.__name__,
+                    state["symbol"],
+                    exc,
+                    exc_info=True,
+                )
+                _publish_agent_done()
+                return {"error": friendly, "data_gaps": [state_key]}  # type: ignore[return-value]
+            logger.error(
+                "%s narration failed for %s: %s — keeping fetched data, dropping narrative.",
+                agent_class.__name__,
+                state["symbol"],
+                exc,
+                exc_info=True,
+            )
+            note = _narrative_unavailable_note(state_key, state["symbol"])
+            preserved = agent.wrap(data, note)
+            _publish_agent_done()
+            return {state_key: preserved, "data_gaps": [state_key]}  # type: ignore[return-value]
 
     return _node
 

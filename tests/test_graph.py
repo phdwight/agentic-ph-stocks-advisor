@@ -29,6 +29,34 @@ from ph_stocks_advisor.data.models import (
 from ph_stocks_advisor.graph.workflow import AGENT_REGISTRY, _build_graph_impl, run_analysis
 
 
+def _mock_specialist(
+    name,
+    analysis_cls,
+    data_instance,
+    *,
+    analysis_text="ok",
+    fetch_error=None,
+    analyze_error=None,
+):
+    """Build a mock specialist whose ``fetch``/``analyze``/``wrap`` mirror the
+    real :class:`SpecialistAgent` split, so tests exercise the node's
+    fetch-then-narrate flow (and data-preservation on narration failure)."""
+    agent = MagicMock()
+    inst = agent.return_value
+    if fetch_error is not None:
+        inst.fetch.side_effect = fetch_error
+    else:
+        inst.fetch.return_value = data_instance
+    if analyze_error is not None:
+        inst.analyze.side_effect = analyze_error
+    else:
+        inst.analyze.return_value = analysis_cls(data=data_instance, analysis=analysis_text)
+    # Real wrap() keeps the fetched data and swaps in the given note.
+    inst.wrap.side_effect = lambda data, note: analysis_cls(data=data, analysis=note)
+    agent.__name__ = name
+    return agent
+
+
 class TestBuildGraph:
     def test_graph_compiles(self):
         """The graph should compile without errors when given a mock LLM."""
@@ -56,36 +84,23 @@ class TestRunAnalysisIntegration:
     def test_full_pipeline(self):
         """All agents produce results and the consolidator merges them."""
         # Create mock agent classes
-        MockPriceAgent = MagicMock()
-        MockPriceAgent.return_value.run.return_value = PriceAnalysis(
-            data=StockPrice(symbol="TEL", current_price=1250.0),
-            analysis="Price OK.",
+        MockPriceAgent = _mock_specialist(
+            "PriceAgent", PriceAnalysis, StockPrice(symbol="TEL", current_price=1250.0), analysis_text="Price OK."
         )
-        MockDividendAgent = MagicMock()
-        MockDividendAgent.return_value.run.return_value = DividendAnalysis(
-            data=DividendInfo(symbol="TEL"),
-            analysis="Dividend OK.",
+        MockDividendAgent = _mock_specialist(
+            "DividendAgent", DividendAnalysis, DividendInfo(symbol="TEL"), analysis_text="Dividend OK."
         )
-        MockMovementAgent = MagicMock()
-        MockMovementAgent.return_value.run.return_value = MovementAnalysis(
-            data=PriceMovement(symbol="TEL"),
-            analysis="Movement OK.",
+        MockMovementAgent = _mock_specialist(
+            "MovementAgent", MovementAnalysis, PriceMovement(symbol="TEL"), analysis_text="Movement OK."
         )
-        MockValuationAgent = MagicMock()
-        MockValuationAgent.return_value.run.return_value = ValuationAnalysis(
-            data=FairValueEstimate(symbol="TEL"),
-            analysis="Valuation OK.",
+        MockValuationAgent = _mock_specialist(
+            "ValuationAgent", ValuationAnalysis, FairValueEstimate(symbol="TEL"), analysis_text="Valuation OK."
         )
-        MockControversyAgent = MagicMock()
-        MockControversyAgent.return_value.run.return_value = ControversyAnalysis(
-            data=ControversyInfo(symbol="TEL"),
-            analysis="Risk OK.",
+        MockControversyAgent = _mock_specialist(
+            "ControversyAgent", ControversyAnalysis, ControversyInfo(symbol="TEL"), analysis_text="Risk OK."
         )
-
-        MockSentimentAgent = MagicMock()
-        MockSentimentAgent.return_value.run.return_value = SentimentAnalysis(
-            data=SentimentInfo(symbol="TEL"),
-            analysis="Sentiment OK.",
+        MockSentimentAgent = _mock_specialist(
+            "SentimentAgent", SentimentAnalysis, SentimentInfo(symbol="TEL"), analysis_text="Sentiment OK."
         )
 
         MockConsolidator = MagicMock()
@@ -148,19 +163,9 @@ class TestGracefulDegradation:
     and the report can state the absence. Only an all-agents failure or an
     invalid symbol aborts."""
 
-    @staticmethod
-    def _ok_agent(name, analysis_cls, data_cls, analysis_text, symbol="TEL"):
-        mock = MagicMock()
-        mock.return_value.run.return_value = analysis_cls(
-            data=data_cls(symbol=symbol),
-            analysis=analysis_text,
-        )
-        mock.__name__ = name
-        return mock
-
     def _registry_with_failing(self, failing_names, side_effect, symbol="TEL"):
         entries = [
-            ("price_agent", "price_analysis", PriceAnalysis, None, "PriceAgent"),
+            ("price_agent", "price_analysis", PriceAnalysis, StockPrice, "PriceAgent"),
             ("dividend_agent", "dividend_analysis", DividendAnalysis, DividendInfo, "DividendAgent"),
             ("movement_agent", "movement_analysis", MovementAnalysis, PriceMovement, "MovementAgent"),
             ("valuation_agent", "valuation_analysis", ValuationAnalysis, FairValueEstimate, "ValuationAgent"),
@@ -169,20 +174,17 @@ class TestGracefulDegradation:
         ]
         registry = []
         for node, key, analysis_cls, data_cls, name in entries:
+            data_instance = (
+                StockPrice(symbol=symbol, current_price=100.0) if name == "PriceAgent" else data_cls(symbol=symbol)
+            )
             if name in failing_names:
-                failing = MagicMock()
-                failing.return_value.run.side_effect = side_effect
-                failing.__name__ = name
-                registry.append((node, key, failing))
-            elif name == "PriceAgent":
-                ok = MagicMock()
-                ok.return_value.run.return_value = PriceAnalysis(
-                    data=StockPrice(symbol=symbol, current_price=100.0), analysis="price ok"
-                )
-                ok.__name__ = name
-                registry.append((node, key, ok))
+                # The scenarios here are all data-fetch failures (empty data,
+                # MCP timeout, auth) — model them on ``fetch``.
+                agent = _mock_specialist(name, analysis_cls, data_instance, fetch_error=side_effect)
             else:
-                registry.append((node, key, self._ok_agent(name, analysis_cls, data_cls, f"{name} ok", symbol)))
+                text = "price ok" if name == "PriceAgent" else f"{name} ok"
+                agent = _mock_specialist(name, analysis_cls, data_instance, analysis_text=text)
+            registry.append((node, key, agent))
         return registry
 
     @staticmethod
@@ -238,6 +240,53 @@ class TestGracefulDegradation:
         advisor_state = MockConsolidator.return_value.run.call_args[0][0]
         assert advisor_state.data_gaps == ["movement_analysis"]
         assert "temporary error" in advisor_state.movement_analysis.analysis
+
+    def test_narration_failure_preserves_fetched_data(self):
+        """When the LLM narrative fails but data WAS fetched, the data (e.g. the
+        movement trend-line series) is kept so visualisations still render; the
+        dimension is still excluded from the verdict score."""
+        symbol = "TEL"
+        trend = [100.0, 101.0, 102.0, 103.0, 104.0]
+        registry = []
+        entries = [
+            ("price_agent", "price_analysis", PriceAnalysis, StockPrice(symbol=symbol, current_price=100.0)),
+            ("dividend_agent", "dividend_analysis", DividendAnalysis, DividendInfo(symbol=symbol)),
+            ("valuation_agent", "valuation_analysis", ValuationAnalysis, FairValueEstimate(symbol=symbol)),
+            ("controversy_agent", "controversy_analysis", ControversyAnalysis, ControversyInfo(symbol=symbol)),
+            ("sentiment_agent", "sentiment_analysis", SentimentAnalysis, SentimentInfo(symbol=symbol)),
+        ]
+        for node, key, cls, data in entries:
+            registry.append((node, key, _mock_specialist(node, cls, data, analysis_text=f"{node} ok")))
+        # Movement: fetch returns a populated series, but narration (analyze) fails.
+        movement_data = PriceMovement(symbol=symbol, year_start_price=100.0, year_end_price=104.0, monthly_prices=trend)
+        movement_agent = _mock_specialist(
+            "MovementAgent",
+            MovementAnalysis,
+            movement_data,
+            analyze_error=RuntimeError("LLM narration timed out"),
+        )
+        registry.insert(2, ("movement_agent", "movement_analysis", movement_agent))
+
+        MockConsolidator = MagicMock()
+        MockConsolidator.return_value.run.return_value = FinalReport(
+            symbol=symbol, verdict=Verdict.NOT_BUY, summary="ok", score=60
+        )
+        mock_llm = MagicMock()
+
+        with (
+            patch.object(workflow_mod, "AGENT_REGISTRY", registry),
+            patch.object(workflow_mod, "ConsolidatorAgent", MockConsolidator),
+            patch.object(workflow_mod, "validate_symbol", return_value=symbol),
+        ):
+            result = run_analysis(symbol, llm=mock_llm, mini_llm=mock_llm)
+
+        assert result.get("error") is None
+        assert result.get("final_report") is not None
+        advisor_state = MockConsolidator.return_value.run.call_args[0][0]
+        # Excluded from the score, but the fetched trend-line data survives.
+        assert advisor_state.data_gaps == ["movement_analysis"]
+        assert advisor_state.movement_analysis.data.monthly_prices == trend
+        assert "NARRATIVE UNAVAILABLE" in advisor_state.movement_analysis.analysis
 
     def test_all_agents_failing_aborts(self):
         """Systemic failure (every dimension gone) must still abort — there

@@ -59,6 +59,12 @@ class Settings:
     # as a real value and blank out the model name / provider.
     llm_provider: str = _env("LLM_PROVIDER", "openai").lower()
     llm_temperature: float = float(_env("LLM_TEMPERATURE", "OPENAI_TEMPERATURE", "0.2"))
+    # Newer OpenAI models (the gpt-6 generation and the o-series reasoning
+    # models) only accept the default temperature (1) and reject any
+    # caller-set value with a 400. Temperature is therefore OFF for OpenAI by
+    # default; set ``OPENAI_SEND_TEMPERATURE=true`` to forward
+    # ``llm_temperature`` to a model that still supports it (e.g. gpt-4o).
+    openai_send_temperature: bool = _env("OPENAI_SEND_TEMPERATURE", "false").lower() in ("1", "true", "yes", "on")
     # Anthropic models reject a caller-set max_tokens default of 1024 for long
     # structured output — give the consolidator room. OpenAI ignores this.
     llm_max_tokens: int = int(_env("LLM_MAX_TOKENS", "4096"))
@@ -344,7 +350,12 @@ def build_chat_model(spec: str, settings: Settings | None = None) -> BaseChatMod
         if not s.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required for an OpenAI LLM spec but is not set.")
         model = {"large": s.openai_model_large, "medium": s.openai_model_medium, "small": s.openai_model_small}[tier]
-        return ChatOpenAI(model=model, temperature=s.llm_temperature, api_key=s.openai_api_key)  # type: ignore[arg-type]
+        # Send ``temperature`` only when explicitly enabled — the gpt-6
+        # generation / o-series models reject a caller-set value with a 400
+        # ("temperature does not support X; only the default (1)").
+        if s.openai_send_temperature:
+            return ChatOpenAI(model=model, temperature=s.llm_temperature, api_key=s.openai_api_key)  # type: ignore[arg-type]
+        return ChatOpenAI(model=model, api_key=s.openai_api_key)  # type: ignore[arg-type]
 
     # anthropic
     if not s.anthropic_api_key:

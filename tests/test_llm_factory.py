@@ -31,6 +31,7 @@ def settings():
     s.anthropic_model_large = "claude-opus-4-8"
     s.anthropic_model_medium = "claude-sonnet-5"
     s.anthropic_model_small = "claude-haiku-4-5"
+    s.openai_send_temperature = False
     return s
 
 
@@ -68,13 +69,28 @@ def test_resolve_spec_rejects_bad_input(bad, settings):
 # ---------------------------------------------------------------------------
 
 
-def test_openai_spec_builds_chatopenai_with_temperature(settings):
+def test_openai_omits_temperature_by_default(settings):
+    """gpt-6 / o-series models reject a caller-set temperature, so the factory
+    must not send one unless explicitly enabled."""
     from langchain_openai import ChatOpenAI
 
+    settings.openai_send_temperature = False
     model = cfg.build_chat_model("openai:large", settings)
     assert isinstance(model, ChatOpenAI)
     assert _model_id(model) == "gpt-4o"
-    assert model.temperature == settings.llm_temperature
+    # langchain-openai leaves temperature unset (None) when omitted.
+    assert model.temperature is None
+
+
+def test_openai_sends_temperature_when_enabled(settings):
+    """Opt-in path for models that still support a caller-set temperature."""
+    from langchain_openai import ChatOpenAI
+
+    settings.openai_send_temperature = True
+    settings.llm_temperature = 0.2
+    model = cfg.build_chat_model("openai:large", settings)
+    assert isinstance(model, ChatOpenAI)
+    assert model.temperature == 0.2
 
 
 def test_anthropic_spec_builds_chatanthropic_without_temperature(settings):

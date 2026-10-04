@@ -125,93 +125,127 @@ def _invoke_llm(llm: BaseChatModel, prompt: str) -> str:
     return str(response.content)
 
 
-class PriceAgent:
+class SpecialistAgent:
+    """Base specialist agent: fetch market data, then narrate it with the LLM.
+
+    ``fetch`` (pure data retrieval) and ``analyze`` (LLM narration) are kept
+    deliberately separate so a caller can keep the fetched data — e.g. the
+    movement 1-year trend-line series — even when LLM narration fails. Data
+    driven visualisations therefore never depend on the LLM succeeding
+    (Single Responsibility: retrieval vs. narration).
+
+    Subclasses declare ``agent_name``, ``result_model`` and
+    ``prompt_template`` and implement ``_fetch``; ``_is_empty`` is optional
+    (defaults to "never empty" for dimensions that always carry signal).
+    New specialists extend this base rather than modifying the workflow
+    (Open/Closed).
+    """
+
+    agent_name: str
+    result_model: type
+    prompt_template: str
+
+    def __init__(self, llm: BaseChatModel) -> None:
+        self._llm = llm
+
+    def _fetch(self, symbol: str):
+        """Retrieve the dimension's raw data model (subclass hook)."""
+        raise NotImplementedError
+
+    def _is_empty(self, data) -> bool:
+        """Whether *data* carries no usable signal (subclass hook)."""
+        return False
+
+    def fetch(self, symbol: str):
+        """Retrieve the dimension's data, raising ``EmptyAgentDataError`` on no signal."""
+        data = self._fetch(symbol)
+        if self._is_empty(data):
+            raise EmptyAgentDataError(self.agent_name, symbol)
+        return data
+
+    def wrap(self, data, analysis: str):
+        """Combine fetched *data* with an *analysis* narrative into the result model."""
+        return self.result_model(data=data, analysis=analysis)
+
+    def analyze(self, symbol: str, data):
+        """Produce the LLM narrative for already-fetched *data* and wrap both."""
+        prompt = self.prompt_template.format(
+            symbol=symbol,
+            data=data.model_dump_json(indent=2),
+            today=get_today().isoformat(),
+        )
+        return self.wrap(data, _invoke_llm(self._llm, prompt))
+
+    def run(self, symbol: str):
+        """Fetch then analyze — the single-shot entry point (back-compat)."""
+        return self.analyze(symbol, self.fetch(symbol))
+
+
+class PriceAgent(SpecialistAgent):
     """Analyses the current stock price relative to its 52-week range."""
 
-    def __init__(self, llm: BaseChatModel) -> None:
-        self._llm = llm
+    agent_name = "PriceAgent"
+    result_model = PriceAnalysis
+    prompt_template = PRICE_ANALYSIS_PROMPT
 
-    def run(self, symbol: str) -> PriceAnalysis:
-        data = fetch_stock_price(symbol)
-        if _is_empty_stock_price(data):
-            raise EmptyAgentDataError("PriceAgent", symbol)
-        prompt = PRICE_ANALYSIS_PROMPT.format(
-            symbol=symbol,
-            data=data.model_dump_json(indent=2),
-            today=get_today().isoformat(),
-        )
-        return PriceAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
+    def _fetch(self, symbol: str) -> StockPrice:
+        return fetch_stock_price(symbol)
+
+    def _is_empty(self, data) -> bool:
+        return _is_empty_stock_price(data)
 
 
-class DividendAgent:
+class DividendAgent(SpecialistAgent):
     """Analyses dividend yield and sustainability."""
 
-    def __init__(self, llm: BaseChatModel) -> None:
-        self._llm = llm
+    agent_name = "DividendAgent"
+    result_model = DividendAnalysis
+    prompt_template = DIVIDEND_ANALYSIS_PROMPT
 
-    def run(self, symbol: str) -> DividendAnalysis:
-        data = fetch_dividend_info(symbol)
-        if _is_empty_dividend_info(data):
-            raise EmptyAgentDataError("DividendAgent", symbol)
-        prompt = DIVIDEND_ANALYSIS_PROMPT.format(
-            symbol=symbol,
-            data=data.model_dump_json(indent=2),
-            today=get_today().isoformat(),
-        )
-        return DividendAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
+    def _fetch(self, symbol: str) -> DividendInfo:
+        return fetch_dividend_info(symbol)
+
+    def _is_empty(self, data) -> bool:
+        return _is_empty_dividend_info(data)
 
 
-class MovementAgent:
+class MovementAgent(SpecialistAgent):
     """Analyses 1-year price trend, volatility, and patterns."""
 
-    def __init__(self, llm: BaseChatModel) -> None:
-        self._llm = llm
+    agent_name = "MovementAgent"
+    result_model = MovementAnalysis
+    prompt_template = MOVEMENT_ANALYSIS_PROMPT
 
-    def run(self, symbol: str) -> MovementAnalysis:
-        data = fetch_price_movement(symbol)
-        if _is_empty_price_movement(data):
-            raise EmptyAgentDataError("MovementAgent", symbol)
-        prompt = MOVEMENT_ANALYSIS_PROMPT.format(
-            symbol=symbol,
-            data=data.model_dump_json(indent=2),
-            today=get_today().isoformat(),
-        )
-        return MovementAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
+    def _fetch(self, symbol: str) -> PriceMovement:
+        return fetch_price_movement(symbol)
+
+    def _is_empty(self, data) -> bool:
+        return _is_empty_price_movement(data)
 
 
-class ValuationAgent:
+class ValuationAgent(SpecialistAgent):
     """Analyses fair value, PE/PB ratios, and discount/premium."""
 
-    def __init__(self, llm: BaseChatModel) -> None:
-        self._llm = llm
+    agent_name = "ValuationAgent"
+    result_model = ValuationAnalysis
+    prompt_template = VALUATION_ANALYSIS_PROMPT
 
-    def run(self, symbol: str) -> ValuationAnalysis:
-        data = fetch_fair_value(symbol)
-        prompt = VALUATION_ANALYSIS_PROMPT.format(
-            symbol=symbol,
-            data=data.model_dump_json(indent=2),
-            today=get_today().isoformat(),
-        )
-        return ValuationAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
+    def _fetch(self, symbol: str):
+        return fetch_fair_value(symbol)
 
 
-class ControversyAgent:
+class ControversyAgent(SpecialistAgent):
     """Detects price anomalies and flags risk factors."""
 
-    def __init__(self, llm: BaseChatModel) -> None:
-        self._llm = llm
+    agent_name = "ControversyAgent"
+    result_model = ControversyAnalysis
+    prompt_template = CONTROVERSY_ANALYSIS_PROMPT
 
-    def run(self, symbol: str) -> ControversyAnalysis:
-        data = fetch_controversy_info(symbol)
-        prompt = CONTROVERSY_ANALYSIS_PROMPT.format(
-            symbol=symbol,
-            data=data.model_dump_json(indent=2),
-            today=get_today().isoformat(),
-        )
-        return ControversyAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
+    def _fetch(self, symbol: str):
+        return fetch_controversy_info(symbol)
 
 
-class SentimentAgent:
+class SentimentAgent(SpecialistAgent):
     """Analyses global events and macro-level sentiment.
 
     Evaluates geopolitical risks, pandemics, global economic shifts,
@@ -219,14 +253,9 @@ class SentimentAgent:
     specific stock under analysis.
     """
 
-    def __init__(self, llm: BaseChatModel) -> None:
-        self._llm = llm
+    agent_name = "SentimentAgent"
+    result_model = SentimentAnalysis
+    prompt_template = SENTIMENT_ANALYSIS_PROMPT
 
-    def run(self, symbol: str) -> SentimentAnalysis:
-        data = fetch_sentiment_info(symbol)
-        prompt = SENTIMENT_ANALYSIS_PROMPT.format(
-            symbol=symbol,
-            data=data.model_dump_json(indent=2),
-            today=get_today().isoformat(),
-        )
-        return SentimentAnalysis(data=data, analysis=_invoke_llm(self._llm, prompt))
+    def _fetch(self, symbol: str):
+        return fetch_sentiment_info(symbol)
