@@ -293,7 +293,8 @@ LLM specs are `[provider:]tier` (provider ∈ `openai`|`anthropic`, tier ∈ `la
 | `OPENAI_API_KEY` | Cond. | — | OpenAI API key. Required when any agent uses an `openai` spec (the default) |
 | `ANTHROPIC_API_KEY` | Cond. | — | Anthropic API key. Required only when any agent uses an `anthropic` spec |
 | `LLM_PROVIDER` | No | `openai` | Default provider (`openai` or `anthropic`) when an agent spec omits one |
-| `LLM_TEMPERATURE` | No | `0.2` | Sampling temperature (sent to OpenAI; **omitted for Anthropic** — Opus 4.8 / Sonnet 5 reject a caller-set temperature). Alias: `OPENAI_TEMPERATURE` |
+| `LLM_TEMPERATURE` | No | `0.2` | Sampling temperature. **Omitted for Anthropic** (Opus 4.8 / Sonnet 5 reject a caller-set value) and, by default, for OpenAI too — only sent to OpenAI when `OPENAI_SEND_TEMPERATURE=true`. Alias: `OPENAI_TEMPERATURE` |
+| `OPENAI_SEND_TEMPERATURE` | No | `false` | Forward `LLM_TEMPERATURE` to OpenAI. Keep off for gpt-6 / o-series models (they accept only the default temperature and 400 otherwise); set `true` for models that support it (e.g. gpt-4o) |
 | `LLM_MAX_TOKENS` | No | `4096` | Max output tokens applied to Anthropic models (OpenAI ignores) |
 | `OPENAI_MODEL_LARGE` | No | `gpt-4o` | OpenAI large tier (falls back to `OPENAI_MODEL` if set) |
 | `OPENAI_MODEL_MEDIUM` | No | `gpt-4o-mini` | OpenAI medium tier |
