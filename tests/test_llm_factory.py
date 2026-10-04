@@ -147,6 +147,51 @@ def test_agents_can_mix_providers(settings, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Structured-output method selection
+#
+# Newer Anthropic models reject the forced ``tool_choice`` used by the default
+# ``function_calling`` method with a 400, so Anthropic models must use native
+# ``json_schema`` structured outputs. Other providers keep their default.
+# ---------------------------------------------------------------------------
+
+
+def test_anthropic_structured_output_uses_json_schema(settings):
+    from unittest.mock import patch
+
+    from langchain_anthropic import ChatAnthropic
+    from pydantic import BaseModel
+
+    class _Schema(BaseModel):
+        ok: bool
+
+    llm = cfg.build_chat_model("anthropic:large", settings)
+    assert isinstance(llm, ChatAnthropic)
+
+    with patch.object(ChatAnthropic, "with_structured_output", autospec=True) as spy:
+        cfg.build_structured_llm(llm, _Schema)
+
+    spy.assert_called_once_with(llm, _Schema, method="json_schema")
+
+
+def test_openai_structured_output_uses_default_method(settings):
+    from unittest.mock import patch
+
+    from langchain_openai import ChatOpenAI
+    from pydantic import BaseModel
+
+    class _Schema(BaseModel):
+        ok: bool
+
+    llm = cfg.build_chat_model("openai:large", settings)
+    assert isinstance(llm, ChatOpenAI)
+
+    with patch.object(ChatOpenAI, "with_structured_output", autospec=True) as spy:
+        cfg.build_structured_llm(llm, _Schema)
+
+    spy.assert_called_once_with(llm, _Schema)
+
+
+# ---------------------------------------------------------------------------
 # Back-compat shims
 # ---------------------------------------------------------------------------
 

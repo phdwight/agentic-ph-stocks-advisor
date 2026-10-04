@@ -26,7 +26,7 @@ from ph_stocks_advisor.data.models import (
     Verdict,
     score_band,
 )
-from ph_stocks_advisor.infra.config import get_settings, get_today
+from ph_stocks_advisor.infra.config import build_structured_llm, get_settings, get_today
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class ConsolidatorAgent:
         label, and the badge can never contradict each other.
         """
         try:
-            structured_llm = self._llm.with_structured_output(ConsolidationResponse)
+            structured_llm = build_structured_llm(self._llm, ConsolidationResponse)
             result: ConsolidationResponse = structured_llm.invoke([HumanMessage(content=prompt)])  # type: ignore[assignment]
             # Dimensions without real data are excluded from the score
             # deterministically — the weighted average renormalises over

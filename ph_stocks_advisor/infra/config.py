@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import Runnable
 from langchain_openai import ChatOpenAI
 
 from ph_stocks_advisor.infra.repository import AbstractReportRepository
@@ -356,6 +357,24 @@ def build_chat_model(spec: str, settings: Settings | None = None) -> BaseChatMod
     # Deliberately omit ``temperature``: current Claude models (Opus 4.8,
     # Sonnet 5, …) reject a caller-set temperature with a 400.
     return ChatAnthropic(model=model, max_tokens=s.llm_max_tokens, api_key=s.anthropic_api_key)  # type: ignore[call-arg]
+
+
+def build_structured_llm(llm: BaseChatModel, schema: type) -> Runnable:
+    """Wrap *llm* so it emits *schema*, using a method the provider supports.
+
+    ``with_structured_output`` defaults to the ``function_calling`` method,
+    which forces ``tool_choice`` to ``"tool"``/``"any"``. Newer Anthropic
+    models reject that with a 400 (``tool_choice ... not supported for this
+    model``), so Anthropic models use native ``json_schema`` structured
+    outputs instead. Other providers keep their default method.
+
+    Centralised here (where provider knowledge lives) so agents stay
+    provider-agnostic — they depend on this abstraction, not on concrete
+    chat-model classes (Dependency Inversion Principle).
+    """
+    if type(llm).__module__.split(".")[0] == "langchain_anthropic":
+        return llm.with_structured_output(schema, method="json_schema")
+    return llm.with_structured_output(schema)
 
 
 def get_agent_llm(agent: str, settings: Settings | None = None) -> BaseChatModel:

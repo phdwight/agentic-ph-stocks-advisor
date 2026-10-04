@@ -21,15 +21,17 @@ from langchain_core.messages import AIMessage
 # Hermetic auth defaults.
 #
 # ``infra.config`` runs ``load_dotenv()`` at import, so a developer's local
-# ``.env`` (e.g. WEBAUTHN_RP_ID=localhost for Docker passkeys) would silently
-# flip ``auth_enabled`` for the whole suite. Pre-setting the keys here wins
-# because ``load_dotenv`` never overrides existing environ entries — and this
-# must happen at module level, BEFORE the app imports below evaluate Settings.
-# Tests that want passkeys on set the vars themselves (see test_passkey.py).
+# ``.env`` (e.g. WEBAUTHN_RP_ID=localhost for Docker passkeys) — or a real
+# environment variable injected by Docker Compose — would silently flip
+# ``auth_enabled`` for the whole suite. ``setdefault`` is not enough: when the
+# var is already present in ``os.environ`` (the Compose case) it is a no-op and
+# auth stays on. Force the keys empty so the suite is auth-off by default in
+# every environment (CI, local, Docker). Tests that want passkeys on set the
+# vars themselves (see test_passkey.py).
 # ---------------------------------------------------------------------------
 
-os.environ.setdefault("WEBAUTHN_RP_ID", "")
-os.environ.setdefault("WEBAUTHN_ORIGIN", "")
+os.environ["WEBAUTHN_RP_ID"] = ""
+os.environ["WEBAUTHN_ORIGIN"] = ""
 
 # ---------------------------------------------------------------------------
 # Disable Langfuse tracing for the entire test session so mocked
