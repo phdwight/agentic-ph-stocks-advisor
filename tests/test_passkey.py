@@ -158,6 +158,32 @@ def _request_code(client, mail: RecordingSender, email: str, hdr: dict[str, str]
     return match.group(1)
 
 
+def _login_code(client, mail: RecordingSender, email: str, hdr: dict[str, str]) -> dict:
+    """Run ``login/begin`` for a passkey-less email; return its JSON plus the
+    emailed ``code``. Clears the sign-in resend cooldown first."""
+    import re
+
+    with client.session_transaction() as sess:
+        sess.pop("pk_lc_sent_at", None)
+    resp = client.post("/auth/passkey/login/begin", json={"email": email}, headers=hdr)
+    assert resp.status_code == 200, resp.get_json()
+    data = resp.get_json()
+    assert data["otp"] is True
+    to, subject, html = mail.sent[-1]
+    assert to == email
+    assert "sign-in code" in subject
+    match = re.search(r"\b(\d{6})\b", html)
+    assert match, "sign-in email must contain a 6-digit code"
+    return {**data, "code": match.group(1)}
+
+
+def _seed_user_without_passkey(email: str, oid: str = "google:seed") -> None:
+    from ph_stocks_advisor.infra.config import get_repository
+    from ph_stocks_advisor.infra.repository import UserRecord
+
+    get_repository().save_user(UserRecord(oid=oid, name="Oauth Only", email=email, provider="google"))
+
+
 # ---------------------------------------------------------------------------
 # Behaviour
 # ---------------------------------------------------------------------------
@@ -189,27 +215,30 @@ def test_disabled_returns_404(monkeypatch, tmp_path):
     cfg.get_settings.cache_clear()
 
 
-def test_login_begin_returns_decoy_options(pk_client):
-    hdr = _csrf(pk_client)
-    resp = pk_client.post("/auth/passkey/login/begin", json={"email": "nobody@example.com"}, headers=hdr)
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert "challenge" in data
-    assert data["allowCredentials"], "unknown email must still get a (decoy) allowCredentials"
-
-    # Decoy is deterministic per email so repeated probes can't distinguish it.
-    again = pk_client.post("/auth/passkey/login/begin", json={"email": "nobody@example.com"}, headers=hdr)
-    assert again.get_json()["allowCredentials"][0]["id"] == data["allowCredentials"][0]["id"]
-
-
-def test_login_begin_known_and_unknown_are_indistinguishable(pk_client):
+def test_login_begin_with_passkey_returns_webauthn_options(pk_client, mail):
     _seed_user_with_credential("known@example.com")
     hdr = _csrf(pk_client)
-    known = pk_client.post("/auth/passkey/login/begin", json={"email": "known@example.com"}, headers=hdr).get_json()
-    unknown = pk_client.post("/auth/passkey/login/begin", json={"email": "ghost@example.com"}, headers=hdr).get_json()
-    # Same response shape; both non-empty — nothing reveals which email exists.
-    assert set(known.keys()) == set(unknown.keys())
-    assert known["allowCredentials"] and unknown["allowCredentials"]
+    resp = pk_client.post("/auth/passkey/login/begin", json={"email": "known@example.com"}, headers=hdr)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "challenge" in data and data["allowCredentials"]
+    assert "otp" not in data
+    assert mail.sent == [], "a passkey account must not be emailed a code"
+
+
+def test_login_begin_unknown_email_emails_a_code_for_a_new_account(pk_client, mail):
+    hdr = _csrf(pk_client)
+    data = _login_code(pk_client, mail, "nobody@example.com", hdr)
+    assert data["new_account"] is True
+    assert data["sent"] is True
+    assert "challenge" not in data
+
+
+def test_login_begin_account_without_passkey_emails_a_code(pk_client, mail):
+    _seed_user_without_passkey("oauth@example.com")
+    hdr = _csrf(pk_client)
+    data = _login_code(pk_client, mail, "oauth@example.com", hdr)
+    assert data["new_account"] is False
 
 
 def test_login_begin_offers_hybrid_for_cross_device(pk_client):
@@ -223,8 +252,9 @@ def test_login_begin_offers_hybrid_for_cross_device(pk_client):
 
 
 def test_login_complete_unknown_credential_is_generic_401(pk_client):
+    _seed_user_with_credential("known@example.com")
     hdr = _csrf(pk_client)
-    pk_client.post("/auth/passkey/login/begin", json={"email": "nobody@example.com"}, headers=hdr)
+    pk_client.post("/auth/passkey/login/begin", json={"email": "known@example.com"}, headers=hdr)
     resp = pk_client.post(
         "/auth/passkey/login/complete",
         json={"id": "bm90LXJlYWw", "type": "public-key", "response": {}},
@@ -232,6 +262,154 @@ def test_login_complete_unknown_credential_is_generic_401(pk_client):
     )
     assert resp.status_code == 401
     assert resp.get_json()["error"] == "Couldn't sign you in with a passkey. Check the email and try again."
+
+
+# ---------------------------------------------------------------------------
+# Sign-in by emailed one-time code (accounts without a passkey)
+# ---------------------------------------------------------------------------
+
+
+def test_login_code_signs_in_an_existing_account(pk_client, mail):
+    _seed_user_without_passkey("oauth@example.com", oid="google:abc")
+    hdr = _csrf(pk_client)
+    code = _login_code(pk_client, mail, "oauth@example.com", hdr)["code"]
+    resp = pk_client.post(
+        "/auth/passkey/login/verify-code", json={"email": "oauth@example.com", "code": code}, headers=hdr
+    )
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["ok"] is True
+    with pk_client.session_transaction() as sess:
+        assert sess["user"]["oid"] == "google:abc"
+        assert sess["user"]["provider"] == "email"
+        assert "pk_lc_codes" not in sess
+
+
+def test_login_code_creates_a_new_account_only_with_consent(pk_client, mail):
+    from ph_stocks_advisor.infra.config import get_repository
+
+    hdr = _csrf(pk_client)
+    code = _login_code(pk_client, mail, "fresh@example.com", hdr)["code"]
+    payload = {"email": "fresh@example.com", "code": code, "name": "Fresh User"}
+
+    # No consent → refused, and the attempt is NOT burned.
+    resp = pk_client.post("/auth/passkey/login/verify-code", json=payload, headers=hdr)
+    assert resp.status_code == 400
+    assert "accept" in resp.get_json()["error"].lower()
+    with pk_client.session_transaction() as sess:
+        assert sess.get("pk_lc_attempts") == 0
+
+    resp = pk_client.post("/auth/passkey/login/verify-code", json={**payload, "accept_disclaimer": True}, headers=hdr)
+    assert resp.status_code == 200, resp.get_json()
+    user = get_repository().get_user_by_email("fresh@example.com")
+    assert user is not None
+    assert user.name == "Fresh User" and user.provider == "email"
+    assert user.oid.startswith("email:")
+    assert user.disclaimer_version and user.disclaimer_accepted_at
+
+
+def test_login_code_is_single_use(pk_client, mail):
+    _seed_user_without_passkey("oauth@example.com")
+    hdr = _csrf(pk_client)
+    code = _login_code(pk_client, mail, "oauth@example.com", hdr)["code"]
+    payload = {"email": "oauth@example.com", "code": code}
+    assert pk_client.post("/auth/passkey/login/verify-code", json=payload, headers=hdr).status_code == 200
+    assert pk_client.post("/auth/passkey/login/verify-code", json=payload, headers=hdr).status_code == 400
+
+
+def test_login_code_wrong_guesses_lock_out(pk_client, mail):
+    _seed_user_without_passkey("oauth@example.com")
+    hdr = _csrf(pk_client)
+    code = _login_code(pk_client, mail, "oauth@example.com", hdr)["code"]
+    wrong = "000000" if code != "000000" else "111111"
+    for _ in range(5):
+        resp = pk_client.post(
+            "/auth/passkey/login/verify-code", json={"email": "oauth@example.com", "code": wrong}, headers=hdr
+        )
+        assert resp.status_code == 400
+    resp = pk_client.post(
+        "/auth/passkey/login/verify-code", json={"email": "oauth@example.com", "code": code}, headers=hdr
+    )
+    assert resp.status_code == 400
+
+
+def test_login_code_is_bound_to_its_email(pk_client, mail):
+    _seed_user_without_passkey("alice@example.com", oid="google:alice")
+    _seed_user_without_passkey("mallory@example.com", oid="google:mallory")
+    hdr = _csrf(pk_client)
+    code = _login_code(pk_client, mail, "alice@example.com", hdr)["code"]
+    resp = pk_client.post(
+        "/auth/passkey/login/verify-code", json={"email": "mallory@example.com", "code": code}, headers=hdr
+    )
+    assert resp.status_code == 400
+
+
+def test_login_begin_reuses_a_recent_code_instead_of_resending(pk_client, mail):
+    hdr = _csrf(pk_client)
+    _login_code(pk_client, mail, "nobody@example.com", hdr)
+    again = pk_client.post("/auth/passkey/login/begin", json={"email": "nobody@example.com"}, headers=hdr)
+    assert again.status_code == 200
+    assert again.get_json()["otp"] is True and again.get_json()["sent"] is False
+    assert len(mail.sent) == 1
+    # A DIFFERENT address inside the cooldown is throttled (no mail-bombing).
+    other = pk_client.post("/auth/passkey/login/begin", json={"email": "other@example.com"}, headers=hdr)
+    assert other.status_code == 429
+    assert len(mail.sent) == 1
+
+
+def test_login_resend_is_throttled_and_refuses_passkey_accounts(pk_client, mail):
+    hdr = _csrf(pk_client)
+    _login_code(pk_client, mail, "nobody@example.com", hdr)
+    resp = pk_client.post("/auth/passkey/login/send-code", json={"email": "nobody@example.com"}, headers=hdr)
+    assert resp.status_code == 429
+
+    _seed_user_with_credential("known@example.com")
+    resp = pk_client.post("/auth/passkey/login/send-code", json={"email": "known@example.com"}, headers=hdr)
+    assert resp.status_code == 400
+    assert resp.get_json()["use_passkey"] is True
+    assert len(mail.sent) == 1
+
+
+def test_login_code_refused_once_the_account_has_a_passkey(pk_client, mail):
+    _seed_user_without_passkey("later@example.com", oid="passkey:later")
+    hdr = _csrf(pk_client)
+    code = _login_code(pk_client, mail, "later@example.com", hdr)["code"]
+    _seed_user_with_credential("later@example.com", oid="passkey:later")  # passkey added meanwhile
+    resp = pk_client.post(
+        "/auth/passkey/login/verify-code", json={"email": "later@example.com", "code": code}, headers=hdr
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["use_passkey"] is True
+    with pk_client.session_transaction() as sess:
+        assert "user" not in sess
+
+
+def test_signup_and_login_codes_do_not_cross(pk_client, mail):
+    """A sign-up verification code must not work as a sign-in code."""
+    hdr = _csrf(pk_client)
+    signup_code = _request_code(pk_client, mail, "new@example.com", hdr)
+    resp = pk_client.post(
+        "/auth/passkey/login/verify-code",
+        json={"email": "new@example.com", "code": signup_code, "accept_disclaimer": True},
+        headers=hdr,
+    )
+    assert resp.status_code == 400
+
+
+def test_login_send_failure_is_a_502_and_leaves_no_code_state(pk_client, monkeypatch):
+    from ph_stocks_advisor.infra.email import EmailSendError
+
+    class BrokenSender:
+        def send(self, **_kw) -> None:
+            raise EmailSendError("provider down")
+
+    monkeypatch.setattr("ph_stocks_advisor.web.passkey.get_email_sender", lambda: BrokenSender())
+    hdr = _csrf(pk_client)
+    resp = pk_client.post("/auth/passkey/login/begin", json={"email": "nobody@example.com"}, headers=hdr)
+    assert resp.status_code == 502
+    assert "sign-in code" in resp.get_json()["error"]
+    with pk_client.session_transaction() as sess:
+        assert "pk_lc_codes" not in sess
+        assert "pk_lc_sent_at" not in sess
 
 
 def test_register_begin_new_email_with_code_returns_options(pk_client, mail):
@@ -561,6 +739,7 @@ def test_quota_exhausted_send_is_a_503_with_actionable_message(pk_client, monkey
     html = pk_client.get("/auth/login").get_data(as_text=True)
     assert 'id="pk-code"' in html
     assert 'id="pk-resend"' in html
+    assert 'class="loading-spinner pk-btn-spinner"' in html
 
 
 def test_login_page_shows_the_full_disclaimer_and_consent_box(pk_client):

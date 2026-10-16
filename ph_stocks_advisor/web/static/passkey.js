@@ -1,22 +1,24 @@
 /**
  * Passkey (WebAuthn) sign-in — email-first.
  *
- * "Sign in with a passkey" runs the authentication ceremony for the typed
- * email; "Create an account" reveals a name field and runs registration.
- * All POSTs carry the CSRF token. Failures show one generic message
- * (the server is deliberately uniform for anti-enumeration).
+ * "Continue" sends the typed email to the server, which picks the method:
+ * an account with a passkey runs the authentication ceremony; an account
+ * without one (or an email with no account yet) is emailed a one-time
+ * 6-digit code, and the form switches to a code field (plus name + consent
+ * for a brand-new account). "Create an account" reveals a name field and
+ * runs passkey registration.
+ * All POSTs carry the CSRF token.
  */
 (function () {
   "use strict";
 
   const form = document.getElementById("passkey-form");
-  if (!form || !window.PublicKeyCredential) {
-    // No passkey UI, or the browser lacks WebAuthn — leave OAuth as the path.
-    if (form && !window.PublicKeyCredential) {
-      showError("This browser doesn't support passkeys. Use a recovery sign-in below.");
-    }
-    return;
-  }
+  if (!form) return; // No passkey UI — leave OAuth as the path.
+
+  // Without WebAuthn the emailed-code path still works; only the passkey
+  // ceremonies need it, and they report the problem when they're reached.
+  const webauthnOK = !!window.PublicKeyCredential;
+  const NO_WEBAUTHN_MSG = "This browser doesn't support passkeys. Use a recovery sign-in below.";
 
   const emailInput = document.getElementById("pk-email");
   const nameInput = document.getElementById("pk-name");
@@ -28,12 +30,19 @@
   const codeBlock = document.getElementById("pk-code-block");
   const codeInput = document.getElementById("pk-code");
   const codeEmailEl = document.getElementById("pk-code-email");
+  const codeLeadEl = document.getElementById("pk-code-lead");
+  const codeTailEl = document.getElementById("pk-code-tail");
   const resendBtn = document.getElementById("pk-resend");
 
   let mode = "login"; // "login" | "register"
   // Registration is two steps: "form" (email + consent → server emails a
   // code) then "code" (type the code → WebAuthn ceremony).
   let regStage = "form";
+  // Sign-in is "email" (server picks passkey or emailed code) then, for an
+  // email without a passkey, "code" (type the emailed one-time code).
+  let loginStage = "email";
+  let loginNew = false; // code-stage email has no account yet → name + consent
+  let loginEmail = ""; // the (normalised) address the sign-in code went to
 
   const csrf = () =>
     document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
@@ -63,11 +72,19 @@
     if (errorEl) errorEl.style.display = "none";
   }
   function idleLabel() {
-    if (mode !== "register") return "Sign in with a passkey";
-    return regStage === "code" ? "Verify code & create account" : "Email me a verification code";
+    if (mode === "register") {
+      return regStage === "code" ? "Verify code & create account" : "Email me a verification code";
+    }
+    if (loginStage === "code") return loginNew ? "Verify code & create account" : "Verify code & sign in";
+    return "Continue";
   }
-  function busy(on) {
-    signinBtn.querySelector("span").textContent = on ? "Working…" : idleLabel();
+  const btnSpinner = signinBtn ? signinBtn.querySelector(".pk-btn-spinner") : null;
+
+  function busy(on, label) {
+    signinBtn.querySelector("span").textContent = on ? label || "Working…" : idleLabel();
+    signinBtn.classList.toggle("is-busy", !!on);
+    signinBtn.setAttribute("aria-busy", on ? "true" : "false");
+    if (btnSpinner) btnSpinner.hidden = !on;
     if (on) {
       signinBtn.disabled = true;
       signinBtn.classList.add("is-disabled");
@@ -77,6 +94,15 @@
       // unticked, and must not revert to the sign-in label mid-registration.
       syncConsentState();
     }
+  }
+
+  /** An error carrying a message meant for the user (shown verbatim). */
+  function userError(msg, status) {
+    const err = new Error(msg);
+    err.name = "BeginError";
+    err.serverMessage = msg;
+    err.status = status;
+    return err;
   }
 
   /** Raise an error that carries the server's own message, so a real cause
@@ -89,10 +115,8 @@
     } catch {
       /* non-JSON body (proxy error page, 500) — fall through */
     }
-    const err = new Error(msg || `Request failed (${resp.status})`);
-    err.name = "BeginError";
+    const err = userError(msg || `Request failed (${resp.status})`, resp.status);
     err.serverMessage = msg;
-    err.status = resp.status;
     return err;
   }
 
@@ -112,14 +136,22 @@
   }
 
   // ---- ceremonies ---------------------------------------------------------
-  async function doLogin(email) {
+  /** Ask the server how this email signs in: WebAuthn options, or
+   *  ``{otp: true, new_account, sent}`` when a code was emailed instead. */
+  async function beginLogin(email) {
     const optResp = await postJSON("/auth/passkey/login/begin", { email });
     if (!optResp.ok) throw await beginError(optResp);
-    const options = await optResp.json();
+    return optResp.json();
+  }
+
+  async function doLogin(options) {
+    if (!webauthnOK) throw userError(NO_WEBAUTHN_MSG);
     options.challenge = b64urlToBuf(options.challenge);
     (options.allowCredentials || []).forEach((c) => (c.id = b64urlToBuf(c.id)));
 
+    busy(true, "Waiting for passkey…");
     const cred = await navigator.credentials.get({ publicKey: options });
+    busy(true, "Signing in…");
     const payload = {
       id: cred.id,
       rawId: bufToB64url(cred.rawId),
@@ -136,6 +168,17 @@
     return done;
   }
 
+  /** Sign in with the emailed one-time code. */
+  async function doCodeLogin(email, code, name) {
+    return postJSON("/auth/passkey/login/verify-code", {
+      email,
+      code,
+      name,
+      // Only a brand-new account needs consent; the server re-checks.
+      accept_disclaimer: loginNew && !!(acceptBox && acceptBox.checked),
+    });
+  }
+
   async function doRegister(email, name, code) {
     const optResp = await postJSON("/auth/passkey/register/begin", {
       email,
@@ -149,7 +192,9 @@
     options.user.id = b64urlToBuf(options.user.id);
     (options.excludeCredentials || []).forEach((c) => (c.id = b64urlToBuf(c.id)));
 
+    busy(true, "Waiting for passkey…");
     const cred = await navigator.credentials.create({ publicKey: options });
+    busy(true, "Creating account…");
     const payload = {
       id: cred.id,
       rawId: bufToB64url(cred.rawId),
@@ -166,26 +211,37 @@
     return done;
   }
 
-  /** Ask the server to email a verification code; true on success. */
+  /** Ask the server to (re)email a code for the current flow; true on success. */
   async function sendCode(email) {
-    const resp = await postJSON("/auth/passkey/register/send-code", {
-      email,
-      accept_disclaimer: true, // the server re-checks; the UI cannot be the only gate
-    });
+    const resp =
+      mode === "register"
+        ? await postJSON("/auth/passkey/register/send-code", {
+            email,
+            accept_disclaimer: true, // the server re-checks; the UI cannot be the only gate
+          })
+        : await postJSON("/auth/passkey/login/send-code", { email });
     if (resp.ok) return true;
-    let msg = "";
+    let data = {};
     try {
-      msg = (await resp.json()).error || "";
+      data = (await resp.json()) || {};
     } catch {
       /* non-JSON body — fall through to the generic message */
     }
-    showError(msg || "Couldn't send the verification code. Try again.");
+    // The account gained a passkey — go back so "Continue" runs the ceremony.
+    if (data.use_passkey && mode === "login") leaveLoginCodeStage();
+    showError(data.error || "Couldn't send the code. Try again.");
     return false;
+  }
+
+  function setCodeHint(lead, email, tail) {
+    if (codeLeadEl) codeLeadEl.textContent = lead;
+    if (codeEmailEl) codeEmailEl.textContent = email;
+    if (codeTailEl) codeTailEl.textContent = tail;
   }
 
   function enterCodeStage(email) {
     regStage = "code";
-    if (codeEmailEl) codeEmailEl.textContent = email;
+    setCodeHint("We emailed a 6-digit code to", email, "Enter it below to confirm your email.");
     if (codeBlock) codeBlock.style.display = "";
     // The form step is done — hide it so the code has the user's focus.
     // Email stays visible (and typable: editing it just means the code
@@ -199,6 +255,37 @@
     regStage = "form";
     if (codeBlock) codeBlock.style.display = "none";
     if (codeInput) codeInput.value = "";
+    syncConsentState();
+  }
+
+  /** No passkey for this email — a sign-in code was emailed (or, if
+   *  ``info.sent`` is false, one sent moments ago is still valid). */
+  function enterLoginCodeStage(email, info) {
+    loginStage = "code";
+    loginNew = !!info.new_account;
+    loginEmail = (info.email || email).toLowerCase();
+    setCodeHint(
+      info.sent === false ? "We already emailed a 6-digit sign-in code to" : "We emailed a 6-digit sign-in code to",
+      loginEmail,
+      loginNew
+        ? "There's no account for this email yet — enter the code, your name, and accept the terms below to create one."
+        : "Enter it below to sign in."
+    );
+    if (codeBlock) codeBlock.style.display = "";
+    if (codeInput) codeInput.value = "";
+    // A new account gets a display name, like passkey sign-up.
+    nameInput.style.display = loginNew ? "" : "none";
+    syncConsentState();
+    if (codeInput) codeInput.focus();
+  }
+
+  function leaveLoginCodeStage() {
+    loginStage = "email";
+    loginNew = false;
+    loginEmail = "";
+    if (codeBlock) codeBlock.style.display = "none";
+    if (codeInput) codeInput.value = "";
+    if (mode === "login") nameInput.style.display = "none";
     syncConsentState();
   }
 
@@ -216,7 +303,11 @@
 
     // Registration step 1: no ceremony yet — just get the code emailed.
     if (mode === "register" && regStage === "form") {
-      busy(true);
+      if (!webauthnOK) {
+        showError(NO_WEBAUTHN_MSG);
+        return;
+      }
+      busy(true, "Sending code…");
       try {
         if (await sendCode(email)) enterCodeStage(email);
       } finally {
@@ -225,23 +316,43 @@
       return;
     }
 
+    const loginByCode = mode === "login" && loginStage === "code";
     let code = "";
-    if (mode === "register") {
-      code = (codeInput && codeInput.value ? codeInput.value : "").trim();
+    if (mode === "register" || loginByCode) {
+      code = (codeInput && codeInput.value ? codeInput.value : "").replace(/\s+/g, "");
       if (!/^\d{6}$/.test(code)) {
         showError("Enter the 6-digit code from the email.");
         return;
       }
     }
 
-    busy(true);
+    let redirecting = false;
+    busy(true, mode === "register" || loginByCode ? "Verifying code…" : "Working…");
     try {
-      const resp = mode === "register" ? await doRegister(email, name, code) : await doLogin(email);
+      let resp;
+      if (mode === "register") {
+        resp = await doRegister(email, name, code);
+      } else if (loginByCode) {
+        resp = await doCodeLogin(email, code, name);
+      } else {
+        const begin = await beginLogin(email);
+        if (begin.otp) {
+          // No passkey on this account (or no account yet) — a code was emailed.
+          enterLoginCodeStage(email, begin);
+          return;
+        }
+        resp = await doLogin(begin);
+      }
       const data = await resp.json().catch(() => ({}));
       if (resp.ok && data.ok) {
+        redirecting = true;
+        busy(true, "Redirecting…");
         window.location.href = data.redirect || "/";
         return;
       }
+      // The account gained a passkey since the code went out — step back
+      // so "Continue" runs the passkey ceremony instead.
+      if (data.use_passkey && loginByCode) leaveLoginCodeStage();
       showError(data.error || "Something went wrong. Try again.");
     } catch (err) {
       // Log the real cause for support/diagnosis; the visible text stays
@@ -252,6 +363,8 @@
         // The server explained itself (already registered, terms not
         // accepted, invalid email) — show that, don't bury it.
         showError(err.serverMessage);
+      } else if (loginByCode) {
+        showError("Couldn't sign you in right now. Check your connection and try again.");
       } else if (err && err.name === "InvalidStateError") {
         showError(
           mode === "register"
@@ -274,7 +387,7 @@
         );
       }
     } finally {
-      busy(false);
+      if (!redirecting) busy(false);
     }
   }
 
@@ -283,16 +396,22 @@
     handleSubmit();
   });
 
-  // Registration requires accepting the disclaimer. The button stays disabled
-  // until the box is ticked; the server independently rejects an unaccepted
-  // registration, so this is convenience, not the security boundary.
+  // Creating an account requires accepting the disclaimer — both passkey
+  // registration and a new account via an emailed sign-in code. The button
+  // stays disabled until the box is ticked; the server independently rejects
+  // an unaccepted sign-up, so this is convenience, not the security boundary.
   function syncConsentState() {
-    if (!consentBlock || !acceptBox) return;
     const registering = mode === "register";
-    // Consent was already given when the code was requested — in the code
-    // stage the big terms block makes way for the code input.
-    consentBlock.style.display = registering && regStage === "form" ? "" : "none";
-    signinBtn.disabled = registering && !acceptBox.checked;
+    const newViaCode = mode === "login" && loginStage === "code" && loginNew;
+    if (consentBlock && acceptBox) {
+      // Consent was already given when the registration code was requested
+      // — in that code stage the big terms block makes way for the code
+      // input. A new account via sign-in code shows it alongside the code.
+      consentBlock.style.display = (registering && regStage === "form") || newViaCode ? "" : "none";
+      signinBtn.disabled = (registering || newViaCode) && !acceptBox.checked;
+    } else {
+      signinBtn.disabled = false;
+    }
     signinBtn.classList.toggle("is-disabled", signinBtn.disabled);
     signinBtn.querySelector("span").textContent = idleLabel();
   }
@@ -304,8 +423,19 @@
     });
   }
 
+  // Editing the email after a sign-in code went out means a different
+  // account — drop back to the email step so "Continue" starts afresh.
+  emailInput.addEventListener("input", () => {
+    if (mode === "login" && loginStage === "code" && emailInput.value.trim().toLowerCase() !== loginEmail) {
+      leaveLoginCodeStage();
+      clearError();
+    }
+  });
+
   registerToggle.addEventListener("click", () => {
-    leaveCodeStage(); // switching modes always restarts registration at step 1
+    // Switching modes always restarts either flow at step 1.
+    leaveCodeStage();
+    leaveLoginCodeStage();
     if (mode === "login") {
       mode = "register";
       nameInput.style.display = "";
@@ -324,8 +454,11 @@
       clearError();
       const email = (emailInput.value || "").trim();
       resendBtn.disabled = true;
+      resendBtn.classList.add("is-busy");
+      resendBtn.textContent = "Sending code…";
       try {
         if (await sendCode(email)) {
+          resendBtn.classList.remove("is-busy");
           resendBtn.textContent = "Code sent — check your inbox.";
           setTimeout(() => {
             resendBtn.textContent = "Didn't get it? Resend the code";
@@ -334,7 +467,9 @@
           return;
         }
       } finally {
+        resendBtn.classList.remove("is-busy");
         if (resendBtn.disabled && resendBtn.textContent.indexOf("sent") === -1) {
+          resendBtn.textContent = "Didn't get it? Resend the code";
           resendBtn.disabled = false;
         }
       }

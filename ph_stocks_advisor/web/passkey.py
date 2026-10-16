@@ -1,7 +1,7 @@
 """
 Passkey (WebAuthn / FIDO2) sign-in blueprint.
 
-Model: **passkey-only, open self-signup, email-first login.** Google/MS
+Model: **passkey-first, open self-signup, email-first login.** Google/MS
 OAuth remains available (via ``auth.py``) as an account-recovery fallback.
 
 Ceremonies use py_webauthn. Registration/authentication challenges are held
@@ -9,10 +9,18 @@ in the Flask session between the two round-trips. Verification is always done
 against the *configured* origin/RP ID (``settings.webauthn_*``), never values
 inferred from the request — safe behind the cloudflared tunnel.
 
-Anti-enumeration: ``login/begin`` returns a decoy ``allowCredentials`` for
-unknown emails (deterministic from HMAC(secret, email)) so the response looks
-identical whether or not the email is registered, and all auth failures return
-the same generic message.
+Emailed one-time code: when the typed email has no passkey (an OAuth-only
+account, an account whose passkeys were removed, or no account at all),
+``login/begin`` emails a 6-digit code instead of starting a WebAuthn
+ceremony, and ``login/verify-code`` signs the user in (creating the account,
+with disclaimer consent, if it doesn't exist). Accounts that DO have a
+passkey can only sign in with it.
+
+Enumeration trade-off (deliberate, product decision): because ``login/begin``
+answers differently for "has a passkey" vs "gets a code" (and flags new
+accounts so the UI can collect consent), it reveals whether an email is
+registered and whether it has a passkey. Probing for a code-path email costs
+a real email send and is throttled per session by the resend cooldown.
 """
 
 from __future__ import annotations
@@ -24,6 +32,7 @@ import logging
 import re
 import secrets
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from flask import Blueprint, Response, jsonify, request, session
@@ -45,7 +54,12 @@ from webauthn.helpers.structs import (
 )
 
 from ph_stocks_advisor.infra.config import get_email_sender, get_repository, get_settings
-from ph_stocks_advisor.infra.email import EmailSendError, build_verification_email, email_failure_is_quota
+from ph_stocks_advisor.infra.email import (
+    EmailSendError,
+    build_login_code_email,
+    build_verification_email,
+    email_failure_is_quota,
+)
 from ph_stocks_advisor.infra.repository import UserRecord, WebAuthnCredentialRecord
 from ph_stocks_advisor.web.auth import _safe_redirect_url
 
@@ -76,6 +90,13 @@ _CODE_SEND_ERR = "Couldn't send the verification code right now. Try again in a 
 _CODE_UNAVAILABLE_ERR = (
     "Sign-up email is temporarily unavailable. Please try again later or contact the site administrator."
 )
+_LOGIN_CODE_UNAVAILABLE_ERR = (
+    "Sign-in email is temporarily unavailable. Please try again later or contact the site administrator."
+)
+_LOGIN_CODE_SEND_ERR = "Couldn't send the sign-in code right now. Try again in a moment."
+# Emailed codes are a fallback for accounts WITHOUT a passkey; an account that
+# has one must use it (otherwise the inbox becomes the weakest link).
+_HAS_PASSKEY_ERR = "This account uses a passkey. Sign in with your passkey instead."
 _CODE_TTL_SECONDS = 10 * 60
 _CODE_MAX_ATTEMPTS = 5
 _CODE_RESEND_COOLDOWN_SECONDS = 60
@@ -85,6 +106,11 @@ _CODE_RESEND_COOLDOWN_SECONDS = 60
 # holds the "current" code — with only one valid at a time, opening the older
 # email makes its code look mysteriously used up.
 _CODE_KEEP = 2
+
+# Session-key prefixes for the two independent code flows, so a pending
+# sign-up code and a pending sign-in code never overwrite each other.
+_SIGNUP_CODE = "pk_vc"
+_LOGIN_CODE = "pk_lc"
 
 # This regex only rejects malformed input (local@domain.tld, no spaces, a dot
 # in the domain); deliverability is proven by the verification code itself.
@@ -100,31 +126,29 @@ def _user_handle(oid: str) -> bytes:
     return hashlib.sha256(f"wauh:{oid}".encode()).digest()[:16]
 
 
-def _decoy_credential_id(email: str) -> bytes:
-    """Deterministic fake credential id for an unregistered email (anti-enumeration)."""
-    secret = get_settings().flask_secret_key.encode()
-    return hmac.new(secret, f"decoy:{email}".encode(), hashlib.sha256).digest()
-
-
 def _session_user() -> dict | None:
     """The genuinely authenticated user (ignores the auth-disabled dev user)."""
     return session.get("user")
 
 
-def _complete_login(oid: str, name: str, email: str) -> None:
-    """Set the session user exactly like the OAuth flow, incl. DB user_type."""
+def _complete_login(oid: str, name: str, email: str, provider: str = "passkey") -> None:
+    """Set the session user exactly like the OAuth flow, incl. DB user_type.
+
+    *provider* records HOW this session signed in (``passkey`` or ``email``
+    for a one-time code) — not the account's original provider.
+    """
     repo = get_repository()
     session["user"] = {
         "name": name,
         "email": email,
         "oid": oid,
-        "provider": "passkey",
+        "provider": provider,
         "user_type": 0,
     }
     db_user = repo.get_user(oid)
     if db_user:
         session["user"]["user_type"] = db_user.user_type
-    logger.info("Passkey sign-in: %s", email)
+    logger.info("%s sign-in: %s", provider.capitalize(), email)
 
 
 def _transports_from(raw_json: str) -> list[str]:
@@ -148,7 +172,7 @@ def _login_transports(stored: list[str]) -> list[AuthenticatorTransport] | None:
 
 
 # ---------------------------------------------------------------------------
-# Email verification (self-signup only)
+# Emailed codes (sign-up verification and passkey-less sign-in)
 # ---------------------------------------------------------------------------
 
 
@@ -163,19 +187,64 @@ def _now_ts() -> float:
     return datetime.now(tz=UTC).timestamp()
 
 
-def _verify_signup_code(email: str, code: str) -> bool:
-    """Check *code* against the session state; wrong guesses burn an attempt.
+def _in_cooldown(prefix: str) -> bool:
+    return _now_ts() - (session.get(f"{prefix}_sent_at") or 0) < _CODE_RESEND_COOLDOWN_SECONDS
 
-    Deliberately NOT single-use: a dismissed/timed-out passkey prompt makes the
-    browser re-run ``register/begin``, and forcing a fresh code there would
-    punish the common retry. The newest ``_CODE_KEEP`` codes are all accepted
-    (each within its own TTL) so a resend doesn't strand the email the user is
-    reading. The state is session-bound and short-lived; it is cleared when
-    registration actually completes (``register/complete``).
+
+def _send_code(
+    prefix: str,
+    email: str,
+    *,
+    build: Callable[..., tuple[str, str]],
+    send_err: str,
+    unavailable_err: str,
+) -> ResponseReturnValue | None:
+    """Generate, email and store a fresh code under *prefix*.
+
+    Returns ``None`` on success, or the error response to hand back. Session
+    state is only touched after a successful send, so a failed send neither
+    leaves a code behind nor starts the cooldown.
     """
-    codes = session.get("pk_vc_codes") or []
-    sent_email = session.get("pk_vc_email")
-    attempts = session.get("pk_vc_attempts") or 0
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    try:
+        subject, html = build(code=code, expires_minutes=_CODE_TTL_SECONDS // 60)
+        get_email_sender().send(to=email, subject=subject, html=html)
+    except EmailSendError as exc:
+        # Provider quota/credit exhausted retries can't fix this, so tell the
+        # user plainly and log the real cause (not a generic "send failed").
+        if email_failure_is_quota(exc):
+            logger.error("Email code blocked — email provider quota/credit exhausted (to=%s): %s", email, exc)
+            return jsonify({"error": unavailable_err}), 503
+        logger.error("Failed to send email code to %s: %s", email, exc, exc_info=True)
+        return jsonify({"error": send_err}), 502
+    except Exception:
+        # An unexpected bug in the mail path — never a raw 500 to the user, and
+        # the traceback names the real fault in the log.
+        logger.error("Unexpected error sending email code to %s", email, exc_info=True)
+        return jsonify({"error": send_err}), 502
+
+    # Keep earlier still-live codes for the same email so the user can enter
+    # whichever email they end up reading; a different email starts fresh
+    # (old hashes are bound to the old address and could never match anyway).
+    now = _now_ts()
+    codes = session.get(f"{prefix}_codes") or []
+    if session.get(f"{prefix}_email") != email:
+        codes = []
+    codes = [c for c in codes if now <= c["e"]]
+    codes.append({"h": _code_hash(code, email), "e": now + _CODE_TTL_SECONDS})
+    session[f"{prefix}_codes"] = codes[-_CODE_KEEP:]
+    session[f"{prefix}_email"] = email
+    session[f"{prefix}_attempts"] = 0
+    session[f"{prefix}_sent_at"] = now
+    return None
+
+
+def _verify_code(prefix: str, email: str, code: str) -> bool:
+    """Check *code* against the session state under *prefix*; wrong guesses
+    burn an attempt (``_CODE_MAX_ATTEMPTS`` per issued batch)."""
+    codes = session.get(f"{prefix}_codes") or []
+    sent_email = session.get(f"{prefix}_email")
+    attempts = session.get(f"{prefix}_attempts") or 0
 
     if not codes or sent_email != email:
         return False
@@ -190,13 +259,30 @@ def _verify_signup_code(email: str, code: str) -> bool:
         # Compare against every live hash (no early exit) to keep timing flat.
         if sum(hmac.compare_digest(guess, h) for h in live) > 0:
             return True
-    session["pk_vc_attempts"] = attempts + 1
+    session[f"{prefix}_attempts"] = attempts + 1
     return False
 
 
+def _clear_code_state(prefix: str) -> None:
+    for suffix in ("codes", "email", "attempts", "sent_at"):
+        session.pop(f"{prefix}_{suffix}", None)
+
+
+def _verify_signup_code(email: str, code: str) -> bool:
+    """Check *code* against the session state; wrong guesses burn an attempt.
+
+    Deliberately NOT single-use: a dismissed/timed-out passkey prompt makes the
+    browser re-run ``register/begin``, and forcing a fresh code there would
+    punish the common retry. The newest ``_CODE_KEEP`` codes are all accepted
+    (each within its own TTL) so a resend doesn't strand the email the user is
+    reading. The state is session-bound and short-lived; it is cleared when
+    registration actually completes (``register/complete``).
+    """
+    return _verify_code(_SIGNUP_CODE, email, code)
+
+
 def _clear_signup_code_state() -> None:
-    for key in ("pk_vc_codes", "pk_vc_email", "pk_vc_attempts", "pk_vc_sent_at"):
-        session.pop(key, None)
+    _clear_code_state(_SIGNUP_CODE)
 
 
 @passkey_bp.route("/register/send-code", methods=["POST"])
@@ -219,42 +305,17 @@ def register_send_code() -> ResponseReturnValue:
     if get_repository().get_user_by_email(email) is not None:
         return jsonify({"error": _GENERIC_REG_ERR}), 400
 
-    sent_at = session.get("pk_vc_sent_at") or 0
-    if _now_ts() - sent_at < _CODE_RESEND_COOLDOWN_SECONDS:
+    if _in_cooldown(_SIGNUP_CODE):
         return jsonify({"error": _CODE_COOLDOWN_ERR}), 429
 
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    try:
-        subject, html = build_verification_email(code=code, expires_minutes=_CODE_TTL_SECONDS // 60)
-        get_email_sender().send(to=email, subject=subject, html=html)
-    except EmailSendError as exc:
-        # Provider quota/credit exhausted retries can't fix this, so tell the
-        # user plainly and log the real cause (not a generic "send failed").
-        if email_failure_is_quota(exc):
-            logger.error("Verification code blocked — email provider quota/credit exhausted (to=%s): %s", email, exc)
-            return jsonify({"error": _CODE_UNAVAILABLE_ERR}), 503
-        logger.error("Failed to send verification code to %s: %s", email, exc, exc_info=True)
-        return jsonify({"error": _CODE_SEND_ERR}), 502
-    except Exception:
-        # An unexpected bug in the mail path — never a raw 500 to the user, and
-        # the traceback names the real fault in the log.
-        logger.error("Unexpected error sending verification code to %s", email, exc_info=True)
-        return jsonify({"error": _CODE_SEND_ERR}), 502
-
-    # Keep earlier still-live codes for the same email so the user can enter
-    # whichever email they end up reading; a different email starts fresh
-    # (old hashes are bound to the old address and could never match anyway).
-    now = _now_ts()
-    codes = session.get("pk_vc_codes") or []
-    if session.get("pk_vc_email") != email:
-        codes = []
-    codes = [c for c in codes if now <= c["e"]]
-    codes.append({"h": _code_hash(code, email), "e": now + _CODE_TTL_SECONDS})
-    session["pk_vc_codes"] = codes[-_CODE_KEEP:]
-    session["pk_vc_email"] = email
-    session["pk_vc_attempts"] = 0
-    session["pk_vc_sent_at"] = now
-    return jsonify({"ok": True})
+    err = _send_code(
+        _SIGNUP_CODE,
+        email,
+        build=build_verification_email,
+        send_err=_CODE_SEND_ERR,
+        unavailable_err=_CODE_UNAVAILABLE_ERR,
+    )
+    return err or jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------
@@ -389,35 +450,55 @@ def register_complete() -> ResponseReturnValue:
 # ---------------------------------------------------------------------------
 
 
+def _passkeys_for(email: str) -> tuple[UserRecord | None, list[WebAuthnCredentialRecord]]:
+    user = get_repository().get_user_by_email(email)
+    return user, (get_repository().list_webauthn_credentials(user.oid) if user else [])
+
+
 @passkey_bp.route("/login/begin", methods=["POST"])
 def login_begin() -> ResponseReturnValue:
+    """Start sign-in for the typed email.
+
+    Has a passkey → WebAuthn authentication options (as before).
+    No passkey / no account → email a one-time code and answer
+    ``{"otp": true, "new_account": bool, "sent": bool}`` so the UI switches
+    to the code field (and, for a new account, the name + consent fields).
+    """
     settings = get_settings()
     if not settings.passkey_enabled:
         return jsonify({"error": "Passkeys are not enabled."}), 404
-    repo = get_repository()
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
     if not _valid_email(email):
         return jsonify({"error": _INVALID_EMAIL_ERR}), 400
 
-    creds: list[WebAuthnCredentialRecord] = []
-    user = repo.get_user_by_email(email) if email else None
-    if user:
-        creds = repo.list_webauthn_credentials(user.oid)
+    user, creds = _passkeys_for(email)
+    if not creds:
+        body = {"otp": True, "email": email, "new_account": user is None}
+        if _in_cooldown(_LOGIN_CODE):
+            # A code went to this same address moments ago (double submit,
+            # back-and-forth) — it's still valid, so reuse it, don't re-send.
+            if session.get(f"{_LOGIN_CODE}_email") == email:
+                return jsonify({**body, "sent": False})
+            return jsonify({"error": _CODE_COOLDOWN_ERR}), 429
+        err = _send_code(
+            _LOGIN_CODE,
+            email,
+            build=build_login_code_email,
+            send_err=_LOGIN_CODE_SEND_ERR,
+            unavailable_err=_LOGIN_CODE_UNAVAILABLE_ERR,
+        )
+        return err or jsonify({**body, "sent": True})
 
-    if creds:
-        allow = [
-            PublicKeyCredentialDescriptor(
-                id=base64url_to_bytes(c.credential_id),
-                # Always offer "hybrid" alongside the stored transports so the
-                # browser surfaces the cross-device (phone → this device via
-                # QR/Bluetooth) flow when the passkey lives on another device.
-                transports=_login_transports(c.transports),
-            )
-            for c in creds
-        ]
-    else:
-        # Decoy so unknown/passkey-less emails are indistinguishable.
-        allow = [PublicKeyCredentialDescriptor(id=_decoy_credential_id(email))]
+    allow = [
+        PublicKeyCredentialDescriptor(
+            id=base64url_to_bytes(c.credential_id),
+            # Always offer "hybrid" alongside the stored transports so the
+            # browser surfaces the cross-device (phone → this device via
+            # QR/Bluetooth) flow when the passkey lives on another device.
+            transports=_login_transports(c.transports),
+        )
+        for c in creds
+    ]
 
     options = generate_authentication_options(
         rp_id=settings.webauthn_rp_id,
@@ -470,6 +551,75 @@ def login_complete() -> ResponseReturnValue:
         return jsonify({"error": _GENERIC_LOGIN_ERR}), 401
 
     _complete_login(user.oid, user.name, user.email)
+    return jsonify({"ok": True, "redirect": _safe_redirect_url(session.pop("next_url", None))})
+
+
+@passkey_bp.route("/login/send-code", methods=["POST"])
+def login_send_code() -> ResponseReturnValue:
+    """Resend the one-time sign-in code (explicit user action → cooldown 429)."""
+    settings = get_settings()
+    if not settings.passkey_enabled:
+        return jsonify({"error": "Passkeys are not enabled."}), 404
+    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    if not _valid_email(email):
+        return jsonify({"error": _INVALID_EMAIL_ERR}), 400
+    _user, creds = _passkeys_for(email)
+    if creds:
+        return jsonify({"error": _HAS_PASSKEY_ERR, "use_passkey": True}), 400
+    if _in_cooldown(_LOGIN_CODE):
+        return jsonify({"error": _CODE_COOLDOWN_ERR}), 429
+    err = _send_code(
+        _LOGIN_CODE,
+        email,
+        build=build_login_code_email,
+        send_err=_LOGIN_CODE_SEND_ERR,
+        unavailable_err=_LOGIN_CODE_UNAVAILABLE_ERR,
+    )
+    return err or jsonify({"ok": True})
+
+
+@passkey_bp.route("/login/verify-code", methods=["POST"])
+def login_verify_code() -> ResponseReturnValue:
+    """Sign in with the emailed one-time code.
+
+    Existing account → signed in. Unknown email → a new account is created,
+    which (like passkey sign-up) requires ``accept_disclaimer: true``; the
+    consent is checked BEFORE the code so a missing tick doesn't burn an
+    attempt. Single-use: the code state is cleared on success.
+    """
+    settings = get_settings()
+    if not settings.passkey_enabled:
+        return jsonify({"error": "Passkeys are not enabled."}), 404
+    repo = get_repository()
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if not _valid_email(email):
+        return jsonify({"error": _INVALID_EMAIL_ERR}), 400
+
+    user, creds = _passkeys_for(email)
+    if user is None and data.get("accept_disclaimer") is not True:
+        return jsonify({"error": _NO_CONSENT_ERR}), 400
+    if not _verify_code(_LOGIN_CODE, email, str(data.get("code") or "").strip()):
+        return jsonify({"error": _BAD_CODE_ERR}), 400
+    if creds:
+        # A passkey was added after the code went out — passkey accounts
+        # never sign in by email code.
+        _clear_code_state(_LOGIN_CODE)
+        return jsonify({"error": _HAS_PASSKEY_ERR, "use_passkey": True}), 400
+
+    _clear_code_state(_LOGIN_CODE)
+    if user is None:
+        user = UserRecord(
+            oid=f"email:{uuid.uuid4().hex}",
+            name=(data.get("name") or "").strip()[:200] or email,
+            email=email,
+            provider="email",
+            disclaimer_version=_DISCLAIMER_VERSION,
+            disclaimer_accepted_at=datetime.now(tz=UTC),
+        )
+        repo.save_user(user)
+
+    _complete_login(user.oid, user.name, user.email, provider="email")
     return jsonify({"ok": True, "redirect": _safe_redirect_url(session.pop("next_url", None))})
 
 
