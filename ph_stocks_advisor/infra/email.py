@@ -186,6 +186,32 @@ def build_verification_email(*, code: str, expires_minutes: int) -> tuple[str, s
     return subject, _shell(inner)
 
 
+def build_login_code_email(*, code: str, expires_minutes: int) -> tuple[str, str]:
+    """Build ``(subject, html)`` for a one-time sign-in code (accounts without
+    a passkey). Same layout as the verification email; the code is in the
+    subject for the same reason."""
+    subject = f"{code} is your PH Stock Advisor sign-in code"
+    inner = f"""\
+      <p style="{_KICKER}">Sign in</p>
+      <h2 style="{_FONT}font-size:20px;margin:0 0 14px;">Your one-time code</h2>
+      <p style="{_FONT}font-size:14px;line-height:1.55;margin:0 0 16px;">
+        Enter this code to sign in to PH Stock Advisor:
+      </p>
+      <p style="{_FONT}font-size:32px;letter-spacing:8px;font-weight:bold;margin:0 0 16px;
+                background:#fdf1e7;color:{_ACCENT_DARK};border:1px solid #f5bd8f;
+                border-radius:6px;padding:14px 18px;text-align:center;">
+        {_html.escape(code)}
+      </p>
+      <p style="{_FONT}font-size:13px;color:{_MUTED};margin:0 0 4px;">
+        The code expires in {expires_minutes} minutes and can be used once.
+      </p>
+      <p style="{_FONT}font-size:12px;color:{_MUTED};margin:16px 0 0;line-height:1.5;">
+        If you didn't try to sign in, you can ignore this email — nobody can
+        get in without the code. Never share it with anyone.
+      </p>"""
+    return subject, _shell(inner)
+
+
 def _band_and_color(verdict: str, score: int | None) -> tuple[str, str, int]:
     """Mirror the report page's verdict panel: ``(band label, color, meter %)``.
 

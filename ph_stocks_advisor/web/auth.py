@@ -428,7 +428,7 @@ def logout():
         return redirect(url_for("index"))
 
     # If the user signed in via Microsoft, redirect to Entra's logout.
-    if provider != "google" and settings.entra_enabled:
+    if provider == "microsoft" and settings.entra_enabled:
         logout_url = (
             f"{settings.entra_authority}/oauth2/v2.0/logout?post_logout_redirect_uri={request.url_root.rstrip('/')}"
         )

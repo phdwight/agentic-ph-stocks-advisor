@@ -222,7 +222,7 @@ Labels are deliberately framed for a **buy decision** — the app never assumes 
 
 All new users start as **Normal**. An administrator promotes via Adminer (`http://<host>:5181`, Postgres credentials, edit `users.user_type`). The type is read from the database on each login, cannot be self-changed, and login upserts never overwrite it.
 
-**Authentication** — the primary sign-in is a **passkey (WebAuthn/FIDO2)**: open self-signup, email-first. A new user enters email + name, accepts the terms, **confirms the email with a 6-digit code** (the newest two codes stay valid, so a resend never strands the email being read), then registers a passkey (Touch ID / Windows Hello / phone). Returning users type their email and authenticate with their device. Microsoft Entra ID and Google OAuth remain as **recovery sign-ins** — a lost device isn't a lockout. When at least one method is configured, sign-in is required for every page; when none is, all routes are public (useful for local development).
+**Authentication** — the primary sign-in is a **passkey (WebAuthn/FIDO2)**: open self-signup, email-first. A new user enters email + name, accepts the terms, **confirms the email with a 6-digit code** (the newest two codes stay valid, so a resend never strands the email being read), then registers a passkey (Touch ID / Windows Hello / phone). Returning users type their email: accounts with a passkey authenticate with their device, while accounts without a passkey (or brand-new emails, after accepting the terms) receive a **one-time 6-digit sign-in code** by email. Microsoft Entra ID and Google OAuth remain as **recovery sign-ins** — a lost device isn't a lockout. When at least one method is configured, sign-in is required for every page; when none is, all routes are public (useful for local development).
 
 ```bash
 WEBAUTHN_RP_ID=your.domain.com                # host only — passkeys BIND to this domain
@@ -231,7 +231,7 @@ WEBAUTHN_RP_NAME="PH Stock Advisor AI"        # label shown in the OS passkey pr
 FLASK_SECRET_KEY=<random-secret>
 ```
 
-For local development use `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGIN=http://localhost:5180`. Changing the RP ID later invalidates all existing passkeys. Ceremonies verify against the *configured* origin (never request headers), so the flow is safe behind a reverse proxy or Cloudflare tunnel. The login flow is hardened against account enumeration (decoy credential lists + uniform errors), and anonymous callers cannot attach a passkey to an existing email. Endpoints under `/auth/passkey/*` cover register/login plus authenticated list/delete (passkeys can also be revoked by deleting the row in `webauthn_credentials` via Adminer).
+For local development use `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGIN=http://localhost:5180`. Changing the RP ID later invalidates all existing passkeys. Ceremonies verify against the *configured* origin (never request headers), so the flow is safe behind a reverse proxy or Cloudflare tunnel. Accounts that have a passkey must sign in with it (cannot be downgraded to an emailed code), and anonymous callers cannot attach a passkey to an existing email. Endpoints under `/auth/passkey/*` cover register/login, email code verification, plus authenticated list/delete (passkeys can also be revoked by deleting the row in `webauthn_credentials` via Adminer).
 
 <details>
 <summary><b>OAuth recovery setup (Microsoft Entra ID, Google)</b></summary>
@@ -666,9 +666,10 @@ Notes on the security model:
   half of a passkey credential.
 - WebAuthn ceremonies verify against the **configured** RP ID and origin, never
   request headers, so the app is safe behind a reverse proxy or tunnel.
-- Sign-in is hardened against account enumeration (decoy credential lists,
-  uniform error messages) and against attaching a passkey to someone else's
-  email. New accounts must prove email ownership with an emailed 6-digit code.
+- Accounts with a passkey must authenticate with it (cannot be downgraded to an
+  emailed code), and anonymous callers cannot attach a passkey to someone else's
+  email. New accounts must prove email ownership with an emailed 6-digit code
+  and accept the disclaimer.
 - Secrets are injected at runtime and are **never baked into images**. `.env`
   must never be committed.
 - Do not enter confidential or personally sensitive information into the
