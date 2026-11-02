@@ -1,0 +1,51 @@
+# web
+
+## Overview
+Defines the Flask web application factory, HTTP/SSE routes for stock and portfolio analysis, authentication blueprints (Microsoft Entra ID, Google OAuth2, and WebAuthn/FIDO2 passkey + emailed OTP), Redis-backed SSE progress streaming, atomic PHT-aligned daily rate limiting, Celery application/tasks, and custom Gunicorn gevent worker.
+
+## Interface
+- `[app.py:create_app]` - Flask application factory that configures sessions, database schema init, `ProxyFix`, Jinja globals/filters/context processors, blueprints (`auth_bp`, `passkey_bp`), security/CSRF hooks, and HTTP routes.
+- `[app.py:main]` - CLI entry point (`ph-advisor-web`) launching either Flask's built-in debug server (`--debug`) or Gunicorn `WSGIApplication` configured via `WEB_WORKERS`, `WEB_THREADS`, `WEB_WORKER_CLASS`, `WEB_WORKER_CONNECTIONS`, and `WEB_TIMEOUT`.
+- Public & Core Routes (`[app.py]`):
+  - `[app.py:version_json]` (`GET /version.json`), `[app.py:version]` (`GET /version`), `[app.py:disclaimer]` (`GET /disclaimer`), `[app.py:healthz]` (`GET /healthz`).
+  - `[app.py:index]` (`GET /`), `[app.py:analyse]` (`POST /analyse`), `[app.py:status]` (`GET /status/<task_id>`), `[app.py:stream]` (`GET /stream/<task_id>`), `[app.py:cancel]` (`POST /cancel/<task_id>`), `[app.py:report]` (`GET /report/<symbol>`), `[app.py:history]` (`GET /history/<symbol>`), `[app.py:report_by_id]` (`GET /report-by-id/<int:report_id>`).
+- Portfolio Routes (`[app.py]`, elevated users only):
+  - `[app.py:get_holding]` (`GET /api/holdings/<symbol>`), `[app.py:save_holding]` (`POST /api/holdings/<symbol>`), `[app.py:delete_holding]` (`DELETE /api/holdings/<symbol>`), `[app.py:portfolio_analyse]` (`POST /api/portfolio-analyse/<symbol>`), `[app.py:get_portfolio_report]` (`GET /api/portfolio-report/<symbol>`).
+- Authentication Blueprint (`[auth.py:auth_bp]`):
+  - `[auth.py:_safe_redirect_url]`, `[auth.py:get_current_user]`, `[auth.py:login_required]`.
+  - Routes: `[auth.py:login]` (`GET /auth/login`), `[auth.py:signin]` (`GET /auth/signin`), `[auth.py:callback]` (`GET /auth/callback`), `[auth.py:google_signin]` (`GET /auth/google/signin`), `[auth.py:google_callback]` (`GET /auth/google/callback`), `[auth.py:switch_type]` (`POST /auth/switch-type`), `[auth.py:logout]` (`GET /auth/logout`).
+- Passkey & OTP Blueprint (`[passkey.py:passkey_bp]`):
+  - Routes: `[passkey.py:register_send_code]` (`POST /auth/passkey/register/send-code`), `[passkey.py:register_begin]` (`POST /auth/passkey/register/begin`), `[passkey.py:register_complete]` (`POST /auth/passkey/register/complete`), `[passkey.py:login_begin]` (`POST /auth/passkey/login/begin`), `[passkey.py:login_complete]` (`POST /auth/passkey/login/complete`), `[passkey.py:login_send_code]` (`POST /auth/passkey/login/send-code`), `[passkey.py:login_verify_code]` (`POST /auth/passkey/login/verify-code`), `[passkey.py:list_passkeys]` (`GET /auth/passkey/list`), `[passkey.py:delete_passkey]` (`POST /auth/passkey/delete`).
+- Celery & Async Progress/Rate-Limiting (`[celery_app.py]`, `[progress.py]`, `[rate_limit.py]`, `[tasks.py]`, `[worker.py]`):
+  - `[celery_app.py:celery_app]` - Celery application instance (`'ph_stocks_advisor'`).
+  - `[progress.py:STEP_QUEUED]`, `[progress.py:STEP_VALIDATING]`, `[progress.py:STEP_FETCHING]`, `[progress.py:STEP_AGENTS]`, `[progress.py:STEP_CONSOLIDATING]`, `[progress.py:STEP_SAVING]`, `[progress.py:STEP_LABELS]`, `[progress.py:publish_progress]`, `[progress.py:subscribe_progress]` - Redis Pub/Sub progress event publisher and generator.
+  - `[rate_limit.py:reserve]`, `[rate_limit.py:release]`, `[rate_limit.py:check_limit]`, `[rate_limit.py:increment]`, `[rate_limit.py:check_and_increment]`, `[rate_limit.py:get_remaining]` - PHT trading-day rate limit helpers.
+  - `[tasks.py:analyse_stock]`, `[tasks.py:portfolio_analyse_stock]` - Bound Celery background tasks.
+  - `[worker.py:GeventWorkerNoSSL]` - Custom Gunicorn `GeventWorker` subclass (`gevent.monkey.patch_all(ssl=False)`).
+- Subdirectory:
+  - [static](./static/README.md) - Client-side JS modules (`app.js`, `portfolio.js`, `passkey.js`, `report-viz.js`) for task tracking, SSE streaming, passkey/OTP auth, and report visualization.
+
+## Invariants
+- `[app.py:create_app]` - Raises `RuntimeError` on startup if `settings.auth_enabled` is `True` and `settings.flask_secret_key` equals the default `'ph-stocks-advisor-change-me-in-production'`.
+- `[app.py:_csrf_protect]` - Enforces CSRF token match (via `X-CSRFToken` header, form `'csrf_token'`, or JSON `'csrf_token'` against `session['_csrf_token']`) on `POST`/`PUT`/`PATCH`/`DELETE` when `settings.auth_enabled` is `True`, exempting `{'healthz', 'auth.callback', 'auth.google_callback', 'auth.switch_type'}`.
+- `[app.py:_set_security_headers]` - Sets `X-Content-Type-Options='nosniff'`, `X-Frame-Options='SAMEORIGIN'`, `Referrer-Policy='strict-origin-when-cross-origin'`, `Content-Security-Policy`, and (when `auth_enabled`) `Strict-Transport-Security` on all responses.
+- `[app.py:index / analyse / report]` - Unauthenticated visitors (`get_current_user() is None` when `settings.auth_enabled` is `True`) can access `GET /` (which displays the top 5 recently analysed tickers via `repo.list_recent_symbols(limit=5)`) and view existing reports via `GET /report/<symbol>` or `POST /analyse` (`status='cached'`) when report data is already available; searching or requesting a ticker with no available data (`record is None`) requires authentication (`401` JSON `status='login_required'` with `login_url` on `POST /analyse`, or `302` redirect to `/auth/login` on `GET /report/<symbol>`).
+- `[app.py:_CUTOFF_HOUR_PHT]` & `[app.py:analyse]` - Daily freshness cutoff is 15:00 (3:00 PM) PHT (UTC+8); blocks new analysis runs with HTTP 425 when `trading_calendar.is_market_open()` is `True` (serving cached report if available). Normal users receive cached report if `created_at >= _last_cutoff()` and are subject to `settings.daily_analysis_limit` via `rl_reserve`; `UserType.ELEVATED` users bypass multi-day cache and `daily_analysis_limit` but face a per-symbol cooldown (HTTP 429) if already analysed since `_last_cutoff()`.
+- `[app.py:_INFLIGHT_PREFIX]` - Concurrent analysis requests for the same symbol are deduplicated atomically via Redis `SET NX` on `'analysis:inflight:{symbol}'` with `_INFLIGHT_TTL` (`600s`); joiners receive `status='joined'` with the existing `task_id`.
+- `[app.py:get_holding / save_holding / delete_holding / portfolio_analyse / get_portfolio_report]` - Require `user['user_type'] == UserType.ELEVATED` (else HTTP 403); `save_holding` requires `shares > 0` and `avg_cost > 0` (else HTTP 400); `portfolio_analyse` requires current PHT hour `>= 15` (`_is_past_cutoff()`, else HTTP 425), an existing user holding (else HTTP 400), and no existing portfolio report created since `_last_cutoff()` (else HTTP 429).
+- `[auth.py:_safe_redirect_url]` - Rejects any redirect URL containing a `netloc` or `scheme` to prevent CWE-601 open-redirect vulnerabilities.
+- `[auth.py:callback & google_callback]` - CSRF state validation requires `request.args.get('state') == session.get('auth_state')` (or `'google_state'`); `user_type` is always read back from DB after `save_user` so DB remains authoritative.
+- `[passkey.py:_DISCLAIMER_VERSION]`, `[passkey.py:_code_hash]`, `[passkey.py:_verify_code]`, `[passkey.py:login_send_code]` - New account creation requires `accept_disclaimer is True` and records `_DISCLAIMER_VERSION = '2026-07-26'`; verification codes are stored as HMAC-SHA256 digests keyed by `flask_secret_key` and compared in constant time via `hmac.compare_digest`; accounts with at least one registered passkey are forbidden from signing in via emailed OTP codes.
+- `[rate_limit.py:_daily_key]` & `[rate_limit.py:_RESERVE_LUA]` - Trading day rate-limit keys (`ratelimit:analyse:<user_id>:<YYYY-MM-DD>`) roll over at 3:00 PM PHT (`_CUTOFF_HOUR_PHT = 15`, UTC+8) and execute atomically via Lua script; `release` clamps decremented counters at `0`.
+- `[tasks.py:_email_report]` - Report email delivery is best-effort and wrapped in `try/except` so email failures never fail the `analyse_stock` Celery task.
+
+## Side Effects
+- `[app.py:create_app]` - Pings Redis via `get_redis_raw()` to initialize `Flask-Session` (falling back to signed cookies on error) and calls `get_repository()` at startup to initialize database schema.
+- `[app.py:analyse / cancel / portfolio_analyse]` - Reads, sets, and deletes Redis keys (`'analysis:inflight:*'`, `'analysis:task:*'`, `'portfolio:inflight:*'`) and rate-limit counters (`rl_reserve` / `rl_release`), and dispatches/revokes Celery tasks (`analyse_stock`, `portfolio_analyse_stock`).
+- `[auth.py:callback & google_callback]` & `[passkey.py]` - Exchange OAuth/WebAuthn credentials, send transactional OTP emails via `get_email_sender().send()`, mutate Flask `session`, and read/write `UserRecord` and `WebAuthnCredentialRecord` in the database repository.
+- `[progress.py:publish_progress & subscribe_progress]` - Writes JSON state to Redis key `analysis:state:<task_id>` (`900s` TTL) and publishes/subscribes to Redis Pub/Sub channel `analysis:progress:<task_id>`.
+- `[tasks.py:analyse_stock]` & `[tasks.py:portfolio_analyse_stock]` - Invoke `run_analysis` or `PortfolioAgent.run`, publish progress events to Redis, save `ReportRecord` / `PortfolioReportRecord` to DB, send report emails via `get_email_sender()`, release Redis rate-limit slots on failure, and delete Redis inflight locks.
+- `[worker.py:GeventWorkerNoSSL.patch]` - Mutates standard library modules in-process via `gevent.monkey.patch_all(ssl=False)`.
+
+## Verification
+- Run: `pytest`

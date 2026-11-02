@@ -36,6 +36,10 @@
         </form>
         {% endif %}
       </div>
+      {% elif auth_enabled %}
+      <div class="nav-user">
+        <a href="{{ url_for('auth.login') }}" class="nav-logout">Sign In</a>
+      </div>
       {% endif %}
     </div>
   </nav>
