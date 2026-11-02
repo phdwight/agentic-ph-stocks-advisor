@@ -69,12 +69,12 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
         min_price = min(closes)
 
         returns = hist["Close"].pct_change().dropna()
-        volatility = float(returns.std() * 100) if len(returns) > 1 else 0.0
+        volatility = float(returns.std() * 100) if len(returns) > 1 else 0.0  # type: ignore[arg-type]
 
         # Max drawdown: largest peak-to-trough decline
         cummax = hist["Close"].cummax()
         drawdown = (hist["Close"] - cummax) / cummax * 100
-        max_drawdown_pct = round(float(drawdown.min()), 2) if len(drawdown) > 0 else 0.0
+        max_drawdown_pct = round(float(drawdown.min()), 2) if len(drawdown) > 0 else 0.0  # type: ignore[arg-type]
 
         # Candlestick pattern analysis (uses full OHLCV)
         candle_summary = analyse_candlesticks(hist)
