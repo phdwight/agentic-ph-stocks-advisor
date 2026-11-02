@@ -124,7 +124,7 @@ def _detect_volume_spikes(
     window: int = 20,
 ) -> list[str]:
     """Find days where volume exceeds the rolling average by *multiplier* x."""
-    if "Volume" not in df.columns or df["Volume"].sum() == 0:
+    if "Volume" not in df.columns or bool(df["Volume"].sum() == 0):
         return []
 
     vol = df["Volume"].astype(float)

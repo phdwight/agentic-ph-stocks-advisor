@@ -58,11 +58,11 @@ def fetch_controversy_info(symbol: str) -> ControversyInfo:
 
         s = get_settings()
         for date, ret in returns.items():
-            if abs(ret) > s.spike_std_multiplier * std_ret and abs(ret) > s.spike_min_abs_return:
-                direction = "spike up" if ret > 0 else "spike down"
+            if bool(abs(ret) > s.spike_std_multiplier * std_ret) and bool(abs(ret) > s.spike_min_abs_return):
+                direction = "spike up" if bool(ret > 0) else "spike down"
                 spikes.append(f"{date.strftime('%Y-%m-%d')}: {direction} of {ret * 100:.1f}%")  # type: ignore[union-attr]
 
-        if std_ret > s.high_volatility_threshold:
+        if bool(std_ret > s.high_volatility_threshold):
             risk_factors.append(f"High daily volatility (std > {s.high_volatility_threshold * 100:.0f}%)")
 
         avg_price = hist["Close"].mean()
