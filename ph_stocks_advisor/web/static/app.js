@@ -492,7 +492,17 @@ document.addEventListener("DOMContentLoaded", () => {
         body: `symbol=${encodeURIComponent(symbol)}`,
       });
 
+      if (resp.redirected && resp.url.includes("/auth/login")) {
+        window.location.href = resp.url;
+        return;
+      }
+
       const data = await resp.json();
+
+      if (resp.status === 401 || data.status === "login_required" || data.login_url) {
+        window.location.href = data.login_url || "/auth/login";
+        return;
+      }
 
       if (!resp.ok) {
         let msg = data.error || "Something went wrong.";

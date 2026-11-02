@@ -23,7 +23,17 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
-from flask import Flask, Response, abort, jsonify, render_template, request, session
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from markupsafe import Markup
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -212,10 +222,13 @@ def create_app() -> Flask:
     )
     app.config["SECRET_KEY"] = settings.flask_secret_key
     # Only mark the session cookie as Secure when running behind HTTPS
-    # (i.e. when an identity provider is configured).  Local dev runs on
-    # plain HTTP so a Secure cookie would be silently dropped by the
-    # browser, preventing session persistence (e.g. elevated-mode toggle).
-    app.config["SESSION_COOKIE_SECURE"] = settings.auth_enabled
+    # (i.e. when an identity provider is configured and not using plain-HTTP
+    # localhost WebAuthn).  Local dev runs on plain HTTP so a Secure cookie
+    # would be silently dropped by the browser/client, preventing session
+    # persistence (e.g. CSRF token or elevated-mode toggle).
+    app.config["SESSION_COOKIE_SECURE"] = settings.auth_enabled and not (
+        settings.passkey_enabled and settings.webauthn_origin.startswith("http://")
+    )
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     # Cache static assets in browsers for 1 hour; reduces load at scale.
@@ -484,27 +497,28 @@ def create_app() -> Flask:
     # ------------------------------------------------------------------
 
     @app.route("/")
-    @login_required
     def index():
         """Landing page with the analysis form and user's analysed stocks.
 
         Authenticated users see only the stocks they have previously
-        requested.  Anonymous users (auth disabled) see all recent
-        symbols.
+        requested.  Unauthenticated users see the top 5 recently
+        analysed symbols.  Anonymous local-dev users (auth disabled)
+        see all recent symbols.
         """
         repo = get_repository()
         try:
             user = get_current_user()
             if user and user.get("email"):
                 recent = repo.list_user_symbols(user_id=user["email"], limit=50)
-            else:
+            elif user:
                 recent = repo.list_recent_symbols(limit=50)
+            else:
+                recent = repo.list_recent_symbols(limit=5)
         except Exception:
             recent = []
         return render_template("index.html", recent_stocks=recent)
 
     @app.route("/analyse", methods=["POST"])
-    @login_required
     def analyse():
         """Check for a fresh cached report; dispatch to Celery if stale/missing."""
         from ph_stocks_advisor.infra.repository import UserType
@@ -523,6 +537,37 @@ def create_app() -> Flask:
         # to a per-stock daily cooldown (one analysis per trading day).
         repo = get_repository()
         record = repo.get_latest_by_symbol(symbol)
+
+        # Unauthenticated users may view an existing report if data is
+        # already available for the symbol; otherwise require sign-in
+        # before dispatching a new analysis.
+        if settings.auth_enabled and user is None:
+            if record is not None:
+                return jsonify(
+                    {
+                        "status": "cached",
+                        "symbol": symbol,
+                        "report_id": record.id,
+                    }
+                )
+            session["next_url"] = url_for("index")
+            login_url = url_for("auth.login")
+            wants_html = (
+                not request.is_json
+                and "X-CSRFToken" not in request.headers
+                and request.accept_mimetypes.quality("text/html")
+                > request.accept_mimetypes.quality("application/json")
+            )
+            if wants_html:
+                return redirect(login_url)
+            return jsonify(
+                {
+                    "status": "login_required",
+                    "login_url": login_url,
+                    "symbol": symbol,
+                    "error": "Please sign in to analyse a new stock.",
+                }
+            ), 401
 
         if record and record.created_at:
             cutoff = _last_cutoff()
@@ -781,8 +826,26 @@ def create_app() -> Flask:
 
         return jsonify({"status": "cancelled", "task_id": task_id})
 
+    def _build_report_sections(record) -> list[tuple[str, str]]:
+        """Parse sections from ``record.summary`` and fall back to individual
+        section columns when ``summary`` only contains the executive overview."""
+        sections = parse_sections(record.summary or "")
+        if len(sections) <= 1:
+            existing_titles = {t.lower() for t, _ in sections}
+            fallbacks = [
+                ("Price Analysis", getattr(record, "price_section", "")),
+                ("Dividend Analysis", getattr(record, "dividend_section", "")),
+                ("Price Movement Analysis", getattr(record, "movement_section", "")),
+                ("Valuation Analysis", getattr(record, "valuation_section", "")),
+                ("Controversy / Risk Analysis", getattr(record, "controversy_section", "")),
+                ("Sentiment / Global Events Analysis", getattr(record, "sentiment_section", "")),
+            ]
+            for title, body in fallbacks:
+                if body and body.strip() and title.lower() not in existing_titles:
+                    sections.append((title, body.strip()))
+        return sections
+
     @app.route("/report/<symbol>")
-    @login_required
     def report(symbol: str):
         """Display the latest report for a symbol."""
         symbol = symbol.upper().replace(".PS", "")
@@ -790,9 +853,12 @@ def create_app() -> Flask:
         record = repo.get_latest_by_symbol(symbol)
 
         if record is None:
+            if settings.auth_enabled and get_current_user() is None:
+                session["next_url"] = request.url
+                return redirect(url_for("auth.login"))
             return render_template("no_report.html", symbol=symbol), 404
 
-        sections = parse_sections(record.summary or "")
+        sections = _build_report_sections(record)
         is_buy = record.verdict.upper() == "BUY"
         ts = format_timestamp(record.created_at)
 
@@ -895,12 +961,15 @@ def create_app() -> Flask:
         )
 
     @app.route("/history/<symbol>")
-    @login_required
     def history(symbol: str):
         """List all saved reports for a symbol."""
         symbol = symbol.upper().replace(".PS", "")
         repo = get_repository()
         records = repo.list_by_symbol(symbol, limit=20)
+
+        if not records and settings.auth_enabled and get_current_user() is None:
+            session["next_url"] = request.url
+            return redirect(url_for("auth.login"))
 
         formatted = []
         for r in records:
@@ -917,18 +986,37 @@ def create_app() -> Flask:
         return render_template("history.html", symbol=symbol, reports=formatted)
 
     @app.route("/report-by-id/<int:report_id>")
-    @login_required
     def report_by_id(report_id: int):
         """Display a specific report by its database ID."""
         repo = get_repository()
         record = repo.get_by_id(report_id)
 
         if record is None:
+            if settings.auth_enabled and get_current_user() is None:
+                session["next_url"] = request.url
+                return redirect(url_for("auth.login"))
             return render_template("no_report.html", symbol="unknown"), 404
 
-        sections = parse_sections(record.summary or "")
+        sections = _build_report_sections(record)
         is_buy = record.verdict.upper() == "BUY"
         ts = format_timestamp(record.created_at)
+
+        from ph_stocks_advisor.data.models import score_band
+
+        verdict_score = record.score
+        if verdict_score is not None:
+            verdict_band = score_band(verdict_score)
+            marker_pct = verdict_score
+            if verdict_band in ("BUY", "STRONG BUY"):
+                band_class = "buy"
+            elif verdict_band == "WAIT":
+                band_class = "wait"
+            else:
+                band_class = "avoid"
+        else:
+            verdict_band = None
+            marker_pct = 80 if is_buy else 18
+            band_class = "buy" if is_buy else "nb"
 
         return render_template(
             "report.html",
@@ -938,6 +1026,10 @@ def create_app() -> Flask:
             timestamp=ts,
             data_sources=DATA_SOURCES,
             disclaimer=DISCLAIMER,
+            verdict_score=verdict_score,
+            verdict_band=verdict_band,
+            marker_pct=marker_pct,
+            band_class=band_class,
             movement_monthly_prices=record.movement_monthly_prices,
         )
 

@@ -140,13 +140,135 @@ def google_client(google_app):
 
 
 class TestLoginRequired:
-    """Protected routes redirect unauthenticated users to /auth/login."""
+    """Protected routes and conditional login gates for unauthenticated users."""
 
-    @pytest.mark.parametrize("path", ["/", "/report/TEL", "/history/TEL"])
-    def test_route_redirects_when_not_logged_in(self, client, path):
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    @pytest.mark.parametrize("path", ["/report/TEL", "/history/TEL"])
+    def test_route_redirects_when_not_logged_in(self, mock_repo, client, path):
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = None
+        repo_instance.list_by_symbol.return_value = []
+        mock_repo.return_value = repo_instance
+
         resp = client.get(path)
         assert resp.status_code == 302
         assert "/auth/login" in resp.headers["Location"]
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_unauthenticated_index_shows_top_5_recent_tickers(self, mock_repo, client):
+        from datetime import UTC, datetime
+
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        tickers = ["BDO", "SM", "ALI", "JFC", "TEL"]
+        records = [
+            ReportRecord(
+                id=i + 1,
+                symbol=sym,
+                verdict="BUY",
+                summary="ok",
+                price_section="",
+                dividend_section="",
+                movement_section="",
+                valuation_section="",
+                controversy_section="",
+                created_at=datetime.now(tz=UTC),
+            )
+            for i, sym in enumerate(tickers)
+        ]
+        repo_instance = MagicMock()
+        repo_instance.list_recent_symbols.return_value = records
+        mock_repo.return_value = repo_instance
+
+        resp = client.get("/")
+        assert resp.status_code == 200
+        repo_instance.list_recent_symbols.assert_called_once_with(limit=5)
+        body = resp.get_data(as_text=True)
+        for sym in tickers:
+            assert f'data-symbol="{sym}"' in body
+
+    @patch("ph_stocks_advisor.data.services.price.fetch_stock_price", return_value=None)
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_unauthenticated_can_view_existing_report(self, mock_repo, _mock_price, client):
+        from datetime import UTC, datetime
+
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        record = ReportRecord(
+            id=10,
+            symbol="BDO",
+            verdict="BUY",
+            summary="**Executive Summary:**\nBDO report available.",
+            price_section="Good",
+            dividend_section="Good",
+            movement_section="Up",
+            valuation_section="Fair",
+            controversy_section="None",
+            created_at=datetime.now(tz=UTC),
+        )
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = record
+        mock_repo.return_value = repo_instance
+
+        resp = client.get("/report/BDO")
+        assert resp.status_code == 200
+        assert b"BDO report available." in resp.data
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_unauthenticated_analyse_existing_ticker_returns_cached(self, mock_repo, client):
+        from datetime import UTC, datetime
+
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        record = ReportRecord(
+            id=10,
+            symbol="BDO",
+            verdict="BUY",
+            summary="ok",
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+            created_at=datetime.now(tz=UTC),
+        )
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = record
+        mock_repo.return_value = repo_instance
+
+        with client.session_transaction() as sess:
+            sess["_csrf_token"] = "csrf-tok"
+
+        resp = client.post(
+            "/analyse",
+            data={"symbol": "BDO"},
+            headers={"X-CSRFToken": "csrf-tok"},
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "cached"
+        assert data["symbol"] == "BDO"
+        assert data["report_id"] == 10
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_unauthenticated_analyse_missing_ticker_requires_login(self, mock_repo, client):
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = None
+        mock_repo.return_value = repo_instance
+
+        with client.session_transaction() as sess:
+            sess["_csrf_token"] = "csrf-tok"
+
+        resp = client.post(
+            "/analyse",
+            data={"symbol": "NEWSTOCK"},
+            headers={"X-CSRFToken": "csrf-tok"},
+        )
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert data["status"] == "login_required"
+        assert "/auth/login" in data["login_url"]
+        assert data["symbol"] == "NEWSTOCK"
 
 
 # ---------------------------------------------------------------------------
