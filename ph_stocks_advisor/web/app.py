@@ -555,8 +555,7 @@ def create_app() -> Flask:
             wants_html = (
                 not request.is_json
                 and "X-CSRFToken" not in request.headers
-                and request.accept_mimetypes.quality("text/html")
-                > request.accept_mimetypes.quality("application/json")
+                and request.accept_mimetypes.quality("text/html") > request.accept_mimetypes.quality("application/json")
             )
             if wants_html:
                 return redirect(login_url)
