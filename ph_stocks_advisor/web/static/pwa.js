@@ -225,6 +225,100 @@
       }
     });
 
+    // On non-index pages (where app.js is absent), intercept logged-in clicks
+    // on sidebar report links so stale reports trigger a fresh analysis on "/"
+    // when conditions permit instead of displaying the outdated report.
+    if (!document.getElementById("analyse-form")) {
+      const TASKS_KEY = "ph_advisor_tasks";
+      const STALE_NOTICE_KEY = "ph_advisor_stale_notice";
+      const TASK_STALE_MS = 10 * 60 * 1000;
+      const inflightSidebarClicks = new Set();
+
+      document.addEventListener("click", async (e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+          return;
+        }
+        const link = e.target.closest(".sidebar-ticker");
+        if (!link) return;
+        if (document.body.dataset.authenticated !== "true") return;
+
+        let symbol = (link.dataset.symbol || "").trim().toUpperCase();
+        if (!symbol) {
+          const href = link.getAttribute("href") || "";
+          const match = href.match(/^\/report\/([^/?#]+)/);
+          symbol = match ? decodeURIComponent(match[1]).trim().toUpperCase() : "";
+        }
+        if (!symbol) return;
+
+        e.preventDefault();
+
+        try {
+          const existingTasks = JSON.parse(localStorage.getItem(TASKS_KEY)) || {};
+          const existing = existingTasks[symbol];
+          if (existing && existing.status === "pending" && Date.now() - existing.ts <= TASK_STALE_MS) {
+            sessionStorage.setItem(STALE_NOTICE_KEY, JSON.stringify({ symbol, status: "joined" }));
+            window.location.href = "/";
+            return;
+          }
+        } catch { /* ignore */ }
+
+        if (inflightSidebarClicks.has(symbol)) return;
+        inflightSidebarClicks.add(symbol);
+        link.classList.add("is-checking");
+
+        try {
+          const resp = await fetch("/analyse", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || "",
+            },
+            body: `symbol=${encodeURIComponent(symbol)}&refresh_stale=1`,
+          });
+
+          if (resp.redirected && resp.url.includes("/auth/login")) {
+            window.location.href = resp.url;
+            return;
+          }
+
+          const data = await resp.json();
+
+          if (resp.status === 401 || data.status === "login_required" || data.login_url) {
+            window.location.href = data.login_url || "/auth/login";
+            return;
+          }
+
+          if (data.status === "cached") {
+            window.location.href = `/report/${encodeURIComponent(data.symbol || symbol)}`;
+            return;
+          }
+
+          if (data.task_id) {
+            try {
+              const tasks = JSON.parse(localStorage.getItem(TASKS_KEY)) || {};
+              tasks[symbol] = { taskId: data.task_id, status: "pending", ts: Date.now() };
+              localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+            } catch { /* ignore */ }
+            try {
+              sessionStorage.setItem(
+                STALE_NOTICE_KEY,
+                JSON.stringify({ symbol: data.symbol || symbol, status: data.status })
+              );
+            } catch { /* ignore */ }
+            window.location.href = "/";
+            return;
+          }
+
+          window.location.href = link.href;
+        } catch {
+          window.location.href = link.href;
+        } finally {
+          inflightSidebarClicks.delete(symbol);
+          link.classList.remove("is-checking");
+        }
+      });
+    }
+
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeDrawer();

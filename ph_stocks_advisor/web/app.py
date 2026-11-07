@@ -47,6 +47,7 @@ from ph_stocks_advisor.export.html import _body_to_html
 from ph_stocks_advisor.infra import trading_calendar
 from ph_stocks_advisor.infra.config import get_redis, get_repository, get_settings
 from ph_stocks_advisor.web.auth import auth_bp, get_current_user, login_required
+from ph_stocks_advisor.web.rate_limit import get_remaining as rl_get_remaining
 from ph_stocks_advisor.web.rate_limit import release as rl_release
 from ph_stocks_advisor.web.rate_limit import reserve as rl_reserve
 
@@ -170,6 +171,15 @@ def _cutoff_label() -> str:
     trading-day aware, so on a Friday evening it points to Monday.
     """
     return trading_calendar.next_close_label()
+
+
+def _is_report_fresh(record, cutoff: datetime | None = None) -> bool:
+    """Return True if *record* was generated on or after the latest trading close."""
+    created_at = getattr(record, "created_at", None) if record is not None else None
+    if created_at is None:
+        return False
+    ref = cutoff if cutoff is not None else _last_cutoff()
+    return created_at >= ref
 
 
 def _verdict_chip(record) -> dict:
@@ -632,6 +642,14 @@ def create_app() -> Flask:
             next_close_label=trading_calendar.next_close_label(),
         )
 
+    def _track_user_symbol(user: dict | None, symbol: str) -> None:
+        """Best-effort association of *symbol* with the signed-in user's history."""
+        if user and user.get("email"):
+            try:
+                get_repository().add_user_symbol(user["email"], symbol)
+            except Exception:
+                logger.debug("Failed to record user-symbol link.")
+
     @app.route("/analyse", methods=["POST"])
     def analyse():
         """Check for a fresh cached report; dispatch to Celery if stale/missing."""
@@ -641,6 +659,11 @@ def create_app() -> Flask:
         symbol = (request.form.get("symbol") or "").strip().upper().replace(".PS", "")
         if not symbol:
             return jsonify({"error": "Symbol is required"}), 400
+
+        # When triggered by clicking an existing report link, we refresh only
+        # if the report is stale AND conditions permit a new run; otherwise we
+        # serve the existing report rather than surfacing cooldown/quota errors.
+        refresh_stale = (request.form.get("refresh_stale") or "").strip().lower() in ("1", "true", "yes")
 
         # Determine if the current user has elevated privileges.
         user = get_current_user()
@@ -692,9 +715,9 @@ def create_app() -> Flask:
         if record and record.created_at:
             cutoff = _last_cutoff()
 
-            if is_elevated:
-                # Elevated cooldown: already analysed since last 3 PM PHT.
-                if record.created_at >= cutoff:
+            if _is_report_fresh(record, cutoff):
+                if is_elevated and not refresh_stale:
+                    # Elevated cooldown on explicit re-analysis: already analysed since last 3 PM PHT.
                     reset_at = _next_cutoff()
                     logger.info(
                         "Elevated cooldown: %s already analysed since %s, next window %s.",
@@ -710,36 +733,33 @@ def create_app() -> Flask:
                             "symbol": symbol,
                         }
                     ), 429
-            else:
-                # Normal users: serve the cached report if generated
-                # after the most recent 3:00 PM PHT cutoff.
-                if record.created_at >= cutoff:
-                    logger.info(
-                        "Fresh report found for %s (since %s), serving cached.",
-                        symbol,
-                        cutoff.isoformat(),
-                    )
-                    # Track symbol for the current user.
-                    if user and user.get("email"):
-                        try:
-                            repo2 = get_repository()
-                            repo2.add_user_symbol(user["email"], symbol)
-                        except Exception:
-                            logger.debug("Failed to record user-symbol link.")
-                    return jsonify(
-                        {
-                            "status": "cached",
-                            "symbol": symbol,
-                            "report_id": record.id,
-                        }
-                    )
+
+                # Fresh report exists — serve cached (normal users always; elevated
+                # users when opening a report link via refresh_stale).
+                logger.info(
+                    "Fresh report found for %s (since %s), serving cached.",
+                    symbol,
+                    cutoff.isoformat(),
+                )
+                _track_user_symbol(user, symbol)
+                return jsonify(
+                    {
+                        "status": "cached",
+                        "symbol": symbol,
+                        "report_id": record.id,
+                    }
+                )
+
+        # If record exists here, it was created before the latest trading close (stale).
+        had_stale_report = record is not None
 
         # A new run is warranted (report is stale or missing), but the PSE
         # session is live — no runs during 9 AM–3 PM PHT. Serve the most
         # recent report if we have one (the report page notes it's pre-close);
         # otherwise a fresh analysis becomes available after today's close.
         if trading_calendar.is_market_open():
-            if record and record.created_at:
+            if record is not None:
+                _track_user_symbol(user, symbol)
                 return jsonify({"status": "cached", "symbol": symbol, "report_id": record.id})
             return jsonify(
                 {
@@ -771,18 +791,15 @@ def create_app() -> Flask:
                     existing_task_id,
                 )
                 # The joiner asked for this ticker too — track it for them.
-                if user and user.get("email"):
-                    try:
-                        get_repository().add_user_symbol(user["email"], symbol)
-                    except Exception:
-                        logger.debug("Failed to record user-symbol link.")
-                return jsonify(
-                    {
-                        "status": "joined",
-                        "symbol": symbol,
-                        "task_id": existing_task_id,
-                    }
-                )
+                _track_user_symbol(user, symbol)
+                joined_payload: dict[str, object] = {
+                    "status": "joined",
+                    "symbol": symbol,
+                    "task_id": existing_task_id,
+                }
+                if had_stale_report:
+                    joined_payload["stale_refresh"] = True
+                return jsonify(joined_payload)
             # Rare: the lock vanished between the failed claim and the read —
             # the in-flight run just finished (or was cancelled). If it saved
             # a report, serve that; otherwise let the user retry.
@@ -800,6 +817,22 @@ def create_app() -> Flask:
                 # We hold the inflight claim but won't run — release it so
                 # another user's request for this symbol can proceed.
                 r.delete(inflight_key)
+                if refresh_stale and record is not None:
+                    logger.info(
+                        "User %s at daily analysis limit (%d/%d); serving stale report for %s.",
+                        user_id,
+                        count,
+                        settings.daily_analysis_limit,
+                        symbol,
+                    )
+                    _track_user_symbol(user, symbol)
+                    return jsonify(
+                        {
+                            "status": "cached",
+                            "symbol": symbol,
+                            "report_id": record.id,
+                        }
+                    )
                 logger.warning(
                     "User %s exceeded daily analysis limit (%d/%d).",
                     user_id,
@@ -833,14 +866,16 @@ def create_app() -> Flask:
         r.set(f"{_INFLIGHT_TASK_PREFIX}{my_task_id}", symbol, ex=_INFLIGHT_TTL)
 
         # Track symbol for the current user.
-        if user and user.get("email"):
-            try:
-                repo2 = get_repository()
-                repo2.add_user_symbol(user["email"], symbol)
-            except Exception:
-                logger.debug("Failed to record user-symbol link.")
+        _track_user_symbol(user, symbol)
 
-        return jsonify({"status": "started", "symbol": symbol, "task_id": my_task_id})
+        started_payload: dict[str, object] = {
+            "status": "started",
+            "symbol": symbol,
+            "task_id": my_task_id,
+        }
+        if had_stale_report:
+            started_payload["stale_refresh"] = True
+        return jsonify(started_payload)
 
     @app.route("/status/<task_id>")
     @login_required
@@ -984,9 +1019,7 @@ def create_app() -> Flask:
         ts = format_timestamp(record.created_at)
 
         # Determine if the report is a cached result
-        is_cached = False
-        if record.created_at:
-            is_cached = record.created_at >= _last_cutoff()
+        is_cached = _is_report_fresh(record)
 
         # A stale report shown during live market hours: the page notes that a
         # fresh run is deferred until after the 3 PM PHT close.
@@ -1056,6 +1089,17 @@ def create_app() -> Flask:
         # Is portfolio analysis gated (before 3 PM PHT)?
         portfolio_before_cutoff = is_elevated and not _is_past_cutoff()
 
+        # If a normal user views a stale report while the market is closed because
+        # their daily quota is exhausted, explain why the cached report is shown.
+        quota_exhausted_stale = False
+        if (not is_cached) and (not market_open_stale) and user is not None and not is_elevated:
+            try:
+                r_quota = get_redis()
+                uid = user.get("email", "anonymous")
+                quota_exhausted_stale = rl_get_remaining(r_quota, uid, settings.daily_analysis_limit) == 0
+            except Exception:
+                logger.debug("Could not check rate-limit status for stale note on %s", symbol)
+
         return render_template(
             "report.html",
             record=record,
@@ -1074,6 +1118,7 @@ def create_app() -> Flask:
             portfolio_inflight_task_id=portfolio_inflight_task_id,
             next_cutoff_label=_cutoff_label(),
             market_open_stale=market_open_stale,
+            quota_exhausted_stale=quota_exhausted_stale,
             verdict_score=verdict_score,
             verdict_band=verdict_band,
             marker_pct=marker_pct,
