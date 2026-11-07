@@ -15,6 +15,12 @@
       <p>Sign in to access AI-powered Philippine stock analysis</p>
     </div>
 
+    {% if login_prompt %}
+    <div class="login-prompt" role="status">
+      <p>{{ login_prompt }}</p>
+    </div>
+    {% endif %}
+
     {% if error %}
     <div class="login-error">
       <p>{{ error }}</p>

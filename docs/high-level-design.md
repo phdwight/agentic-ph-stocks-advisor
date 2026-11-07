@@ -4,7 +4,7 @@
 |---|---|
 | **System** | PH Stocks Advisor — agentic AI advisor for PSE-listed stocks |
 | **Document** | High-Level Design |
-| **Status** | Current as of 2026-07-23 |
+| **Status** | Current as of 2026-11-07 |
 | **Repository** | `agentic-ph-stocks-advisor` |
 | **Production** | https://phstockadvisor.sakayandgo.com (Docker Compose behind a Cloudflare tunnel) |
 
@@ -150,16 +150,18 @@ sub-scores); `FinalReport`; and `SCORE_BANDS`/`score_band()` mapping scores to d
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/analyse` | POST | Start/join/cache-hit an analysis (dedup + rate limit + session gate) |
-| `/stream/<task_id>` | GET (SSE) | Live progress: snapshot replay + step events + terminal event |
-| `/status/<task_id>` | GET | Polling fallback; terminal payload includes `verdict`, `score`, `report_id` |
-| `/report/<symbol>` | GET | Rendered report (verdict panel, meter, agent cards) |
-| `/history/<symbol>` | GET | Prior reports with band chips |
-| `/auth/passkey/*` | POST | WebAuthn register/login (begin/complete), list/delete |
-| `/auth/*` | GET/POST | OAuth recovery (Entra ID, Google) |
+| `/` | GET | Landing page — shows user's analysed stocks when signed in, or the 5 most recently analysed tickers for guests |
+| `/analyse` | POST | Start/join/cache-hit an analysis (guests limited to cached hits in the recent 5; `401 login_required` otherwise) |
+| `/stream/<task_id>` | GET (SSE) | Live progress: snapshot replay + step events + terminal event (authenticated) |
+| `/status/<task_id>` | GET | Polling fallback; terminal payload includes `verdict`, `score`, `report_id` (authenticated) |
+| `/report/<symbol>`, `/report-by-id/<id>` | GET | Rendered report (guests allowed only for the 5 most recently analysed tickers; redirects to `/auth/login` otherwise) |
+| `/history/<symbol>` | GET | Prior reports with band chips (same recent-5 guest gate) |
+| `/auth/passkey/*` | POST/GET | WebAuthn register/login (begin/complete), OTP verification, list/delete |
+| `/auth/*` | GET/POST | Login page (`login_prompt` banner), OAuth recovery (Entra ID, Google), logout |
 | `/api/holdings/<symbol>` | GET/POST/DELETE | Elevated: position CRUD |
 | `/api/portfolio-analyse/<symbol>`, `/api/portfolio-report/<symbol>` | POST/GET | Elevated: advisory run + fetch |
-| `/healthz` | GET | Public liveness (DB + Redis checks) |
+| `/manifest.webmanifest`, `/sw.js`, `/offline` | GET | Public PWA manifest, root-scoped service worker, and offline fallback page |
+| `/healthz`, `/version`, `/disclaimer` | GET | Public liveness (DB + Redis checks), build version, and terms-of-use |
 
 ### 5.2 MCP tool interface
 
@@ -204,14 +206,19 @@ GitHub Actions + GHCR · Cloudflare tunnel.
   registration/login failures share uniform generic messages.
 - **Account-takeover guard:** anonymous callers can never attach a passkey to an existing
   email; adding devices requires an authenticated session.
-- **Authorisation:** `user_type` gates elevated features (unlimited runs, cache bypass,
-  portfolio advisory); admins promote via the back-office; login upserts never overwrite
-  `user_type`.
+- **Authorisation:** unauthenticated visitors (when auth is enabled) may browse `/` and view
+  reports/history only for the **5 most recently analysed stocks** (`_ANON_RECENT_LIMIT = 5`);
+  searching or requesting any ticker outside the recent 5 (even if previously analysed) or
+  dispatching a new analysis requires sign-in and redirects back (`session["next_url"]`) upon
+  completion. Once signed in, `user_type` gates elevated features (unlimited runs, cache
+  bypass, portfolio advisory); admins promote via the back-office; login upserts never
+  overwrite `user_type`.
 - **CSRF:** token in session + `X-CSRFToken` header on state-changing JS calls.
 - **Secrets:** environment-injected at runtime; never baked into images; compose forwards an
   explicit allowlist; the app fails fast when the *selected* LLM provider's key is absent.
-- **Data stored:** passkey **public** keys only; no passwords anywhere; reports are shared
-  but per-user visibility is scoped by `user_symbols`; portfolio data is private per user.
+- **Data stored:** passkey **public** keys only; no passwords anywhere; reports are shared,
+  authenticated home/sidebar history is scoped by `user_symbols` (with guest access capped to
+  the global recent 5), and portfolio data is private per user.
 
 ---
 

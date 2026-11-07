@@ -1,9 +1,11 @@
 # static
 
 ## Overview
-Client-side JavaScript modules for submitting and tracking stock analyses with `localStorage` persistence and SSE/polling updates (`app.js`), managing user portfolio holdings and personalised analysis reports (`portfolio.js`), email-first WebAuthn passkey and 6-digit OTP authentication/registration workflows (`passkey.js`), and post-render DOM data visualization enhancements for stock analysis reports (`report-viz.js`).
+Client-side JavaScript modules and PWA assets for service worker registration, theme sync, install prompts, and mobile navigation (`pwa.js` + `sw.js` + `icons/*`), submitting and tracking stock analyses with `localStorage` persistence and SSE/polling updates (`app.js`), managing user portfolio holdings and personalised analysis reports (`portfolio.js`), email-first WebAuthn passkey and 6-digit OTP authentication/registration workflows (`passkey.js`), and post-render DOM data visualization enhancements for stock analysis reports (`report-viz.js`).
 
 ## Interface
+- `[pwa.js:(IIFE)]` - Registers `/sw.js`, manages light/dark theme persistence (`ph_advisor_theme`) and `<meta name="theme-color">` sync, handles `beforeinstallprompt` and iOS install guide sheet, wires mobile bottom tab bar and slide-over `.sidebar` drawer, and toggles offline status banners.
+- `[sw.js]` - Root-scoped PWA service worker pre-caching `/offline` and static shell assets under a content-hashed `CACHE_NAME`, serving HTML navigations network-first with `/offline` fallback and `/static/*` assets cache-first.
 - `[app.js:STORAGE_KEY]`, `[app.js:POLL_MS]`, `[app.js:STALE_MS]`, `[app.js:ERROR_AUTO_FADE_MS]`, `[app.js:ERROR_FADE_DURATION]` - Task storage key (`'ph_advisor_tasks'`) and timing constants (`3000ms` poll, `600,000ms` stale cutoff, `8000ms` error fade delay, `600ms` fade duration).
 - `[app.js:loadTasks]`, `[app.js:saveTasks]`, `[app.js:addTask]`, `[app.js:updateTask]`, `[app.js:removeTask]` - `localStorage` task state CRUD helpers.
 - `[app.js:scheduleErrorAutoFade]`, `[app.js:flashError]`, `[app.js:hideError]` - Error banner and tracker row auto-fade UI helpers.

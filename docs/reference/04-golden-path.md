@@ -2,9 +2,9 @@
 
 One request, traced through every layer: `analyse("TEL")` after market close, no report since the last cutoff.
 
-## 1 · `POST /analyze` — `web/app.py`
+## 1 · `POST /analyse` — `web/app.py`
 
-Session user resolved (`user_id` = email). A fresh run costs a rate-limit slot — reserved atomically, **released if the run fails**. Market open, or a report newer than the last 15:00 cutoff? Serve that instead — no task.
+Session user resolved (`user_id` = email). Unauthenticated visitors (`auth_enabled` and no session) may only open cached hits among the 5 most recently analysed tickers — any older or unanalysed ticker returns `401 login_required` and redirects to `/auth/login`. For signed-in users, a fresh run costs a rate-limit slot — reserved atomically, **released if the run fails**. Market open, or a report newer than the last 15:00 cutoff? Serve that instead — no task.
 
 ## 2 · `SET NX analysis:inflight:TEL` — ★ one run per ticker
 

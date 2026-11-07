@@ -171,14 +171,17 @@ Set `LANGFUSE_TRACING_ENABLED=false` to disable tracing without removing the key
 
 **Web UI** — enter a symbol, the analysis runs in the background, and each workflow step (validation, data fetching, agent execution, consolidation, saving) streams to the browser in real time via **Server-Sent Events** (`/stream/<task_id>`, backed by Redis Pub/Sub; polling fallback at `/status/<task_id>`). The finished report renders in place.
 
-**Public endpoints** (no authentication — used by Docker healthchecks and monitoring):
+**Public endpoints** (no authentication — used by guests, PWA shell, Docker healthchecks, and monitoring):
 
 | Endpoint | Returns |
 |---|---|
+| `/` | Landing page — shows the 5 most recently analysed stocks to guests (or the user's analysed stocks when signed in) |
+| `/report/<symbol>`, `/history/<symbol>`, `/report-by-id/<id>` | Public **only** when `<symbol>` is among the 5 most recently analysed stocks; any older or unanalysed ticker redirects guests to `/auth/login` |
 | `/healthz` | Liveness — `{"checks": {"database": "ok", "redis": "ok"}, "status": "healthy"}`; **200** healthy, **503** otherwise |
 | `/version` | The running build's version — **JSON** for `curl`/monitoring, a readable **page** for browsers |
 | `/version.json` | Always JSON (explicit machine endpoint) |
 | `/disclaimer` | The full disclaimer & terms-of-use page |
+| `/manifest.webmanifest`, `/sw.js`, `/offline` | Web App Manifest, root-scoped PWA service worker, and offline fallback page |
 
 ```bash
 curl -s http://localhost:5180/version
@@ -209,7 +212,7 @@ The version shown always equals the git tag and the published image tag — see 
 
 Labels are deliberately framed for a **buy decision** — the app never assumes you already own the stock, so there are no "sell"/"hold" words. Colours follow the same semantics: **green = buy, red = avoid**. Tuning levers (env): `SCORE_WEIGHT_*` (normalised by their sum) and `BUY_SCORE_THRESHOLD` (default 60). Dimensions with no data are **excluded from the score** and disclosed in the report rather than guessed.
 
-**Persistence & visibility** — reports are saved after each analysis (SQLite by default, Postgres in Docker). Reports are **shared** — not tied to any user — but each authenticated user only sees the stocks they personally analysed (`user_symbols`); anonymous users (auth disabled) see all reports. User profiles are upserted by `oid` into `users` on every sign-in.
+**Persistence & visibility** — reports are saved after each analysis (SQLite by default, Postgres in Docker). Reports are **shared** — not tied to any user — while visibility depends on authentication state: each signed-in user sees the stocks they personally analysed (`user_symbols`) on the home page/sidebar and can open any saved report; unauthenticated guests (when auth is enabled) see and can open **only the 5 most recently analysed stocks** (`list_recent_symbols(limit=5)`), and searching or requesting any ticker outside the recent 5 prompts sign-in; anonymous local-dev users (auth disabled) see all reports. User profiles are upserted by `oid` into `users` on every sign-in.
 
 ## 06 · Users, auth & portfolio
 
@@ -222,7 +225,7 @@ Labels are deliberately framed for a **buy decision** — the app never assumes 
 
 All new users start as **Normal**. An administrator promotes via Adminer (`http://<host>:5181`, Postgres credentials, edit `users.user_type`). The type is read from the database on each login, cannot be self-changed, and login upserts never overwrite it.
 
-**Authentication** — the primary sign-in is a **passkey (WebAuthn/FIDO2)**: open self-signup, email-first. A new user enters email + name, accepts the terms, **confirms the email with a 6-digit code** (the newest two codes stay valid, so a resend never strands the email being read), then registers a passkey (Touch ID / Windows Hello / phone). Returning users type their email: accounts with a passkey authenticate with their device, while accounts without a passkey (or brand-new emails, after accepting the terms) receive a **one-time 6-digit sign-in code** by email. Microsoft Entra ID and Google OAuth remain as **recovery sign-ins** — a lost device isn't a lockout. When at least one method is configured, sign-in is required for every page; when none is, all routes are public (useful for local development).
+**Authentication** — the primary sign-in is a **passkey (WebAuthn/FIDO2)**: open self-signup, email-first. A new user enters email + name, accepts the terms, **confirms the email with a 6-digit code** (the newest two codes stay valid, so a resend never strands the email being read), then registers a passkey (Touch ID / Windows Hello / phone). Returning users type their email: accounts with a passkey authenticate with their device, while accounts without a passkey (or brand-new emails, after accepting the terms) receive a **one-time 6-digit sign-in code** by email. Microsoft Entra ID and Google OAuth remain as **recovery sign-ins** — a lost device isn't a lockout. When at least one method is configured, unauthenticated visitors can browse the landing page and open reports for the **5 most recently analysed stocks**, while searching or requesting any ticker outside the recent 5 (even if previously analysed) or running a new analysis prompts the user to sign in (preserving `next_url` so they land on the requested stock after login); when no method is configured, all routes are public (useful for local development).
 
 ```bash
 WEBAUTHN_RP_ID=your.domain.com                # host only — passkeys BIND to this domain
@@ -618,8 +621,8 @@ ph_stocks_advisor/
 │   ├── tasks.py               #   Celery task definitions (analyse_stock + report emails)
 │   ├── progress.py            #   Redis Pub/Sub progress publisher + subscriber (SSE)
 │   ├── worker.py              #   Custom Gunicorn gevent worker skipping SSL monkey-patch
-│   ├── templates/             #   Jinja2 HTML templates (base, index, login, report, history…)
-│   └── static/                #   style.css (Tala design system), app.js (SSE),
+│   ├── templates/             #   Jinja2 HTML templates (base, index, login, report, history, offline…)
+│   └── static/                #   style.css, app.js (SSE), pwa.js + sw.js + icons/ (PWA),
 │                              #   passkey.js, portfolio.js, report-viz.js
 ├── export/                    # Pluggable output formatters (Open/Closed)
 │   ├── formatter.py           #   OutputFormatter ABC, parse_sections(), export_cli()
@@ -790,7 +793,7 @@ Agentic PH Stocks Advisor is a multi-agent Philippine Stock Exchange (PSE) equit
 - **MCP Data Boundary & Error Prefix Contract** (`[ph_stocks_advisor/data/mcp_client.py:get_client]`, `[ph_stocks_mcp/server.py:_SYMBOL_NOT_FOUND_PREFIX]`): Specialist agents fetch market data exclusively through the MCP client (`MCP_SERVER_URL` required; no in-process fallback). `SymbolNotFoundError` across the MCP boundary is serialized with the `"SymbolNotFoundError: "` prefix so clients distinguish unlisted tickers from transient upstream outages (`SymbolValidationUnavailableError`).
 - **Deterministic REIT & Verdict Scoring** (`[ph_stocks_advisor/data/services/dividend.py:fetch_dividend_info]`, `[ph_stocks_advisor/agents/consolidator.py:ConsolidatorAgent._weighted_score]`): Philippine REIT status (`is_reit`) is resolved strictly from deterministic registry signals (DragonFi `isREIT` or PSE EDGE registry) and never inferred by the LLM. Failed/empty specialist dimensions in `state.data_gaps` have their sub-scores forced to `None`, the 0–100 final score is computed in Python as a normalized weighted average clamped to `[0, 100]`, and the binary `Verdict` (`BUY` vs `NOT BUY`) is derived deterministically against `Settings.buy_score_threshold`.
 - **PSE Trading-Session Cadence & In-Flight Deduplication** (`[ph_stocks_advisor/infra/trading_calendar.py:last_trading_close]`, `[ph_stocks_advisor/web/app.py:analyse]`, `[ph_stocks_advisor/web/rate_limit.py:_RESERVE_LUA]`): Report freshness and daily rate-limit keys roll over at the 15:00 PHT (UTC+8) trading-day close. New analyses are blocked during open market hours (09:00–15:00 PHT, HTTP 425), and concurrent web requests for the same ticker coalesce onto a single Celery task via atomic Redis `SET NX` on `analysis:inflight:<symbol>`.
-- **Authentication, Consent, & Credential Safety** (`[ph_stocks_advisor/web/app.py:create_app]`, `[ph_stocks_advisor/web/passkey.py]`, `[ph_stocks_advisor/infra/repository.py:AbstractReportRepository.save_user]`): Startup aborts if `auth_enabled` is true with the default `flask_secret_key`; OTP verification codes are stored as HMAC-SHA256 digests and verified in constant time; accounts with registered WebAuthn passkeys cannot sign in via emailed OTP codes; and initial user disclaimer consent (`disclaimer_version`, `disclaimer_accepted_at`) is write-once across subsequent sign-ins.
+- **Authentication, Guest Recent-5 Gate, Consent, & Credential Safety** (`[ph_stocks_advisor/web/app.py:create_app]`, `[ph_stocks_advisor/web/app.py:_is_recent_public_symbol]`, `[ph_stocks_advisor/web/passkey.py]`, `[ph_stocks_advisor/infra/repository.py:AbstractReportRepository.save_user]`): Startup aborts if `auth_enabled` is true with the default `flask_secret_key`; unauthenticated visitors when `auth_enabled` is true can only open cached reports for the 5 most recently analysed tickers (`list_recent_symbols(limit=5)`), while any older or unanalysed ticker requires sign-in (`401 login_required` on `POST /analyse`, `302` redirect to `/auth/login` on GET report/history routes); OTP verification codes are stored as HMAC-SHA256 digests and verified in constant time; accounts with registered WebAuthn passkeys cannot sign in via emailed OTP codes; and initial user disclaimer consent (`disclaimer_version`, `disclaimer_accepted_at`) is write-once across subsequent sign-ins.
 
 ## Global Side Effects
 - **External Network & Market Data I/O** (`[ph_stocks_advisor/data/clients/*]`, `[ph_stocks_advisor/agents/*]`, `[ph_stocks_advisor/infra/email.py]`, `[ph_stocks_advisor/infra/tracing.py]`): Performs outbound HTTPS calls to OpenAI/Anthropic LLM APIs, DragonFi (`api.dragonfi.ph`), PSE EDGE (`edge.pse.com.ph`), TradingView Scanner, Tavily Web Search, Microsoft Entra ID / Google OAuth2 endpoints, ZeptoMail transactional email API, and Langfuse OpenTelemetry ingestion.
