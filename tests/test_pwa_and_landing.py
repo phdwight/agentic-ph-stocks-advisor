@@ -18,6 +18,7 @@ def anon_client(monkeypatch):
     monkeypatch.delenv("ENTRA_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("WEBAUTHN_RP_ID", raising=False)
     monkeypatch.setenv("DB_BACKEND", "sqlite")
     monkeypatch.setenv("SQLITE_PATH", ":memory:")
 
@@ -29,6 +30,7 @@ def anon_client(monkeypatch):
     s.entra_client_secret = ""
     s.google_client_id = ""
     s.google_client_secret = ""
+    s.webauthn_rp_id = ""
 
     app = create_app()
     app.config["TESTING"] = True
@@ -71,7 +73,7 @@ class TestPwaManifestAndServiceWorker:
         assert resp.status_code == 200
         assert resp.mimetype == "application/javascript"
         assert resp.headers.get("Service-Worker-Allowed") == "/"
-        assert "no-store" in resp.headers.get("Cache-Control", "")
+        assert "no-store" in (resp.headers.get("Cache-Control") or "")
 
         body = resp.get_data(as_text=True)
         assert f'const ASSET_REV = "{_asset_rev()}";' in body
@@ -91,12 +93,13 @@ class TestModernLandingPage:
     def test_landing_page_pwa_shell_and_csp_cleanliness(self, mock_repo, _mock_open, anon_client):
         repo = MagicMock()
         repo.list_recent_symbols.return_value = []
+        repo.list_user_symbols.return_value = []
         mock_repo.return_value = repo
 
         resp = anon_client.get("/")
         assert resp.status_code == 200
 
-        csp = resp.headers.get("Content-Security-Policy", "")
+        csp = resp.headers.get("Content-Security-Policy") or ""
         assert "worker-src 'self'" in csp
         assert "manifest-src 'self'" in csp
 
@@ -131,22 +134,22 @@ class TestModernLandingPage:
     @patch("ph_stocks_advisor.web.app.trading_calendar.is_market_open", return_value=True)
     @patch("ph_stocks_advisor.web.app.get_repository")
     def test_landing_page_shows_live_market_pill_and_recent_stocks(self, mock_repo, _mock_open, anon_client):
+        record = ReportRecord(
+            id=1,
+            symbol="BDO",
+            verdict="BUY",
+            summary="ok",
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+            created_at=datetime.now(tz=UTC),
+            score=78,
+        )
         repo = MagicMock()
-        repo.list_recent_symbols.return_value = [
-            ReportRecord(
-                id=1,
-                symbol="BDO",
-                verdict="BUY",
-                summary="ok",
-                price_section="",
-                dividend_section="",
-                movement_section="",
-                valuation_section="",
-                controversy_section="",
-                created_at=datetime.now(tz=UTC),
-                score=78,
-            )
-        ]
+        repo.list_recent_symbols.return_value = [record]
+        repo.list_user_symbols.return_value = [record]
         mock_repo.return_value = repo
 
         resp = anon_client.get("/")
@@ -154,4 +157,4 @@ class TestModernLandingPage:
         html = resp.get_data(as_text=True)
         assert "PSE Open" in html
         assert 'id="recent-stocks" style="display:none;"' not in html
-        assert 'data-symbol="BDO"' in html
+        assert 'href="/report/BDO"' in html

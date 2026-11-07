@@ -318,9 +318,7 @@ class TestLoginRequired:
 
     @patch("ph_stocks_advisor.web.app.get_repository")
     @pytest.mark.parametrize("path", ["/report/GLO", "/history/GLO", "/report-by-id/99"])
-    def test_unauthenticated_direct_routes_for_older_existing_ticker_redirect_to_login(
-        self, mock_repo, client, path
-    ):
+    def test_unauthenticated_direct_routes_for_older_existing_ticker_redirect_to_login(self, mock_repo, client, path):
         """Direct GET routes for an existing ticker outside the recent 5 redirect to login."""
         from datetime import UTC, datetime
 
