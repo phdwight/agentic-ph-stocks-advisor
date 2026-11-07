@@ -497,19 +497,34 @@ a:hover {
   gap: 0.65rem;
 }
 
-.nav-user-name {
-  color: var(--text-secondary);
-  font-size: 0.8rem;
+.nav-user-name,
+.nav-user-greeting {
+  color: var(--text);
+  font-size: 0.82rem;
   font-weight: 500;
-  max-width: 160px;
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.nav-user-name.elevated {
-  color: var(--amber);
+.nav-welcome-label {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.nav-user-name strong,
+.nav-user-greeting strong {
   font-weight: 600;
+}
+
+.nav-user-name.elevated strong,
+.nav-user-greeting.elevated strong {
+  color: var(--amber);
+}
+
+.nav-mobile-user {
+  display: none;
 }
 
 .nav-logout,
@@ -1876,7 +1891,9 @@ a:hover {
 
 /* ---------- Report Page (Console / Stream) ---------- */
 
-.page-report .sidebar { display: none; }
+@media (min-width: 901px) {
+  .page-report .sidebar { display: none; }
+}
 .page-report .layout > .container { max-width: 1180px; }
 .page-report main.container { padding-top: 1.5rem; padding-bottom: 2.5rem; }
 
@@ -2783,6 +2800,7 @@ progress.loading-spinner:indeterminate {
 
   /* Slide-over Recent drawer on mobile so search is always above the fold */
   .sidebar {
+    display: block;
     position: fixed;
     top: 0;
     left: 0;
@@ -2792,13 +2810,14 @@ progress.loading-spinner:indeterminate {
     max-height: none;
     background: var(--card);
     border-right: 1px solid var(--border);
-    box-shadow: var(--shadow-lg);
+    box-shadow: none;
     padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(1.5rem + env(safe-area-inset-bottom));
     transform: translateX(-104%);
     transition: transform 0.28s var(--ease-out);
   }
 
   body.drawer-open .sidebar {
+    box-shadow: var(--shadow-lg);
     transform: translateX(0);
   }
 
@@ -2904,6 +2923,19 @@ progress.loading-spinner:indeterminate {
   .nav-user-name,
   .search-kbd {
     display: none;
+  }
+
+  .nav-mobile-user {
+    display: flex;
+    align-items: center;
+    padding-top: 0.32rem;
+    padding-bottom: 0.38rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .nav-user-greeting {
+    max-width: 100%;
+    font-size: 0.76rem;
   }
 
   .hero {

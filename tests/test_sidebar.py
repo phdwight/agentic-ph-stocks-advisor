@@ -11,6 +11,7 @@ Behaviour under test:
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -121,3 +122,54 @@ class TestSidebarHistory:
         # Page still renders even if the sidebar query fails
         assert resp.status_code == 200
         assert 'class="sidebar"' not in resp.get_data(as_text=True)
+
+    @patch("ph_stocks_advisor.data.services.price.fetch_stock_price", return_value=None)
+    @patch("ph_stocks_advisor.web.app.trading_calendar.is_market_open", return_value=False)
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_report_page_mobile_recent_drawer_not_hidden_by_desktop_rule(
+        self, mock_repo, _mock_open, _mock_price, anon_client
+    ):
+        """Regression: clicking 'Recent' on a ticker report page when signed in
+        must slide in the mobile drawer rather than blurring the entire page
+        with a hidden `.sidebar` (`display: none`).
+        """
+        now = datetime(2026, 11, 7, 6, 0, tzinfo=UTC)
+        ceb = _record("CEB", "NOT BUY", now)
+        repo = MagicMock()
+        repo.get_latest_by_symbol.return_value = ceb
+        repo.list_user_symbols.return_value = [ceb]
+        repo.list_recent_symbols.return_value = [ceb]
+        mock_repo.return_value = repo
+
+        resp = anon_client.get("/report/CEB")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert 'class="page-report"' in html
+        assert 'class="sidebar"' in html
+        assert 'id="sidebar-backdrop"' in html
+        assert "data-open-recent" in html
+
+        css = anon_client.get("/static/style.css").get_data(as_text=True)
+        # `.page-report .sidebar { display: none; }` must ONLY live inside a
+        # desktop media query (`@media (min-width: 901px)`), never globally,
+        # otherwise `.page-report .sidebar` (0,2,0) keeps the drawer `display: none`
+        # on <=900px viewports while `#sidebar-backdrop` blurs the entire screen.
+        desktop_scoped = re.findall(
+            r"@media\s*\(\s*min-width:\s*901px\s*\)\s*\{[^}]*\.page-report\s+\.sidebar\s*\{\s*display:\s*none;\s*\}",
+            css,
+            flags=re.DOTALL,
+        )
+        assert len(desktop_scoped) == 1
+        css_without_desktop_block = re.sub(
+            r"@media\s*\(\s*min-width:\s*901px\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\}",
+            "",
+            css,
+            flags=re.DOTALL,
+        )
+        assert not re.search(
+            r"\.page-report\s+\.sidebar\s*\{[^}]*display\s*:\s*none",
+            css_without_desktop_block,
+        )
+
+        pwa_js = anon_client.get("/static/pwa.js").get_data(as_text=True)
+        assert 'getComputedStyle(sidebar).display !== "none"' in pwa_js

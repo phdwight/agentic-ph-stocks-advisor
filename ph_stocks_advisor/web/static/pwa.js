@@ -169,6 +169,7 @@
 
     // 4. Mobile Recent slide-over drawer & bottom tab bar actions
     const backdrop = document.getElementById("sidebar-backdrop");
+    const mobileDrawerMedia = window.matchMedia ? window.matchMedia("(max-width: 900px)") : null;
     const closeDrawer = () => {
       document.body.classList.remove("drawer-open");
       if (backdrop) backdrop.hidden = true;
@@ -177,7 +178,7 @@
 
     const openDrawer = () => {
       const sidebar = document.querySelector(".sidebar");
-      if (sidebar) {
+      if (sidebar && window.getComputedStyle(sidebar).display !== "none") {
         document.body.classList.add("drawer-open");
         if (backdrop) backdrop.hidden = false;
         document.querySelectorAll("[data-open-recent]").forEach((b) => b.setAttribute("aria-expanded", "true"));
@@ -209,6 +210,14 @@
     });
 
     backdrop?.addEventListener("click", closeDrawer);
+    if (mobileDrawerMedia && typeof mobileDrawerMedia.addEventListener === "function") {
+      mobileDrawerMedia.addEventListener("change", (e) => {
+        if (!e.matches) closeDrawer();
+      });
+    }
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted) closeDrawer();
+    });
     document.addEventListener("click", (e) => {
       if (e.target.closest("[data-close-drawer]")) closeDrawer();
       if (document.body.classList.contains("drawer-open") && e.target.closest(".sidebar-ticker")) {
