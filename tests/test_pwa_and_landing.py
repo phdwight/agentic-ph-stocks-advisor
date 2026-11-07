@@ -158,3 +158,5 @@ class TestModernLandingPage:
         assert "PSE Open" in html
         assert 'id="recent-stocks" style="display:none;"' not in html
         assert 'href="/report/BDO"' in html
+        assert "Welcome," in html
+        assert "Local Developer" in html

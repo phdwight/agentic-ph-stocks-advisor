@@ -53,14 +53,19 @@
         </button>
 
         {% if current_user %}
+        {% set display_name = current_user.name or current_user.email or 'local dev' %}
         <div class="nav-user">
           {% if auth_enabled %}
-          <span class="nav-user-name{% if current_user.user_type == 1 %} elevated{% endif %}">{{ current_user.name or current_user.email }}</span>
+          <span class="nav-user-name{% if current_user.user_type == 1 %} elevated{% endif %}" title="{{ current_user.email or display_name }}">
+            <span class="nav-welcome-label">Welcome,</span> <strong>{{ display_name }}</strong>
+          </span>
           <a href="{{ url_for('auth.logout') }}" class="nav-logout">Sign Out</a>
           {% else %}
           <form method="post" action="{{ url_for('auth.switch_type') }}" class="dev-type-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <span class="nav-user-name{% if current_user.user_type == 1 %} elevated{% endif %}">local dev</span>
+            <span class="nav-user-name{% if current_user.user_type == 1 %} elevated{% endif %}" title="{{ current_user.email or display_name }}">
+              <span class="nav-welcome-label">Welcome,</span> <strong>{{ display_name }}</strong>
+            </span>
             <button type="submit" class="nav-type-toggle {{ 'elevated' if current_user.user_type == 1 else 'normal' }}">
               {{ 'ELEVATED' if current_user.user_type == 1 else 'NORMAL' }}
             </button>
@@ -74,6 +79,14 @@
         {% endif %}
       </div>
     </div>
+    {% if current_user %}
+    {% set mobile_display_name = current_user.name or current_user.email or 'local dev' %}
+    <div class="container nav-mobile-user">
+      <span class="nav-user-greeting{% if current_user.user_type == 1 %} elevated{% endif %}" title="{{ current_user.email or mobile_display_name }}">
+        <span class="nav-welcome-label">Welcome,</span> <strong>{{ mobile_display_name }}</strong>
+      </span>
+    </div>
+    {% endif %}
   </nav>
 
   <div class="layout">
