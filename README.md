@@ -196,7 +196,7 @@ The version shown always equals the git tag and the published image tag — see 
 
 - A report is **fresh** if generated after the **most recent trading-day 3:00 PM PHT close**. Weekends roll back to Friday's close — a report generated Friday 4 PM stays fresh through the weekend and Monday until 3 PM.
 - **No new analyses run while the market is open.** During the session the newest report is served with a "refreshes after the 3 PM close" note; only when *no* report exists does the request return a "come back after the close" response.
-- Outside market hours — before 9 AM, after 3 PM, and all weekend — a stale or missing report triggers a fresh run.
+- Outside market hours — before 9 AM, after 3 PM, and all weekend — a stale or missing report triggers a fresh run. When a signed-in user clicks a stale report (from their analysed chips or recent sidebar) and conditions permit a fresh run (market closed and daily quota available), a new analysis is dispatched automatically with a live status banner and queue progress instead of displaying the outdated report; if the market is open or the user's daily quota is exhausted, the last saved report is shown with an explanatory note.
 - **Concurrent requests for the same symbol produce exactly one run**: an atomic Redis claim admits one dispatch; everyone else joins the same task id and streams its live progress — same result, no duplicate LLM spend.
 - Holidays are not yet in the calendar (weekends only); PSE non-trading dates can be added to `NON_TRADING_DATES` in `infra/trading_calendar.py`.
 

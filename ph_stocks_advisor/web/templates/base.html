@@ -25,7 +25,7 @@
   <script src="{{ url_for('static', filename='pwa.js') }}?v={{ asset_rev }}" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}" data-authenticated="{{ 'true' if current_user else 'false' }}">
   <div id="network-status-banner" class="network-banner" role="status" aria-live="polite" hidden>
     <span class="network-banner-dot"></span>
     <span>You’re offline — live analyses pause until reconnected.</span>
@@ -106,7 +106,7 @@
           <ul class="sidebar-tickers">
             {% for stock in group.stocks %}
             <li>
-              <a href="/report/{{ stock.symbol }}" class="sidebar-ticker">
+              <a href="/report/{{ stock.symbol }}" class="sidebar-ticker" data-symbol="{{ stock.symbol }}">
                 <span class="sidebar-ticker-symbol">{{ stock.symbol }}</span>
                 {% set chip = verdict_chip(stock) %}<span class="sidebar-ticker-verdict badge-sm {{ chip.cls }}">{{ chip.label }}</span>
               </a>

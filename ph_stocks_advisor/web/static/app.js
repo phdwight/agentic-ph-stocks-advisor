@@ -9,8 +9,10 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   const STORAGE_KEY = "ph_advisor_tasks";
+  const STALE_NOTICE_KEY = "ph_advisor_stale_notice";
   const POLL_MS = 3000;
   const STALE_MS = 10 * 60 * 1000; // auto-expire tasks older than 10 min
+  const NOTICE_AUTO_FADE_MS = 10000;
 
   const form = document.getElementById("analyse-form");
   const input = document.getElementById("symbol-input");
@@ -18,6 +20,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const trackerList = document.getElementById("tracker-list");
   const trackerPanel = document.getElementById("tracker-panel");
   const trackerCount = document.getElementById("tracker-count");
+  const noticeArea = document.getElementById("notice-area");
+  const noticeText = document.getElementById("notice-text");
   const errorArea = document.getElementById("error-area");
   const errorText = document.getElementById("error-text");
 
@@ -195,8 +199,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const recentSection = document.getElementById("recent-stocks");
     if (!chipsContainer || !recentSection) return;
 
-    // Don't add a duplicate
-    if (chipsContainer.querySelector(`[data-symbol="${symbol}"]`)) return;
+    // Replace any existing chip for this symbol so refreshed reports show
+    // the updated verdict band and today's date at the front.
+    const existing = chipsContainer.querySelector(`[data-symbol="${symbol}"]`);
+    if (existing) existing.remove();
 
     // Show the section if it was hidden (no previous stocks)
     recentSection.style.display = "";
@@ -303,7 +309,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const chipInfo = bandChip(verdict, score);
     const li = document.createElement("li");
     li.innerHTML = `
-      <a href="/report/${encodeURIComponent(symbol)}" class="sidebar-ticker">
+      <a href="/report/${encodeURIComponent(symbol)}" class="sidebar-ticker" data-symbol="${symbol}">
         <span class="sidebar-ticker-symbol">${symbol}</span>
         <span class="sidebar-ticker-verdict badge-sm ${chipInfo.cls}">${chipInfo.label}</span>
       </a>`;
@@ -655,10 +661,38 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ================================================================== */
-  /*  Error toast                                                       */
+  /*  Notice & error banners                                            */
   /* ================================================================== */
 
+  function staleRefreshMessage(symbol, status) {
+    if (status === "joined") {
+      return `The saved report for ${symbol} is outdated — a new report is already being generated.`;
+    }
+    return `The saved report for ${symbol} is outdated — generating a new report now.`;
+  }
+
+  function flashNotice(msg) {
+    if (!noticeArea || !noticeText) return;
+    hideError();
+    noticeArea.classList.remove("is-fading");
+    noticeArea.style.display = "flex";
+    noticeText.textContent = msg;
+    if (flashNotice._fadeTimer) clearTimeout(flashNotice._fadeTimer);
+    if (flashNotice._hideTimer) clearTimeout(flashNotice._hideTimer);
+    flashNotice._fadeTimer = setTimeout(() => {
+      noticeArea.classList.add("is-fading");
+      flashNotice._hideTimer = setTimeout(hideNotice, 600);
+    }, NOTICE_AUTO_FADE_MS);
+  }
+
+  function hideNotice() {
+    if (!noticeArea) return;
+    noticeArea.style.display = "none";
+    noticeArea.classList.remove("is-fading");
+  }
+
   function flashError(msg, symbol) {
+    hideNotice();
     errorArea.classList.remove("is-fading");
     errorArea.style.display = "block";
     if (symbol) {
@@ -703,6 +737,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Surface any stale-report refresh notice queued from another page's sidebar
+  try {
+    const rawNotice = sessionStorage.getItem(STALE_NOTICE_KEY);
+    if (rawNotice) {
+      sessionStorage.removeItem(STALE_NOTICE_KEY);
+      const parsed = JSON.parse(rawNotice);
+      if (parsed && parsed.symbol) {
+        flashNotice(staleRefreshMessage(parsed.symbol, parsed.status));
+      }
+    }
+  } catch { /* ignore */ }
+
   // Calibrate carousel speed on initial load
   calibrateCarousel();
 
@@ -715,5 +761,93 @@ document.addEventListener("DOMContentLoaded", () => {
       input.value = btn.dataset.symbol;
       form.dispatchEvent(new Event("submit", { cancelable: true }));
     });
+  });
+
+  /* ================================================================== */
+  /*  Report links (chips & sidebar): auto-refresh stale reports        */
+  /* ================================================================== */
+
+  function extractReportSymbol(link) {
+    if (link.dataset.symbol) return link.dataset.symbol.trim().toUpperCase();
+    const href = link.getAttribute("href") || "";
+    const match = href.match(/^\/report\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]).trim().toUpperCase() : "";
+  }
+
+  const inflightReportClicks = new Set();
+
+  document.addEventListener("click", async (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+    const link = e.target.closest(".stock-chip, .sidebar-ticker");
+    if (!link) return;
+    if (document.body.dataset.authenticated !== "true") return;
+
+    const symbol = extractReportSymbol(link);
+    if (!symbol) return;
+
+    e.preventDefault();
+
+    const tasks = loadTasks();
+    if (tasks[symbol] && tasks[symbol].status === "pending") {
+      renderTracker();
+      flashNotice(staleRefreshMessage(symbol, "joined"));
+      (noticeArea || trackerPanel)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+
+    if (inflightReportClicks.has(symbol)) return;
+    inflightReportClicks.add(symbol);
+    link.classList.add("is-checking");
+
+    try {
+      const resp = await fetch("/analyse", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || "",
+        },
+        body: `symbol=${encodeURIComponent(symbol)}&refresh_stale=1`,
+      });
+
+      if (resp.redirected && resp.url.includes("/auth/login")) {
+        window.location.href = resp.url;
+        return;
+      }
+
+      const data = await resp.json();
+
+      if (resp.status === 401 || data.status === "login_required" || data.login_url) {
+        window.location.href = data.login_url || "/auth/login";
+        return;
+      }
+
+      if (data.status === "cached") {
+        window.location.href = `/report/${encodeURIComponent(data.symbol || symbol)}`;
+        return;
+      }
+
+      if (data.task_id) {
+        addTask(symbol, data.task_id);
+        renderTracker();
+        streamStatus(data.task_id, symbol);
+        flashNotice(staleRefreshMessage(symbol, data.status));
+        (noticeArea || trackerPanel)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+      }
+
+      if (!resp.ok && data.error) {
+        flashError(data.error, data.symbol);
+        return;
+      }
+
+      window.location.href = link.href;
+    } catch {
+      window.location.href = link.href;
+    } finally {
+      inflightReportClicks.delete(symbol);
+      link.classList.remove("is-checking");
+    }
   });
 });
