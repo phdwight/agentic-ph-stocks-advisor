@@ -163,6 +163,7 @@ def login():
         entra_enabled=settings.entra_enabled,
         google_enabled=settings.google_enabled,
         passkey_enabled=settings.passkey_enabled,
+        login_prompt=session.pop("login_prompt", None),
     )
 
 

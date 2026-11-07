@@ -189,7 +189,7 @@ class TestLoginRequired:
 
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_price", return_value=None)
     @patch("ph_stocks_advisor.web.app.get_repository")
-    def test_unauthenticated_can_view_existing_report(self, mock_repo, _mock_price, client):
+    def test_unauthenticated_can_view_recent_5_report(self, mock_repo, _mock_price, client):
         from datetime import UTC, datetime
 
         from ph_stocks_advisor.infra.repository import ReportRecord
@@ -208,14 +208,16 @@ class TestLoginRequired:
         )
         repo_instance = MagicMock()
         repo_instance.get_latest_by_symbol.return_value = record
+        repo_instance.list_recent_symbols.return_value = [record]
         mock_repo.return_value = repo_instance
 
         resp = client.get("/report/BDO")
         assert resp.status_code == 200
         assert b"BDO report available." in resp.data
+        repo_instance.list_recent_symbols.assert_called_once_with(limit=5)
 
     @patch("ph_stocks_advisor.web.app.get_repository")
-    def test_unauthenticated_analyse_existing_ticker_returns_cached(self, mock_repo, client):
+    def test_unauthenticated_analyse_recent_5_ticker_returns_cached(self, mock_repo, client):
         from datetime import UTC, datetime
 
         from ph_stocks_advisor.infra.repository import ReportRecord
@@ -234,6 +236,7 @@ class TestLoginRequired:
         )
         repo_instance = MagicMock()
         repo_instance.get_latest_by_symbol.return_value = record
+        repo_instance.list_recent_symbols.return_value = [record]
         mock_repo.return_value = repo_instance
 
         with client.session_transaction() as sess:
@@ -249,6 +252,117 @@ class TestLoginRequired:
         assert data["status"] == "cached"
         assert data["symbol"] == "BDO"
         assert data["report_id"] == 10
+        repo_instance.list_recent_symbols.assert_called_once_with(limit=5)
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_unauthenticated_analyse_older_existing_ticker_requires_login(self, mock_repo, client):
+        """An already-searched ticker outside the recent 5 must prompt login."""
+        from datetime import UTC, datetime
+
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        recent_5 = [
+            ReportRecord(
+                id=i + 1,
+                symbol=sym,
+                verdict="BUY",
+                summary="ok",
+                price_section="",
+                dividend_section="",
+                movement_section="",
+                valuation_section="",
+                controversy_section="",
+                created_at=datetime.now(tz=UTC),
+            )
+            for i, sym in enumerate(["BDO", "SM", "ALI", "JFC", "TEL"])
+        ]
+        older_record = ReportRecord(
+            id=99,
+            symbol="GLO",
+            verdict="BUY",
+            summary="older report",
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+            created_at=datetime.now(tz=UTC),
+        )
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = older_record
+        repo_instance.list_recent_symbols.return_value = recent_5
+        mock_repo.return_value = repo_instance
+
+        with client.session_transaction() as sess:
+            sess["_csrf_token"] = "csrf-tok"
+
+        resp = client.post(
+            "/analyse",
+            data={"symbol": "GLO"},
+            headers={"X-CSRFToken": "csrf-tok"},
+        )
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert data["status"] == "login_required"
+        assert "/auth/login" in data["login_url"]
+        assert data["symbol"] == "GLO"
+        assert "5 most recently analysed" in data["error"]
+
+        with client.session_transaction() as sess:
+            assert sess["next_url"] == "/report/GLO"
+
+        # Visiting /auth/login renders the contextual sign-in prompt and consumes it.
+        login_resp = client.get("/auth/login")
+        assert login_resp.status_code == 200
+        assert b"Please sign in to view GLO" in login_resp.data
+
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    @pytest.mark.parametrize("path", ["/report/GLO", "/history/GLO", "/report-by-id/99"])
+    def test_unauthenticated_direct_routes_for_older_existing_ticker_redirect_to_login(
+        self, mock_repo, client, path
+    ):
+        """Direct GET routes for an existing ticker outside the recent 5 redirect to login."""
+        from datetime import UTC, datetime
+
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        recent_5 = [
+            ReportRecord(
+                id=i + 1,
+                symbol=sym,
+                verdict="BUY",
+                summary="ok",
+                price_section="",
+                dividend_section="",
+                movement_section="",
+                valuation_section="",
+                controversy_section="",
+                created_at=datetime.now(tz=UTC),
+            )
+            for i, sym in enumerate(["BDO", "SM", "ALI", "JFC", "TEL"])
+        ]
+        older_record = ReportRecord(
+            id=99,
+            symbol="GLO",
+            verdict="BUY",
+            summary="older report",
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+            created_at=datetime.now(tz=UTC),
+        )
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = older_record
+        repo_instance.list_by_symbol.return_value = [older_record]
+        repo_instance.get_by_id.return_value = older_record
+        repo_instance.list_recent_symbols.return_value = recent_5
+        mock_repo.return_value = repo_instance
+
+        resp = client.get(path)
+        assert resp.status_code == 302
+        assert "/auth/login" in resp.headers["Location"]
 
     @patch("ph_stocks_advisor.web.app.get_repository")
     def test_unauthenticated_analyse_missing_ticker_requires_login(self, mock_repo, client):
@@ -513,6 +627,38 @@ class TestAuthenticatedAccess:
 
         resp = client.get("/")
         assert resp.status_code == 200
+
+    @patch("ph_stocks_advisor.data.services.price.fetch_stock_price", return_value=None)
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_logged_in_user_can_view_ticker_outside_recent_5(self, mock_repo, _mock_price, client):
+        from datetime import UTC, datetime
+
+        from ph_stocks_advisor.infra.repository import ReportRecord
+
+        older_record = ReportRecord(
+            id=99,
+            symbol="GLO",
+            verdict="BUY",
+            summary="**Executive Summary:**\nGLO full report.",
+            price_section="",
+            dividend_section="",
+            movement_section="",
+            valuation_section="",
+            controversy_section="",
+            created_at=datetime.now(tz=UTC),
+        )
+        repo_instance = MagicMock()
+        repo_instance.get_latest_by_symbol.return_value = older_record
+        repo_instance.list_recent_symbols.return_value = []
+        repo_instance.list_user_symbols.return_value = []
+        mock_repo.return_value = repo_instance
+
+        with client.session_transaction() as sess:
+            sess["user"] = {"name": "Test", "email": "t@e.com", "oid": "123"}
+
+        resp = client.get("/report/GLO")
+        assert resp.status_code == 200
+        assert b"GLO full report." in resp.data
 
 
 # ---------------------------------------------------------------------------

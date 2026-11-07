@@ -19,7 +19,7 @@ flowchart LR
 
 ### `web/` — delivery boundary
 
-Routes, passkey-first auth (emailed 6-digit code at sign-up, OAuth recovery), per-user rate limit (5/day, atomic reserve/release), the same-ticker dedup claim, SSE progress, and Celery dispatch. Tala UI: console layout on desktop, stream on mobile.
+Routes, passkey-first auth (emailed 6-digit code at sign-up, OAuth recovery), guest preview limited to the 5 most recently analysed tickers, per-user rate limit (5/day, atomic reserve/release), the same-ticker dedup claim, SSE progress, Celery dispatch, and PWA shell (`/manifest.webmanifest`, `/sw.js`, `/offline`).
 
 > **Never:** analysis logic, LLM calls, data fetching.
 

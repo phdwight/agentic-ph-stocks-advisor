@@ -41,7 +41,7 @@ Three design commitments shape almost every module:
                                  ┌──────────────────────────────────────────────┐
                                  │                   Browser                    │
                                  │  Jinja templates + vanilla JS (app.js,      │
-                                 │  portfolio.js, passkey.js, report-viz.js)   │
+                                 │  pwa.js, portfolio.js, passkey.js, …)       │
                                  └───────▲──────────────────────▲──────────────┘
                                          │ HTTP                 │ SSE (/stream/<task_id>)
 ┌───────────────┐                ┌───────┴──────────────────────┴──────────────┐
@@ -145,8 +145,14 @@ The scenario: an authenticated user types **AREIT** and clicks *Analyse*.
 
 `POST /analyse` lands in the `analyse` route of `ph_stocks_advisor.web.app`:
 
-1. **Identity:** `auth.get_current_user()` supplies `{oid, email, user_type}` (populated at
-   login by the passkey blueprint `web/passkey.py` or the OAuth blueprint `web/auth.py`).
+1. **Identity & guest recent-5 gate:** `auth.get_current_user()` supplies `{oid, email, user_type}`
+   (populated at login by `web/passkey.py` or `web/auth.py`), or `None` for unauthenticated
+   visitors when `auth_enabled` is true. Unauthenticated callers can only open cached reports for
+   tickers in the **5 most recently analysed stocks** (`_is_recent_public_symbol` via
+   `list_recent_symbols(limit=5)`); searching an older already-analysed ticker (`#6+`) or an
+   unanalysed symbol stores `session["next_url"]` + `session["login_prompt"]` and returns `401`
+   (`status="login_required"`, redirecting the browser to `/auth/login`). Direct GET routes
+   (`/report/<symbol>`, `/history/<symbol>`, `/report-by-id/<id>`) enforce the same recent-5 check.
 2. **Trading-session gate:** helpers delegating to `infra.trading_calendar` decide freshness.
    A report is *fresh* if created after `last_trading_close()` (the most recent trading-day
    3:00 PM PHT close; weekends roll back to Friday). During market hours

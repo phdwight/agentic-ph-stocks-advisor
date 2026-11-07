@@ -115,9 +115,9 @@ def _asset_rev() -> str:
     digest = hashlib.sha256()
     static_dir = Path(__file__).resolve().parent / "static"
     try:
-        for f in sorted(static_dir.glob("*")):
+        for f in sorted(static_dir.rglob("*")):
             if f.is_file():
-                digest.update(f.name.encode())
+                digest.update(f.relative_to(static_dir).as_posix().encode())
                 digest.update(f.read_bytes())
         rev = digest.hexdigest()[:10]
     except OSError:
@@ -300,6 +300,8 @@ def create_app() -> Flask:
             (
                 "default-src 'self'; "
                 "script-src 'self'; "
+                "worker-src 'self'; "
+                "manifest-src 'self'; "
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "font-src 'self' https://fonts.gstatic.com; "
                 "img-src 'self' data:; "
@@ -458,6 +460,91 @@ def create_app() -> Flask:
         """
         return render_template("disclaimer.html")
 
+    @app.route("/offline")
+    def offline():
+        """Public offline fallback shell pre-cached by the PWA service worker."""
+        return render_template("offline.html")
+
+    @app.route("/manifest.webmanifest")
+    def manifest():
+        """Web App Manifest enabling standalone PWA installation."""
+        rev = _asset_rev()
+        shortcut_icon = {"src": f"/static/icons/icon-192.png?v={rev}", "sizes": "192x192", "type": "image/png"}
+        payload = {
+            "id": "/",
+            "name": "PH Stocks Advisor",
+            "short_name": "PH Stocks",
+            "description": (
+                "Multi-agent AI equity research, valuation, dividend, and risk verdicts "
+                "for Philippine Stock Exchange (PSE) stocks."
+            ),
+            "start_url": "/?source=pwa",
+            "scope": "/",
+            "display": "standalone",
+            "display_override": ["standalone", "minimal-ui"],
+            "orientation": "portrait-primary",
+            "background_color": "#f8fafc",
+            "theme_color": "#0d9488",
+            "categories": ["finance", "business", "productivity"],
+            "icons": [
+                {
+                    "src": f"/static/icons/icon-192.png?v={rev}",
+                    "sizes": "192x192",
+                    "type": "image/png",
+                    "purpose": "any",
+                },
+                {
+                    "src": f"/static/icons/icon-512.png?v={rev}",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "any",
+                },
+                {
+                    "src": f"/static/icons/icon-maskable-512.png?v={rev}",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "maskable",
+                },
+                {
+                    "src": f"/static/icons/icon.svg?v={rev}",
+                    "sizes": "any",
+                    "type": "image/svg+xml",
+                    "purpose": "any",
+                },
+            ],
+            "shortcuts": [
+                {
+                    "name": "Search PSE Stock",
+                    "short_name": "Search",
+                    "description": "Jump straight to ticker analysis",
+                    "url": "/?focus=search",
+                    "icons": [shortcut_icon],
+                },
+                {
+                    "name": "Disclaimer & Terms",
+                    "short_name": "Disclaimer",
+                    "description": "Read methodology and disclaimer",
+                    "url": "/disclaimer",
+                    "icons": [shortcut_icon],
+                },
+            ],
+        }
+        resp = Response(json.dumps(payload), mimetype="application/manifest+json")
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+        return resp
+
+    @app.route("/sw.js")
+    def service_worker():
+        """Root-scoped PWA Service Worker stamped with the static asset hash."""
+        rev = _asset_rev()
+        sw_path = Path(__file__).resolve().parent / "static" / "sw.js"
+        body = sw_path.read_text(encoding="utf-8")
+        script = f'const ASSET_REV = "{rev}";\n{body}'
+        resp = Response(script, mimetype="application/javascript")
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Service-Worker-Allowed"] = "/"
+        return resp
+
     @app.route("/healthz")
     def healthz():
         """Heartbeat endpoint for liveness / readiness probes.
@@ -496,6 +583,28 @@ def create_app() -> Flask:
     # Routes
     # ------------------------------------------------------------------
 
+    _ANON_RECENT_LIMIT = 5
+
+    def _is_recent_public_symbol(repo, symbol: str) -> bool:
+        """Return True if *symbol* is among the top ``_ANON_RECENT_LIMIT`` recently analysed tickers."""
+        target = symbol.upper()
+        return any(r.symbol.upper() == target for r in repo.list_recent_symbols(limit=_ANON_RECENT_LIMIT))
+
+    def _guest_login_redirect(repo, symbol: str | None, *, has_report: bool):
+        """Return a redirect to ``/auth/login`` if a guest cannot view *symbol*, else ``None``."""
+        if not settings.auth_enabled or get_current_user() is not None:
+            return None
+        if has_report and symbol and _is_recent_public_symbol(repo, symbol):
+            return None
+        session["next_url"] = request.url
+        session["login_prompt"] = (
+            f"Please sign in to view {symbol}. Guest access is limited to the "
+            f"{_ANON_RECENT_LIMIT} most recently analysed stocks."
+            if has_report and symbol
+            else "Please sign in to analyse a new stock."
+        )
+        return redirect(url_for("auth.login"))
+
     @app.route("/")
     def index():
         """Landing page with the analysis form and user's analysed stocks.
@@ -513,10 +622,15 @@ def create_app() -> Flask:
             elif user:
                 recent = repo.list_recent_symbols(limit=50)
             else:
-                recent = repo.list_recent_symbols(limit=5)
+                recent = repo.list_recent_symbols(limit=_ANON_RECENT_LIMIT)
         except Exception:
             recent = []
-        return render_template("index.html", recent_stocks=recent)
+        return render_template(
+            "index.html",
+            recent_stocks=recent,
+            market_open=trading_calendar.is_market_open(),
+            next_close_label=trading_calendar.next_close_label(),
+        )
 
     @app.route("/analyse", methods=["POST"])
     def analyse():
@@ -538,11 +652,11 @@ def create_app() -> Flask:
         repo = get_repository()
         record = repo.get_latest_by_symbol(symbol)
 
-        # Unauthenticated users may view an existing report if data is
-        # already available for the symbol; otherwise require sign-in
-        # before dispatching a new analysis.
+        # Unauthenticated users may only view a report when the ticker is
+        # among the 5 most recently analysed stocks; any other existing or
+        # unanalysed ticker requires sign-in.
         if settings.auth_enabled and user is None:
-            if record is not None:
+            if record is not None and _is_recent_public_symbol(repo, symbol):
                 return jsonify(
                     {
                         "status": "cached",
@@ -550,7 +664,14 @@ def create_app() -> Flask:
                         "report_id": record.id,
                     }
                 )
-            session["next_url"] = url_for("index")
+            session["next_url"] = url_for("report", symbol=symbol) if record is not None else url_for("index")
+            error_msg = (
+                f"Please sign in to view {symbol}. Guest access is limited to the "
+                f"{_ANON_RECENT_LIMIT} most recently analysed stocks."
+                if record is not None
+                else "Please sign in to analyse a new stock."
+            )
+            session["login_prompt"] = error_msg
             login_url = url_for("auth.login")
             wants_html = (
                 not request.is_json
@@ -564,7 +685,7 @@ def create_app() -> Flask:
                     "status": "login_required",
                     "login_url": login_url,
                     "symbol": symbol,
-                    "error": "Please sign in to analyse a new stock.",
+                    "error": error_msg,
                 }
             ), 401
 
@@ -851,10 +972,11 @@ def create_app() -> Flask:
         repo = get_repository()
         record = repo.get_latest_by_symbol(symbol)
 
+        guest_redirect = _guest_login_redirect(repo, symbol, has_report=record is not None)
+        if guest_redirect is not None:
+            return guest_redirect
+
         if record is None:
-            if settings.auth_enabled and get_current_user() is None:
-                session["next_url"] = request.url
-                return redirect(url_for("auth.login"))
             return render_template("no_report.html", symbol=symbol), 404
 
         sections = _build_report_sections(record)
@@ -966,9 +1088,9 @@ def create_app() -> Flask:
         repo = get_repository()
         records = repo.list_by_symbol(symbol, limit=20)
 
-        if not records and settings.auth_enabled and get_current_user() is None:
-            session["next_url"] = request.url
-            return redirect(url_for("auth.login"))
+        guest_redirect = _guest_login_redirect(repo, symbol, has_report=bool(records))
+        if guest_redirect is not None:
+            return guest_redirect
 
         formatted = []
         for r in records:
@@ -990,10 +1112,12 @@ def create_app() -> Flask:
         repo = get_repository()
         record = repo.get_by_id(report_id)
 
+        sym = record.symbol if record is not None else None
+        guest_redirect = _guest_login_redirect(repo, sym, has_report=record is not None)
+        if guest_redirect is not None:
+            return guest_redirect
+
         if record is None:
-            if settings.auth_enabled and get_current_user() is None:
-                session["next_url"] = request.url
-                return redirect(url_for("auth.login"))
             return render_template("no_report.html", symbol="unknown"), 404
 
         sections = _build_report_sections(record)

@@ -406,9 +406,9 @@
       <div class="rung">
         <div class="mod"><div class="file">web/</div><div class="tag">delivery boundary</div></div>
         <div class="desc">
-          <p>Routes, passkey-first auth (emailed 6-digit code at sign-up, OAuth recovery), per-user
-          rate limit (5/day, atomic reserve/release), the same-ticker dedup claim, SSE progress, and
-          Celery dispatch. Tala UI: console layout on desktop, stream on mobile.</p>
+          <p>Routes, passkey-first auth (emailed 6-digit code at sign-up, OAuth recovery), guest
+          preview capped to the 5 most recently analysed tickers, per-user rate limit (5/day, atomic
+          reserve/release), the same-ticker dedup claim, SSE progress, Celery dispatch, and PWA shell.</p>
           <p class="no">Never: analysis logic, LLM calls, data fetching.</p>
         </div>
       </div>
@@ -654,10 +654,13 @@
       <div class="gpstep">
         <div class="num">1</div>
         <div class="body">
-          <div class="call">POST /analyze <span class="at">· web/app.py</span></div>
-          <p class="note">Session user resolved (<code>user_id</code> = email). A fresh run costs a
-          rate-limit slot — reserved atomically, <span class="halt">released if the run fails</span>.
-          Market open, or a report newer than the last 15:00 cutoff? Serve that instead — no task.</p>
+          <div class="call">POST /analyse <span class="at">· web/app.py</span></div>
+          <p class="note">Session user resolved (<code>user_id</code> = email). Guests (when auth is
+          enabled) may only open cached hits among the 5 most recently analysed tickers — any older or
+          unanalysed ticker returns <code>401 login_required</code> and redirects to <code>/auth/login</code>.
+          For signed-in users, a fresh run costs a rate-limit slot — reserved atomically,
+          <span class="halt">released if the run fails</span>. Market open, or a report newer than the
+          last 15:00 cutoff? Serve that instead — no task.</p>
         </div>
       </div>
       <div class="gpstep freeze">
