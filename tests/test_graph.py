@@ -246,7 +246,7 @@ class TestGracefulDegradation:
         movement trend-line series) is kept so visualisations still render; the
         dimension is still excluded from the verdict score."""
         symbol = "TEL"
-        trend = [100.0, 101.0, 102.0, 103.0, 104.0]
+        trend: list[float | None] = [100.0, 101.0, 102.0, 103.0, 104.0]
         registry = []
         entries = [
             ("price_agent", "price_analysis", PriceAnalysis, StockPrice(symbol=symbol, current_price=100.0)),

@@ -105,26 +105,28 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
 
         suspension = _fetch_suspension(symbol)
         if suspension.is_suspended and len(daily.index) > 0:
-            last_trade_dt = pd.Timestamp(daily.index[-1]).normalize()
-            today_ts = pd.Timestamp(get_today())
-            suspended_bdays = (
-                pd.bdate_range(start=last_trade_dt + pd.Timedelta(days=1), end=today_ts)
-                if today_ts > last_trade_dt
-                else pd.DatetimeIndex([])
-            )
-            if len(suspended_bdays) > 0:
-                monthly_prices.extend([None] * len(suspended_bdays))
-            susp_start = suspension.execution_date or (
-                suspended_bdays[0].strftime("%Y-%m-%d")
-                if len(suspended_bdays) > 0
-                else last_trade_dt.strftime("%Y-%m-%d")
-            )
-            catalysts.insert(
-                0,
-                f"TRADING SUSPENDED since {susp_start} ({len(suspended_bdays)} trading days "
-                f"with zero trades; last traded on {last_trade_dt.strftime('%Y-%m-%d')} "
-                f"at ₱{year_end:.2f}).",
-            )
+            last_trade_raw = pd.Timestamp(daily.index[-1])
+            today_raw = pd.Timestamp(get_today())
+            if isinstance(last_trade_raw, pd.Timestamp) and isinstance(today_raw, pd.Timestamp):
+                last_trade_dt = last_trade_raw.normalize()
+                suspended_bdays = (
+                    pd.bdate_range(start=last_trade_dt + pd.Timedelta(days=1), end=today_raw)
+                    if today_raw > last_trade_dt
+                    else pd.DatetimeIndex([])
+                )
+                if len(suspended_bdays) > 0:
+                    monthly_prices.extend([None] * len(suspended_bdays))
+                susp_start = suspension.execution_date or (
+                    suspended_bdays[0].strftime("%Y-%m-%d")
+                    if len(suspended_bdays) > 0
+                    else last_trade_dt.strftime("%Y-%m-%d")
+                )
+                catalysts.insert(
+                    0,
+                    f"TRADING SUSPENDED since {susp_start} ({len(suspended_bdays)} trading days "
+                    f"with zero trades; last traded on {last_trade_dt.strftime('%Y-%m-%d')} "
+                    f"at ₱{year_end:.2f}).",
+                )
 
         monthly_prices = monthly_prices[-365:]
 
