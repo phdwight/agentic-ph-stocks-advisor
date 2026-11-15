@@ -24,6 +24,8 @@ from typing import Any
 import pandas as pd
 import requests
 
+from ph_stocks_advisor.data.models import SuspensionInfo
+
 logger = logging.getLogger(__name__)
 
 
@@ -183,6 +185,149 @@ _SNAPSHOT_FIELDS = {
     "52-Week Low": "week_low",
     "Outstanding Shares": "shares_outstanding",
 }
+
+
+def _parse_trading_status(html: str) -> str | None:
+    """Extract the trading Status cell (e.g. 'Open', 'Suspended') from stockData.do HTML."""
+    m = re.search(
+        r"<th[^>]*>\s*Status\s*</th>\s*<td[^>]*>(.*?)</td>",
+        html,
+        re.S | re.I,
+    )
+    if not m:
+        return None
+    status = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+    return status or None
+
+
+def _is_suspended_status(status: str | None) -> bool:
+    """Return True when *status* indicates a trading suspension or halt."""
+    if not status:
+        return False
+    low = status.strip().lower()
+    return low.startswith(("suspend", "halt"))
+
+
+def _clean_html_cell(cell_html: str) -> str:
+    """Strip HTML tags and collapse whitespace inside a table cell."""
+    text = re.sub(r"<[^>]+>", " ", cell_html)
+    return " ".join(text.split())
+
+
+def _parse_suspension_reason(html: str) -> str:
+    """Extract the human-readable suspension reason/background from a PSE notice HTML."""
+    cleaned = re.sub(r"<(style|script)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    text = re.sub(r"<[^>]+>", " ", cleaned)
+    text = re.sub(r"\s+", " ", text).strip()
+    m = re.search(
+        r"\bBackground\b\s*(.*?)"
+        r"(?:\bName of Listed Company\b|\bTrading (?:Suspension|Halt) Details\b|\bFor the information\b|$)",
+        text,
+        re.I,
+    )
+    if m and m.group(1).strip():
+        return m.group(1).strip()
+    subj = re.search(r"\bSubject\b\s*(.*?)(?:\bBackground\b|\bName of Listed Company\b|$)", text, re.I)
+    if subj and subj.group(1).strip():
+        return subj.group(1).strip()
+    return text[:600].strip()
+
+
+def fetch_trading_status(symbol: str) -> str:
+    """Scrape the current trading status (e.g. 'Open', 'Suspended') from PSE EDGE stockData.do.
+
+    Returns ``"Open"`` on network/lookup failure so transient errors never
+    falsely flag a stock as suspended.
+    """
+    clean = symbol.upper().replace(".PS", "")
+    cmpy_id = _resolve_cmpy_id(clean)
+    if not cmpy_id:
+        return "Open"
+    try:
+        resp = requests.get(
+            f"{_base_url()}/companyPage/stockData.do",
+            params={"cmpy_id": cmpy_id},
+            headers={"Referer": _base_url()},
+            timeout=_timeout(),
+        )
+        if resp.status_code != 200:
+            logger.debug("PSE EDGE stockData returned %s for %s", resp.status_code, clean)
+            return "Open"
+        status = _parse_trading_status(resp.text)
+        return status if status else "Open"
+    except Exception as exc:
+        logger.warning("PSE EDGE trading status fetch failed for %s: %s", clean, exc)
+        return "Open"
+
+
+def fetch_suspension_info(symbol: str) -> SuspensionInfo:
+    """Return PSE EDGE trading status and suspension/halt details for *symbol*.
+
+    First checks ``stockData.do`` for the stock's current ``Status`` field.
+    When the status indicates a suspension or halt (e.g. ``"Suspended"``),
+    scrapes ``/disclosureData/halts_and_suspensions_list.do`` to extract the
+    execution date/time, lifting date/time, and disclosure notice number, and
+    fetches the linked PSE notice to extract the official regulatory reason.
+    """
+    clean = symbol.upper().replace(".PS", "")
+    status = fetch_trading_status(clean)
+    if not _is_suspended_status(status):
+        return SuspensionInfo(symbol=clean, trading_status=status, is_suspended=False)
+
+    info = SuspensionInfo(
+        symbol=clean,
+        trading_status=status,
+        is_suspended=True,
+        market_action="Suspension" if status.lower().startswith("suspend") else status,
+    )
+
+    try:
+        resp = requests.get(
+            f"{_base_url()}/disclosureData/halts_and_suspensions_list.do",
+            headers={"Referer": _base_url()},
+            timeout=_timeout(),
+        )
+        if resp.status_code != 200:
+            logger.warning("PSE EDGE halts_and_suspensions_list returned %s", resp.status_code)
+            return info
+
+        tbody_match = re.search(r"<table[^>]*class=\"list\"[^>]*>.*?<tbody[^>]*>(.*?)</tbody>", resp.text, re.S | re.I)
+        tbody_html = tbody_match.group(1) if tbody_match else resp.text
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", tbody_html, re.S | re.I)
+
+        edge_no = ""
+        for row_html in rows:
+            tds = re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.S | re.I)
+            if len(tds) < 7:
+                continue
+            sym_text = _clean_html_cell(tds[0])
+            tokens = [t.strip().upper() for t in re.split(r"[,\s]+|\band\b", sym_text, flags=re.I) if t.strip()]
+            if clean not in tokens:
+                continue
+
+            info.market_action = _clean_html_cell(tds[1]) or info.market_action
+            info.execution_date = _clean_html_cell(tds[2])
+            info.execution_time = _clean_html_cell(tds[3])
+            info.lifting_date = _clean_html_cell(tds[4])
+            info.lifting_time = _clean_html_cell(tds[5])
+            info.notice_number = _clean_html_cell(tds[6])
+            popup_match = re.search(r"openPopup\('([^']+)'\)", tds[6])
+            if popup_match:
+                edge_no = popup_match.group(1)
+            break
+
+        if edge_no:
+            from ph_stocks_advisor.data.clients.pse_edge_dividends import (
+                _fetch_disclosure_content,
+            )
+
+            disc_html = _fetch_disclosure_content(edge_no)
+            if disc_html:
+                info.reason = _parse_suspension_reason(disc_html)
+    except Exception as exc:
+        logger.warning("PSE EDGE suspension notice lookup failed for %s: %s", clean, exc)
+
+    return info
 
 
 def fetch_stock_snapshot(symbol: str) -> dict[str, float] | None:

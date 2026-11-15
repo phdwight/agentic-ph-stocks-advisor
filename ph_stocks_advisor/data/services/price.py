@@ -85,6 +85,21 @@ def detect_price_catalysts(profile: dict[str, Any] | None) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _fetch_trading_status(symbol: str) -> tuple[str, bool]:
+    """Return ``(trading_status, is_suspended)`` from PSE EDGE (empty-safe)."""
+    try:
+        from ph_stocks_advisor.data.clients.pse_edge import (
+            _is_suspended_status,
+            fetch_trading_status,
+        )
+
+        status = fetch_trading_status(symbol)
+        return status, _is_suspended_status(status)
+    except Exception as exc:  # pragma: no cover
+        logger.debug("PSE EDGE trading status unavailable for %s: %s", symbol, exc)
+        return "Open", False
+
+
 def fetch_stock_price(symbol: str) -> StockPrice:
     """Fetch current price snapshot for a PSE-listed stock.
 
@@ -95,6 +110,13 @@ def fetch_stock_price(symbol: str) -> StockPrice:
 
     if profile and profile.get("price"):
         catalysts = detect_price_catalysts(profile)
+        trading_status, is_suspended = _fetch_trading_status(symbol)
+        if is_suspended:
+            catalysts.insert(
+                0,
+                f"TRADING SUSPENDED on PSE (Status: {trading_status}) — shares cannot currently "
+                "be traded on the exchange; price shown reflects the last close before suspension.",
+            )
         return StockPrice(
             symbol=symbol,
             current_price=float(profile.get("price", 0)),
@@ -102,6 +124,8 @@ def fetch_stock_price(symbol: str) -> StockPrice:
             fifty_two_week_high=float(profile.get("weekHigh52", 0) or 0),
             fifty_two_week_low=float(profile.get("weekLow52", 0) or 0),
             previous_close=float(profile.get("prevDayClosePrice", 0) or 0),
+            trading_status=trading_status,
+            is_suspended=is_suspended,
             price_catalysts=catalysts,
         )
 
@@ -122,6 +146,14 @@ def fetch_stock_price(symbol: str) -> StockPrice:
             "weekLow52": snapshot["week_low"],
             "prevDayClosePrice": snapshot["previous_close"],
         }
+        catalysts = detect_price_catalysts(pseudo_profile)
+        trading_status, is_suspended = _fetch_trading_status(symbol)
+        if is_suspended:
+            catalysts.insert(
+                0,
+                f"TRADING SUSPENDED on PSE (Status: {trading_status}) — shares cannot currently "
+                "be traded on the exchange; price shown reflects the last close before suspension.",
+            )
         return StockPrice(
             symbol=symbol,
             current_price=snapshot["price"],
@@ -129,7 +161,9 @@ def fetch_stock_price(symbol: str) -> StockPrice:
             fifty_two_week_high=snapshot["week_high"],
             fifty_two_week_low=snapshot["week_low"],
             previous_close=snapshot["previous_close"],
-            price_catalysts=detect_price_catalysts(pseudo_profile),
+            trading_status=trading_status,
+            is_suspended=is_suspended,
+            price_catalysts=catalysts,
         )
 
     logger.warning("No price data for %s from DragonFi or PSE EDGE", symbol)

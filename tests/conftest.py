@@ -132,6 +132,9 @@ class _InProcessStubClient:
     def call(tool_name: str, arguments: dict[str, Any]) -> Any:
         from ph_stocks_advisor.data.clients.dragonfi import validate_pse_symbol
         from ph_stocks_advisor.data.services import (
+            bsp as _bsp,
+        )
+        from ph_stocks_advisor.data.services import (
             controversy as _controversy,
         )
         from ph_stocks_advisor.data.services import (
@@ -149,6 +152,9 @@ class _InProcessStubClient:
         from ph_stocks_advisor.data.services import (
             valuation as _valuation,
         )
+
+        if tool_name == "get_bsp_rates":
+            return _bsp.fetch_bsp_rates().model_dump()
 
         symbol = arguments["symbol"]
         if tool_name == "validate_symbol":

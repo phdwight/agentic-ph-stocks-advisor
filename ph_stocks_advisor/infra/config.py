@@ -128,6 +128,7 @@ class Settings:
         "TRADINGVIEW_SCANNER_URL",
         "https://scanner.tradingview.com/philippines/scan",
     )
+    bsp_base_url: str = os.getenv("BSP_BASE_URL", "https://www.bsp.gov.ph")
 
     # -- Timezone ---------------------------------------------------------------
     timezone: str = os.getenv("TIMEZONE", "Asia/Manila")

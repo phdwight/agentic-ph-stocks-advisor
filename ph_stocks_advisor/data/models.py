@@ -43,10 +43,81 @@ class StockPrice(BaseModel):
     fifty_two_week_high: float = 0.0
     fifty_two_week_low: float = 0.0
     previous_close: float = 0.0
+    trading_status: str = Field(
+        default="Open",
+        description="Current trading status on PSE EDGE (e.g. 'Open', 'Suspended', 'Halted').",
+    )
+    is_suspended: bool = Field(
+        default=False,
+        description="True when the stock is currently suspended or halted from trading on the PSE.",
+    )
     price_catalysts: list[str] = Field(
         default_factory=list,
         description="Detected factors likely driving the current price (e.g. dividend announcement, REIT yield play).",
     )
+
+
+class SuspensionInfo(BaseModel):
+    """PSE EDGE trading status and suspension/halt notice details for a stock."""
+
+    symbol: str
+    trading_status: str = Field(
+        default="Open",
+        description="Current trading status on PSE EDGE (e.g. 'Open', 'Suspended', 'Halted').",
+    )
+    is_suspended: bool = Field(
+        default=False,
+        description="True when the stock is currently suspended or halted from trading on the PSE.",
+    )
+    market_action: str = Field(
+        default="",
+        description="PSE market action when suspended/halted (e.g. 'Suspension', 'Halt').",
+    )
+    execution_date: str = Field(
+        default="",
+        description="Date the suspension or halt took effect (e.g. 'Jun 2, 2026').",
+    )
+    execution_time: str = Field(
+        default="",
+        description="Time the suspension or halt took effect (e.g. '9:00 a.m.').",
+    )
+    lifting_date: str = Field(
+        default="",
+        description="Scheduled lifting date, or 'TBA' when indefinite.",
+    )
+    lifting_time: str = Field(
+        default="",
+        description="Scheduled lifting time, or 'TBA' when indefinite.",
+    )
+    notice_number: str = Field(
+        default="",
+        description="PSE disclosure or circular reference number (e.g. 'DN00081-2026').",
+    )
+    reason: str = Field(
+        default="",
+        description="Background and regulatory reason extracted from the official PSE EDGE suspension notice.",
+    )
+
+    def to_summary(self) -> str:
+        """Human/LLM-readable summary of the trading status or suspension."""
+        if not self.is_suspended:
+            return f"{self.symbol} trading status: {self.trading_status}"
+        parts = [f"TRADING SUSPENDED on PSE (Status: {self.trading_status}"]
+        if self.market_action:
+            parts[-1] += f", Action: {self.market_action}"
+        parts[-1] += ")."
+        if self.execution_date:
+            exec_str = self.execution_date
+            if self.execution_time:
+                exec_str += f" at {self.execution_time}"
+            parts.append(f"Effective: {exec_str}.")
+        if self.lifting_date:
+            parts.append(f"Lifting date: {self.lifting_date}.")
+        if self.notice_number:
+            parts.append(f"Notice: {self.notice_number}.")
+        if self.reason:
+            parts.append(f"Reason: {self.reason}")
+        return " ".join(parts)
 
 
 class DividendAnnouncement(BaseModel):
@@ -185,11 +256,12 @@ class PriceMovement(BaseModel):
         description="Largest peak-to-trough decline (%) during the year. "
         "A value like -30.0 means the stock fell 30% from its high.",
     )
-    monthly_prices: list[float] = Field(
+    monthly_prices: list[float | None] = Field(
         default_factory=list,
         description="Daily closing prices for the ~1-year trend line (up to the "
-        "last 365 trading days). The field name is kept for schema/DB "
-        "compatibility even though it now holds daily — not monthly — data.",
+        "last 365 trading days). ``None`` entries represent suspended trading "
+        "days when no trading occurred on the exchange. The field name is kept "
+        "for schema/DB compatibility.",
     )
 
     # -- Trend & catalysts -----------------------------------------------------
@@ -249,6 +321,21 @@ class ControversyInfo(BaseModel):
         default="",
         description="Recent general & controversy news from Tavily web search.",
     )
+    is_suspended: bool = Field(
+        default=False,
+        description="True when the stock is currently suspended or halted from trading on the PSE.",
+    )
+    trading_status: str = Field(
+        default="Open",
+        description="Current trading status on PSE EDGE (e.g. 'Open', 'Suspended', 'Halted').",
+    )
+    suspension_details: str = Field(
+        default="",
+        description=(
+            "Official PSE EDGE trading suspension details including effective date, "
+            "lifting date, notice number, and regulatory reason."
+        ),
+    )
 
 
 class SentimentInfo(BaseModel):
@@ -288,6 +375,111 @@ class SentimentInfo(BaseModel):
             "True only when the issuer is a Philippine REIT (DragonFi "
             "``isREIT``). REITs trade as bond proxies — never infer this."
         ),
+    )
+
+
+class BSPKeyRateItem(BaseModel):
+    """A single rate entry from the BSP Key Rates statistics page."""
+
+    title: str = Field(
+        description="Name of the BSP rate or indicator, e.g. 'Target RRP Rate' or 'ON Lending Rate'.",
+    )
+    value: str = Field(
+        description="Raw display value reported by BSP, e.g. '5.50%' or '63.5590'.",
+    )
+    rate_pct: float | None = Field(
+        default=None,
+        description="Parsed percentage rate when the entry is a percentage (e.g. 5.5 for '5.50%').",
+    )
+    published_date: str = Field(
+        default="",
+        description="Published or effective date reported by BSP (e.g. '11/13/2026').",
+    )
+    accepted_yields: str | None = Field(
+        default=None,
+        description="Accepted yield range when reported (e.g. '5.4300% - 5.7000%' for ON RRP Rate).",
+    )
+    url: str = Field(
+        default="",
+        description="Reference URL path on the BSP portal.",
+    )
+
+    def to_summary(self) -> str:
+        """Human-readable one-line summary."""
+        parts = [f"{self.title}: {self.value}"]
+        if self.accepted_yields:
+            parts.append(f"(Accepted yields: {self.accepted_yields})")
+        if self.published_date:
+            parts.append(f"[{self.published_date}]")
+        return " ".join(parts)
+
+
+class BSPKeyRates(BaseModel):
+    """Bangko Sentral ng Pilipinas (BSP) key interest rates and indicators.
+
+    Sourced from ``https://www.bsp.gov.ph/SitePages/Statistics/KeyRates.aspx``
+    (backed by the BSP SharePoint ``Key Rates`` list).
+    """
+
+    target_rrp_rate: float | None = Field(
+        default=None,
+        description="BSP Target Reverse Repurchase (RRP) policy interest rate in percent (e.g. 5.5).",
+    )
+    overnight_lending_rate: float | None = Field(
+        default=None,
+        description="BSP Overnight (ON) Lending Facility rate in percent (e.g. 6.0).",
+    )
+    overnight_deposit_rate: float | None = Field(
+        default=None,
+        description="BSP Overnight (ON) Deposit Facility rate in percent (e.g. 5.0).",
+    )
+    overnight_rrp_rate: float | None = Field(
+        default=None,
+        description="BSP Overnight RRP market rate in percent (e.g. 5.5013).",
+    )
+    bsp_securities_28d_wair: float | None = Field(
+        default=None,
+        description="28-day BSP Securities Weighted Average Interest Rate (WAIR) in percent.",
+    )
+    bsp_securities_56d_wair: float | None = Field(
+        default=None,
+        description="56-day BSP Securities Weighted Average Interest Rate (WAIR) in percent.",
+    )
+    tdf_7d_wair: float | None = Field(
+        default=None,
+        description="7-day Term Deposit Facility (TDF) Weighted Average Interest Rate (WAIR) in percent.",
+    )
+    tdf_14d_wair: float | None = Field(
+        default=None,
+        description="14-day Term Deposit Facility (TDF) Weighted Average Interest Rate (WAIR) in percent.",
+    )
+    tdf_28d_wair: float | None = Field(
+        default=None,
+        description="28-day Term Deposit Facility (TDF) Weighted Average Interest Rate (WAIR) in percent.",
+    )
+    inflation_rate: float | None = Field(
+        default=None,
+        description="Headline inflation rate in percent reported on the BSP Key Rates page.",
+    )
+    usd_php_rate: float | None = Field(
+        default=None,
+        description="PHP per US$ 1.00 reference exchange rate reported on the BSP Key Rates page.",
+    )
+    as_of_date: str = Field(
+        default="",
+        description="Published date of the core BSP policy rates (e.g. '11/13/2026').",
+    )
+    source_url: str = Field(
+        default="https://www.bsp.gov.ph/SitePages/Statistics/KeyRates.aspx",
+        description="Official BSP Key Rates page URL.",
+    )
+    rates: list[BSPKeyRateItem] = Field(
+        default_factory=list,
+        description="All entries from the BSP Key Rates list in display order.",
+    )
+    summary: str = Field(
+        default="",
+        description="Human/LLM-readable summary of the current BSP interest rates.",
     )
 
 
@@ -424,8 +616,9 @@ class FinalReport(BaseModel):
     sentiment_section: str = ""
     # 1-year daily close series (up to 365 trading days) captured at analysis
     # time, so the report's trend line is a snapshot of the run rather than a
-    # later live fetch. Field/column name kept as-is for DB compatibility.
-    movement_monthly_prices: list[float] = Field(default_factory=list)
+    # later live fetch. ``None`` entries mark suspended trading days with no
+    # trades. Field/column name kept as-is for DB compatibility.
+    movement_monthly_prices: list[float | None] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

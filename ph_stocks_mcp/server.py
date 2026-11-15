@@ -24,6 +24,7 @@ from ph_stocks_advisor.data.clients.dragonfi import (
     validate_pse_symbol,
 )
 from ph_stocks_advisor.data.models import (
+    BSPKeyRates,
     ControversyInfo,
     DividendInfo,
     FairValueEstimate,
@@ -31,6 +32,7 @@ from ph_stocks_advisor.data.models import (
     SentimentInfo,
     StockPrice,
 )
+from ph_stocks_advisor.data.services.bsp import fetch_bsp_rates
 from ph_stocks_advisor.data.services.controversy import fetch_controversy_info
 from ph_stocks_advisor.data.services.dividend import fetch_dividend_info
 from ph_stocks_advisor.data.services.movement import fetch_price_movement
@@ -123,5 +125,11 @@ def build_server() -> FastMCP:
         """Return macro / global-events sentiment context for a PSE stock."""
         logger.info("MCP tool called: get_sentiment_info(symbol=%r)", symbol)
         return await asyncio.to_thread(fetch_sentiment_info, symbol)
+
+    @mcp.tool()
+    async def get_bsp_rates() -> BSPKeyRates:
+        """Return Bangko Sentral ng Pilipinas (BSP) key interest rates and indicators."""
+        logger.info("MCP tool called: get_bsp_rates()")
+        return await asyncio.to_thread(fetch_bsp_rates)
 
     return mcp

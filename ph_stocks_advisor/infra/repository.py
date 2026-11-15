@@ -178,7 +178,7 @@ class ReportRecord:
         sentiment_section: str = "",
         created_at: datetime | None = None,
         score: int | None = None,
-        movement_monthly_prices: list[float] | None = None,
+        movement_monthly_prices: list[float | None] | None = None,
     ) -> None:
         self.id = id
         self.symbol = symbol

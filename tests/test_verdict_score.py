@@ -144,6 +144,30 @@ def test_regex_fallback_derives_score(sample_advisor_state):
     assert report.score == 25
 
 
+def test_suspended_stock_caps_score_in_avoid_band(sample_advisor_state):
+    """An actively suspended PSE stock must be capped in the 0–19 AVOID band
+    and forced to NOT BUY, even if historical valuation/dividend sub-scores
+    would otherwise average into DON'T BUY or WAIT."""
+    assert sample_advisor_state.controversy_analysis is not None
+    sample_advisor_state.controversy_analysis.data.is_suspended = True
+    sample_advisor_state.controversy_analysis.data.trading_status = "Suspended"
+
+    resp = _response(
+        verdict=Verdict.BUY,
+        price_score=35,
+        valuation_score=65,
+        dividend_score=70,
+        movement_score=30,
+        controversy_score=5,
+        sentiment_score=40,
+    )
+    report = ConsolidatorAgent(make_structured_mock_llm(resp)).run(sample_advisor_state)
+    assert report.verdict == Verdict.NOT_BUY
+    assert report.score is not None
+    assert report.score <= 15
+    assert score_band(report.score) == "AVOID"
+
+
 # ---------------------------------------------------------------------------
 # Repository persistence + migration
 # ---------------------------------------------------------------------------
