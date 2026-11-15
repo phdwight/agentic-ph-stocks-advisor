@@ -59,6 +59,7 @@ services:
       DRAGONFI_BASE_URL: ${DRAGONFI_BASE_URL:-https://api.dragonfi.ph/api/v2}
       PSE_EDGE_BASE_URL: ${PSE_EDGE_BASE_URL:-https://edge.pse.com.ph}
       TRADINGVIEW_SCANNER_URL: ${TRADINGVIEW_SCANNER_URL:-https://scanner.tradingview.com/philippines/scan}
+      BSP_BASE_URL: ${BSP_BASE_URL:-https://www.bsp.gov.ph}
       HTTP_TIMEOUT: ${HTTP_TIMEOUT:-15}
       TIMEZONE: ${TIMEZONE:-Asia/Manila}
       # ── Analysis thresholds (mirrored so the in-server services use the
@@ -132,6 +133,7 @@ services:
       DRAGONFI_BASE_URL: ${DRAGONFI_BASE_URL:-https://api.dragonfi.ph/api/v2}
       PSE_EDGE_BASE_URL: ${PSE_EDGE_BASE_URL:-https://edge.pse.com.ph}
       TRADINGVIEW_SCANNER_URL: ${TRADINGVIEW_SCANNER_URL:-https://scanner.tradingview.com/philippines/scan}
+      BSP_BASE_URL: ${BSP_BASE_URL:-https://www.bsp.gov.ph}
       HTTP_TIMEOUT: ${HTTP_TIMEOUT:-15}
       TIMEZONE: ${TIMEZONE:-Asia/Manila}
       OUTPUT_DIR: /app/output

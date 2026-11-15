@@ -25,6 +25,8 @@ from ph_stocks_advisor.data import tools
 from ph_stocks_advisor.data.clients.dragonfi import SymbolNotFoundError
 from ph_stocks_advisor.data.mcp_client import reset_client
 from ph_stocks_advisor.data.models import (
+    BSPKeyRateItem,
+    BSPKeyRates,
     ControversyInfo,
     DividendInfo,
     FairValueEstimate,
@@ -67,6 +69,21 @@ def mcp_in_memory_session():
     sample_fair = FairValueEstimate(symbol="TEL", current_price=1250.0, pe_ratio=8.0)
     sample_controversy = ControversyInfo(symbol="TEL", risk_factors=["test"])
     sample_sentiment = SentimentInfo(symbol="TEL", sector="Telecoms")
+    sample_bsp = BSPKeyRates(
+        target_rrp_rate=5.5,
+        overnight_lending_rate=6.0,
+        overnight_deposit_rate=5.0,
+        overnight_rrp_rate=5.5013,
+        as_of_date="11/13/2026",
+        rates=[
+            BSPKeyRateItem(
+                title="Target RRP Rate",
+                value="5.50%",
+                rate_pct=5.5,
+                published_date="11/13/2026",
+            )
+        ],
+    )
 
     patches = [
         patch("ph_stocks_mcp.server.fetch_stock_price", return_value=sample_price),
@@ -75,6 +92,7 @@ def mcp_in_memory_session():
         patch("ph_stocks_mcp.server.fetch_fair_value", return_value=sample_fair),
         patch("ph_stocks_mcp.server.fetch_controversy_info", return_value=sample_controversy),
         patch("ph_stocks_mcp.server.fetch_sentiment_info", return_value=sample_sentiment),
+        patch("ph_stocks_mcp.server.fetch_bsp_rates", return_value=sample_bsp),
         patch("ph_stocks_mcp.server.validate_pse_symbol", side_effect=_validate_stub),
     ]
     for p in patches:
@@ -106,12 +124,28 @@ def test_mcp_server_lists_all_advisor_tools(mcp_in_memory_session):
         "get_fair_value",
         "get_controversy_info",
         "get_sentiment_info",
+        "get_bsp_rates",
     }
 
     async def _test(session):
         listed = await session.list_tools()
         names = {t.name for t in listed.tools}
         assert expected.issubset(names)
+
+    _run(mcp_in_memory_session(_test))
+
+
+def test_mcp_server_returns_bsp_rates_payload(mcp_in_memory_session):
+    async def _test(session):
+        result = await session.call_tool("get_bsp_rates", {})
+        assert result.isError is False
+        data = result.structuredContent
+        assert data["target_rrp_rate"] == 5.5
+        assert data["overnight_lending_rate"] == 6.0
+        assert data["overnight_deposit_rate"] == 5.0
+        assert data["as_of_date"] == "11/13/2026"
+        assert len(data["rates"]) == 1
+        assert data["rates"][0]["title"] == "Target RRP Rate"
 
     _run(mcp_in_memory_session(_test))
 
@@ -186,6 +220,39 @@ def test_facade_dispatches_through_mcp_client(monkeypatch):
 
     assert isinstance(result, StockPrice)
     assert result.current_price == 1234.5
+
+
+def test_facade_dispatches_bsp_rates_through_mcp_client():
+    """``fetch_bsp_rates`` must call ``get_client().call('get_bsp_rates', {})``."""
+    fake_payload = {
+        "target_rrp_rate": 5.5,
+        "overnight_lending_rate": 6.0,
+        "overnight_deposit_rate": 5.0,
+        "as_of_date": "11/13/2026",
+        "rates": [
+            {
+                "title": "Target RRP Rate",
+                "value": "5.50%",
+                "rate_pct": 5.5,
+                "published_date": "11/13/2026",
+            }
+        ],
+    }
+
+    class _FakeClient:
+        def call(self, tool_name, args):
+            assert tool_name == "get_bsp_rates"
+            assert args == {}
+            return fake_payload
+
+    with patch("ph_stocks_advisor.data.tools.get_client", return_value=_FakeClient()):
+        result = tools.fetch_bsp_rates()
+
+    assert isinstance(result, BSPKeyRates)
+    assert result.target_rrp_rate == 5.5
+    assert result.overnight_lending_rate == 6.0
+    assert result.overnight_deposit_rate == 5.0
+    assert len(result.rates) == 1
 
 
 def test_facade_translates_mcp_error_to_symbol_not_found():

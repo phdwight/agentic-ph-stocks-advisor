@@ -72,12 +72,17 @@ def test_sentiment_payload_carries_is_reit_and_bsp_rate():
 
 
 def test_sentiment_service_populates_reit_flag_and_rate():
+    from ph_stocks_advisor.data.models import BSPKeyRates
     from ph_stocks_advisor.data.services import sentiment as sent_mod
 
     with (
         patch(
             "ph_stocks_advisor.data.clients.dragonfi.fetch_stock_profile",
             return_value=dict(_PROFILE),
+        ),
+        patch(
+            "ph_stocks_advisor.data.clients.bsp.fetch_bsp_key_rates",
+            return_value=BSPKeyRates(),
         ),
         patch(
             "ph_stocks_advisor.data.clients.tavily_search.search_global_events",

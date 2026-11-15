@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 
+import pandas as pd
+
 from ph_stocks_advisor.data.analysis.candlestick import analyse_candlesticks
 from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_profile
 from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
@@ -18,9 +20,9 @@ from ph_stocks_advisor.data.clients.tradingview import (
     fetch_tradingview_snapshot,
     format_tv_performance_summary,
 )
-from ph_stocks_advisor.data.models import PriceMovement, TrendDirection
+from ph_stocks_advisor.data.models import PriceMovement, SuspensionInfo, TrendDirection
 from ph_stocks_advisor.data.services.price import detect_price_catalysts
-from ph_stocks_advisor.infra.config import get_settings
+from ph_stocks_advisor.infra.config import get_settings, get_today
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,17 @@ def _classify_trend(change_pct: float) -> TrendDirection:
     if change_pct < s.trend_down_threshold:
         return TrendDirection.DOWNTREND
     return TrendDirection.SIDEWAYS
+
+
+def _fetch_suspension(symbol: str) -> SuspensionInfo:
+    """Return PSE EDGE suspension info for *symbol* (empty-safe)."""
+    try:
+        from ph_stocks_advisor.data.clients.pse_edge import fetch_suspension_info
+
+        return fetch_suspension_info(symbol)
+    except Exception as exc:  # pragma: no cover
+        logger.debug("PSE EDGE suspension lookup unavailable for %s: %s", symbol, exc)
+        return SuspensionInfo(symbol=symbol, trading_status="Open", is_suspended=False)
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +98,37 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
         perf_summary = format_tv_performance_summary(tv)
 
         # Daily closes for the trend line — up to the last 365 daily points.
+        # Suspended trading days after the last traded date are padded with
+        # ``None`` so the 1-year chart clearly marks the non-trading period.
         daily = hist["Close"].dropna()
-        monthly_prices = [round(float(p), 2) for p in daily.tolist()][-365:]
+        monthly_prices: list[float | None] = [round(float(p), 2) for p in daily.tolist()]
+
+        suspension = _fetch_suspension(symbol)
+        if suspension.is_suspended and len(daily.index) > 0:
+            last_trade_raw = pd.Timestamp(daily.index[-1])
+            today_raw = pd.Timestamp(get_today())
+            if isinstance(last_trade_raw, pd.Timestamp) and isinstance(today_raw, pd.Timestamp):
+                last_trade_dt = last_trade_raw.normalize()
+                suspended_bdays = (
+                    pd.bdate_range(start=last_trade_dt + pd.Timedelta(days=1), end=today_raw)
+                    if today_raw > last_trade_dt
+                    else pd.DatetimeIndex([])
+                )
+                if len(suspended_bdays) > 0:
+                    monthly_prices.extend([None] * len(suspended_bdays))
+                susp_start = suspension.execution_date or (
+                    suspended_bdays[0].strftime("%Y-%m-%d")
+                    if len(suspended_bdays) > 0
+                    else last_trade_dt.strftime("%Y-%m-%d")
+                )
+                catalysts.insert(
+                    0,
+                    f"TRADING SUSPENDED since {susp_start} ({len(suspended_bdays)} trading days "
+                    f"with zero trades; last traded on {last_trade_dt.strftime('%Y-%m-%d')} "
+                    f"at ₱{year_end:.2f}).",
+                )
+
+        monthly_prices = monthly_prices[-365:]
 
         trend = _classify_trend(year_change_pct)
 
@@ -131,6 +173,15 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
         # Use TradingView monthly volatility if available
         tv_volatility = tv.get("volatility_monthly", 0.0)
 
+        suspension = _fetch_suspension(symbol)
+        fallback_prices: list[float | None] = []
+        if suspension.is_suspended:
+            fallback_prices = ([round(current, 2)] + [None] * 251) if current > 0 else [None] * 252
+            catalysts.insert(
+                0,
+                f"TRADING SUSPENDED ({suspension.trading_status}) — no trades executed over the past year.",
+            )
+
         return PriceMovement(
             symbol=symbol,
             year_start_price=round(current / (1 + tv_year_pct / 100), 2) if tv_year_pct else low52,
@@ -141,7 +192,7 @@ def fetch_price_movement(symbol: str) -> PriceMovement:
             volatility=round(tv_volatility, 4),
             max_drawdown_pct=round(((low52 - high52) / high52) * 100, 2) if high52 > 0 else 0.0,
             trend=trend,
-            monthly_prices=[],
+            monthly_prices=fallback_prices,
             price_catalysts=catalysts,
             performance_summary=perf_summary,
         )

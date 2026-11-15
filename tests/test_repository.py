@@ -164,6 +164,18 @@ class TestSQLiteRepository:
 
         assert fetched.movement_monthly_prices == [10.0, 10.5, 11.2, 11.8, 12.5]
 
+    def test_save_preserves_suspended_days_in_movement_snapshot(self, sqlite_repo, sample_report):
+        """``None`` entries for suspended trading days survive a save/read round-trip."""
+        suspended_report = sample_report.model_copy(
+            update={"symbol": "VREIT", "movement_monthly_prices": [1.33, 1.32, 1.31, None, None, None]}
+        )
+        record = ReportRecord.from_final_report(suspended_report)
+        record_id = sqlite_repo.save(record)
+        fetched = sqlite_repo.get_by_id(record_id)
+
+        assert fetched is not None
+        assert fetched.movement_monthly_prices == [1.33, 1.32, 1.31, None, None, None]
+
     def test_legacy_report_has_blank_snapshot(self, sqlite_repo):
         """A report saved without a snapshot reads back as an empty list."""
         record = ReportRecord(

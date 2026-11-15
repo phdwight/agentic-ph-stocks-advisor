@@ -12,8 +12,11 @@ import logging
 import pandas as pd
 
 from ph_stocks_advisor.data.clients.dragonfi import fetch_stock_news
-from ph_stocks_advisor.data.clients.pse_edge import fetch_pse_edge_ohlcv
-from ph_stocks_advisor.data.models import ControversyInfo
+from ph_stocks_advisor.data.clients.pse_edge import (
+    fetch_pse_edge_ohlcv,
+    fetch_suspension_info,
+)
+from ph_stocks_advisor.data.models import ControversyInfo, SuspensionInfo
 from ph_stocks_advisor.infra.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,15 @@ def _fetch_history(symbol: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _fetch_suspension(symbol: str) -> SuspensionInfo:
+    """Fetch PSE EDGE trading status and suspension details (empty-safe)."""
+    try:
+        return fetch_suspension_info(symbol)
+    except Exception as exc:  # pragma: no cover
+        logger.debug("PSE EDGE suspension info unavailable for %s: %s", symbol, exc)
+        return SuspensionInfo(symbol=symbol)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -44,13 +56,20 @@ def _fetch_history(symbol: str) -> pd.DataFrame:
 def fetch_controversy_info(symbol: str) -> ControversyInfo:
     """Detect potential price anomalies and gather recent news.
 
-    Uses PSE EDGE OHLCV for daily history (spike detection) and DragonFi
-    for recent news headlines.
+    Uses PSE EDGE OHLCV for daily history (spike detection), PSE EDGE
+    trading status / suspension disclosures, and DragonFi for recent news
+    headlines.
     """
     symbol = symbol.upper().replace(".PS", "")
     hist = _fetch_history(symbol)
+    suspension = _fetch_suspension(symbol)
     spikes: list[str] = []
     risk_factors: list[str] = []
+
+    suspension_details = ""
+    if suspension.is_suspended:
+        suspension_details = suspension.to_summary()
+        risk_factors.append(suspension_details)
 
     if not hist.empty:
         returns = hist["Close"].pct_change().dropna()
@@ -87,9 +106,16 @@ def fetch_controversy_info(symbol: str) -> ControversyInfo:
     else:
         news_summary = "No recent news available from DragonFi."
 
+    if suspension.is_suspended and suspension_details:
+        notice_line = f"[PSE EDGE Official Notice] {suspension_details}"
+        news_summary = notice_line if news_summary.startswith("No recent news") else f"{notice_line}\n{news_summary}"
+
     return ControversyInfo(
         symbol=symbol,
         sudden_spikes=spikes,
         risk_factors=risk_factors,
         recent_news_summary=news_summary,
+        is_suspended=suspension.is_suspended,
+        trading_status=suspension.trading_status,
+        suspension_details=suspension_details,
     )

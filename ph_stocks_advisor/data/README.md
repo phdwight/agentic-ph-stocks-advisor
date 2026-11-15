@@ -13,6 +13,8 @@ Data layer package providing Pydantic domain models, LangGraph shared state (`Ad
 - `[models.py:FairValueEstimate]` - Pydantic model for valuation metrics (`pe_ratio`, `pb_ratio`, `peg_ratio`, `forward_pe`, `book_value`, `estimated_fair_value`, `discount_pct`, `is_reit`).
 - `[models.py:ControversyInfo]` - Pydantic model for sudden price spikes, risk factors, and controversy news.
 - `[models.py:SentimentInfo]` - Pydantic model for global events news, sector, PHP/USD rate, BSP rate, and REIT status.
+- `[models.py:BSPKeyRateItem]` - Pydantic model for a single entry from the BSP Key Rates list with a `to_summary()` helper.
+- `[models.py:BSPKeyRates]` - Pydantic model holding structured BSP policy/money-market interest rates, inflation, USD/PHP rate, ordered `rates` list, and summary text.
 - `[models.py:PriceAnalysis]`, `[models.py:DividendAnalysis]`, `[models.py:MovementAnalysis]`, `[models.py:ValuationAnalysis]`, `[models.py:ControversyAnalysis]`, `[models.py:SentimentAnalysis]` - Agent output wrappers pairing domain data models with markdown analysis strings.
 - `[models.py:ConsolidationResponse]` - Structured LLM output schema for the consolidator agent with verdict, justification, markdown summary, and six optional 0–100 sub-scores.
 - `[models.py:SCORE_BANDS]` - List of `(lower_bound, label)` tuples mapping 0–100 verdict scores to display bands (`STRONG BUY`, `BUY`, `WAIT`, `DON'T BUY`, `AVOID`).
@@ -32,6 +34,7 @@ Data layer package providing Pydantic domain models, LangGraph shared state (`Ad
 - `[tools.py:fetch_fair_value]` - Invokes the `get_fair_value` MCP tool and validates the response into a `FairValueEstimate` model.
 - `[tools.py:fetch_controversy_info]` - Invokes the `get_controversy_info` MCP tool and validates the response into a `ControversyInfo` model.
 - `[tools.py:fetch_sentiment_info]` - Invokes the `get_sentiment_info` MCP tool and validates the response into a `SentimentInfo` model.
+- `[tools.py:fetch_bsp_rates]` - Invokes the `get_bsp_rates` MCP tool and validates the response into a `BSPKeyRates` model.
 - `[tools.py:_detect_price_catalysts]` - Re-exported `detect_price_catalysts` helper from `ph_stocks_advisor.data.services.price`.
 - Subdirectories:
   - [analysis](./analysis/README.md) - Candlestick pattern detection (`CandlestickSummary`, `analyse_candlesticks`).

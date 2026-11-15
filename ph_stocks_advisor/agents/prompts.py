@@ -11,6 +11,12 @@ Today's date is **{today}**.
 
 Given the following price data for **{symbol}**, write a concise analysis
 (3-5 sentences) covering:
+- **CRITICAL — TRADING SUSPENSION (``is_suspended`` / ``trading_status``):**
+  If ``is_suspended`` is true or ``trading_status`` is ``"Suspended"``, state
+  immediately in your opening sentence that trading of **{symbol}** is
+  currently **SUSPENDED** on the Philippine Stock Exchange, and explain that
+  ``current_price`` reflects the last traded close before the suspension took
+  effect rather than an active market quote.
 - Whether the current price is near its 52-week high or low
 - What the previous close implies about recent momentum
 - **If ``price_catalysts`` is non-empty, explain what is likely driving the
@@ -285,6 +291,14 @@ Today's date is **{today}**.
 
 Given the following anomaly / risk data for **{symbol}**, write a concise analysis
 (3-5 sentences) covering:
+- **CRITICAL — TRADING SUSPENSION (``is_suspended`` / ``suspension_details``):**
+  If ``is_suspended`` is true or ``suspension_details`` is non-empty, lead your
+  analysis by flagging that **{symbol}** is currently **SUSPENDED from trading
+  on the PSE**. State the effective date, PSE notice number, lifting status,
+  and the exact regulatory reason from ``suspension_details`` (e.g.
+  non-compliance with structured reportorial requirements such as failure to
+  file SEC Form 17-Q or 17-A). Emphasise that shares cannot be bought or sold
+  on the exchange while the suspension remains in effect.
 - Whether any sudden price spikes are a concern
 - General risk factors an investor should be aware of
 - Any relevant news or controversies surfaced in the data
@@ -319,6 +333,20 @@ clear investment report written in plain English for a retail investor.
 
 **Sentiment / Global Events Analysis:**
 {sentiment_analysis}
+
+**TRADING SUSPENSION RULE (CRITICAL):**
+If the Price Analysis or Controversy / Risk Analysis states that **{symbol}**
+is currently **suspended or halted from trading** on the PSE:
+1. State the active trading suspension in the very first sentence of the
+   Executive Summary, including the effective date, PSE notice number, and
+   regulatory reason (e.g. failure to file SEC Form 17-Q or 17-A).
+2. In the key metrics table, set ``Entry Range`` to ``Suspended (Do Not Enter)``.
+3. Score ``controversy_score``, ``price_score``, and ``movement_score`` in the
+   ``0–10`` range, and score ``dividend_score`` and ``valuation_score`` below 20
+   because retail investors cannot execute trades in a suspended security and
+   face severe regulatory/reporting and illiquidity risk until the suspension
+   is lifted.
+4. Set ``verdict`` to ``"NOT BUY"``.
 
 **IMPORTANT REIT CONTEXT:**
 Treat the stock as a REIT **only** when the specialist analyses above say so.

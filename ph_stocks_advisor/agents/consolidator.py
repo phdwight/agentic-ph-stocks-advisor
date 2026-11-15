@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 _FALLBACK_BUY_SCORE = 75
 _FALLBACK_NOT_BUY_SCORE = 25
 
+# Maximum verdict score allowed when a stock is actively suspended or halted
+# from trading on the PSE — guarantees placement in the 0–19 AVOID band.
+_SUSPENDED_MAX_SCORE = 15
+
 # GraphState key -> ConsolidationResponse sub-score field, used to force
 # dimensions with no real data out of the weighted score even if the LLM
 # emitted a number for them.
@@ -69,6 +73,17 @@ class ConsolidatorAgent:
 
         gap_fields = {_GAP_SCORE_FIELDS[k] for k in state.data_gaps if k in _GAP_SCORE_FIELDS}
         verdict, summary, score = self._invoke_structured(prompt, gap_fields=gap_fields)
+
+        if self._is_suspended(state):
+            if score > _SUSPENDED_MAX_SCORE or verdict != Verdict.NOT_BUY:
+                logger.info(
+                    "Stock %s is suspended on the PSE — capping score from %d to %d (AVOID) and forcing NOT BUY.",
+                    state.symbol,
+                    score,
+                    min(score, _SUSPENDED_MAX_SCORE),
+                )
+            score = min(score, _SUSPENDED_MAX_SCORE)
+            verdict = Verdict.NOT_BUY
 
         return FinalReport(
             symbol=state.symbol,
@@ -137,6 +152,13 @@ class ConsolidatorAgent:
         verdict = self._extract_verdict(content)
         score = _FALLBACK_BUY_SCORE if verdict == Verdict.BUY else _FALLBACK_NOT_BUY_SCORE
         return verdict, content, score
+
+    @staticmethod
+    def _is_suspended(state: AdvisorState) -> bool:
+        """True when either controversy or price data marks the stock as suspended."""
+        if state.controversy_analysis and state.controversy_analysis.data.is_suspended:
+            return True
+        return bool(state.price_analysis and state.price_analysis.data.is_suspended)
 
     @staticmethod
     def _weighted_score(result: ConsolidationResponse) -> int | None:

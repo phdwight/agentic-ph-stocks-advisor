@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import logging
 
-from ph_stocks_advisor.data.models import SentimentInfo
+from ph_stocks_advisor.data.models import BSPKeyRates, SentimentInfo
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,17 @@ def _fetch_profile_context(symbol: str) -> tuple[str, bool]:
         return "", is_reit_from_edge(symbol) is True
     except Exception:
         return "", False
+
+
+def _fetch_official_bsp_rates() -> BSPKeyRates:
+    """Fetch official BSP key interest rates and USD/PHP reference rate (empty-safe)."""
+    try:
+        from ph_stocks_advisor.data.clients.bsp import fetch_bsp_key_rates
+
+        return fetch_bsp_key_rates()
+    except Exception as exc:
+        logger.debug("Official BSP key rates unavailable: %s", exc)
+        return BSPKeyRates()
 
 
 def _fetch_bsp_rate() -> str:
@@ -67,19 +78,27 @@ def _fetch_global_events_news(symbol: str) -> str:
 def fetch_sentiment_info(symbol: str) -> SentimentInfo:
     """Gather global-events and macro-sentiment context for *symbol*.
 
-    Combines sector information with a Tavily search for global events
-    that may affect the Philippine market.  The LLM agent will further
-    enrich the data via its tool-calling capability.
+    Combines sector information, official BSP Key Rates (policy interest
+    rates, inflation, and USD/PHP reference rate), and Tavily searches for
+    global events and PH bond-yield context.
     """
     symbol = symbol.upper().replace(".PS", "")
     sector, is_reit = _fetch_profile_context(symbol)
     global_news = _fetch_global_events_news(symbol)
-    bsp_rate = _fetch_bsp_rate()
+    official_bsp = _fetch_official_bsp_rates()
+    tavily_bsp = _fetch_bsp_rate()
+
+    bsp_rate = "\n\n".join(part for part in (official_bsp.summary, tavily_bsp) if part)
+    peso_usd_rate = ""
+    if official_bsp.usd_php_rate is not None:
+        date_suffix = f" (as of {official_bsp.as_of_date})" if official_bsp.as_of_date else ""
+        peso_usd_rate = f"₱{official_bsp.usd_php_rate:.4f} per US$1.00{date_suffix}"
 
     return SentimentInfo(
         symbol=symbol,
         global_events_news=global_news,
         sector=sector,
+        peso_usd_rate=peso_usd_rate,
         bsp_rate=bsp_rate,
         is_reit=is_reit,
     )

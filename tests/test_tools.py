@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ph_stocks_advisor.data.models import TrendDirection
+from ph_stocks_advisor.data.models import SuspensionInfo, TrendDirection
 from ph_stocks_advisor.data.tools import (
     SymbolNotFoundError,
     fetch_controversy_info,
@@ -70,14 +70,33 @@ _DRAGONFI_VALUATION = {
 
 
 class TestFetchStockPrice:
+    @patch("ph_stocks_advisor.data.services.price._fetch_trading_status", return_value=("Open", False))
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_profile")
-    def test_returns_from_dragonfi(self, mock_profile):
+    def test_returns_from_dragonfi(self, mock_profile, _status):
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         result = fetch_stock_price("TEL")
         assert result.symbol == "TEL"
         assert result.current_price == 1250.0
         assert result.fifty_two_week_high == 1400.0
         assert result.fifty_two_week_low == 1100.0
+        assert result.trading_status == "Open"
+        assert result.is_suspended is False
+
+    @patch("ph_stocks_advisor.data.services.price._fetch_trading_status", return_value=("Suspended", True))
+    @patch("ph_stocks_advisor.data.services.price.fetch_stock_profile")
+    def test_suspended_stock_flags_status_and_catalyst(self, mock_profile, _status):
+        mock_profile.return_value = {
+            "stockCode": "VREIT",
+            "price": 1.31,
+            "prevDayClosePrice": 1.31,
+            "weekHigh52": 1.75,
+            "weekLow52": 1.29,
+        }
+        result = fetch_stock_price("VREIT")
+        assert result.symbol == "VREIT"
+        assert result.trading_status == "Suspended"
+        assert result.is_suspended is True
+        assert any("TRADING SUSPENDED" in c for c in result.price_catalysts)
 
     @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot", return_value=None)
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_profile")
@@ -165,10 +184,14 @@ class TestFetchDividendInfo:
 
 
 class TestFetchPriceMovement:
+    @patch(
+        "ph_stocks_advisor.data.services.movement._fetch_suspension",
+        return_value=SuspensionInfo(symbol="AREIT", trading_status="Open", is_suspended=False),
+    )
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
-    def test_empty_history_uses_dragonfi(self, mock_profile, _tv, _pse):
+    def test_empty_history_uses_dragonfi(self, mock_profile, _tv, _pse, _susp):
         mock_profile.return_value = {
             "price": 43.0,
             "weekHigh52": 45.5,
@@ -189,10 +212,14 @@ class TestFetchPriceMovement:
         assert result.year_start_price == 0.0
         assert result.trend == TrendDirection.SIDEWAYS
 
+    @patch(
+        "ph_stocks_advisor.data.services.movement._fetch_suspension",
+        return_value=SuspensionInfo(symbol="AREIT", trading_status="Open", is_suspended=False),
+    )
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
-    def test_catalysts_passed_to_movement(self, mock_profile, _tv, _pse):
+    def test_catalysts_passed_to_movement(self, mock_profile, _tv, _pse, _susp):
         mock_profile.return_value = {
             "price": 43.5,
             "prevDayClosePrice": 43.05,
@@ -205,10 +232,14 @@ class TestFetchPriceMovement:
         assert len(result.price_catalysts) > 0
         assert any("dividend" in c.lower() for c in result.price_catalysts)
 
+    @patch(
+        "ph_stocks_advisor.data.services.movement._fetch_suspension",
+        return_value=SuspensionInfo(symbol="DMC", trading_status="Open", is_suspended=False),
+    )
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv")
-    def test_max_drawdown_detected(self, mock_pse, mock_profile, _tv):
+    def test_max_drawdown_detected(self, mock_pse, mock_profile, _tv, _susp):
         """Simulate a stock that rises then crashes mid-year and partly recovers."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         dates = pd.bdate_range(end=_BDATE_END, periods=200)
@@ -226,10 +257,14 @@ class TestFetchPriceMovement:
         assert result.max_drawdown_pct < -30
         assert result.web_news == ""
 
+    @patch(
+        "ph_stocks_advisor.data.services.movement._fetch_suspension",
+        return_value=SuspensionInfo(symbol="DMC", trading_status="Open", is_suspended=False),
+    )
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv", return_value=pd.DataFrame())
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot")
     @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
-    def test_tradingview_perf_used_in_fallback(self, mock_profile, mock_tv, _pse):
+    def test_tradingview_perf_used_in_fallback(self, mock_profile, mock_tv, _pse, _susp):
         """When PSE EDGE is empty, TradingView's 1-year perf should be used."""
         mock_profile.return_value = {
             "price": 9.88,
@@ -250,10 +285,14 @@ class TestFetchPriceMovement:
         assert "1-year: -13.9%" in result.performance_summary
         assert "1-week: +13.7%" in result.performance_summary
 
+    @patch(
+        "ph_stocks_advisor.data.services.movement._fetch_suspension",
+        return_value=SuspensionInfo(symbol="DMC", trading_status="Open", is_suspended=False),
+    )
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv")
-    def test_pse_edge_ohlcv_used_as_primary(self, mock_pse, mock_profile, _tv):
+    def test_pse_edge_ohlcv_used_as_primary(self, mock_pse, mock_profile, _tv, _susp):
         """PSE EDGE OHLCV should be used as the primary data source."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         dates = pd.bdate_range(end=_BDATE_END, periods=100)
@@ -274,10 +313,14 @@ class TestFetchPriceMovement:
         assert result.year_change_pct > 15
         assert result.candlestick_patterns  # candlestick analysis activated
 
+    @patch(
+        "ph_stocks_advisor.data.services.movement._fetch_suspension",
+        return_value=SuspensionInfo(symbol="DMC", trading_status="Open", is_suspended=False),
+    )
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv")
-    def test_trend_series_uses_daily_points(self, mock_pse, mock_profile, _tv):
+    def test_trend_series_uses_daily_points(self, mock_pse, mock_profile, _tv, _susp):
         """The trend series carries one point per trading day, not monthly means."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         dates = pd.bdate_range(end=_BDATE_END, periods=252)
@@ -290,10 +333,14 @@ class TestFetchPriceMovement:
         assert result.monthly_prices[0] == pytest.approx(10.0, abs=0.01)
         assert result.monthly_prices[-1] == pytest.approx(12.0, abs=0.01)
 
+    @patch(
+        "ph_stocks_advisor.data.services.movement._fetch_suspension",
+        return_value=SuspensionInfo(symbol="DMC", trading_status="Open", is_suspended=False),
+    )
     @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
     @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
     @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv")
-    def test_trend_series_capped_at_365_points(self, mock_pse, mock_profile, _tv):
+    def test_trend_series_capped_at_365_points(self, mock_pse, mock_profile, _tv, _susp):
         """A history longer than a year keeps only the last 365 daily points."""
         mock_profile.return_value = _DRAGONFI_PROFILE.copy()
         dates = pd.bdate_range(end=_BDATE_END, periods=500)
@@ -303,6 +350,37 @@ class TestFetchPriceMovement:
         result = fetch_price_movement("DMC")
         assert len(result.monthly_prices) == 365
         assert result.monthly_prices[-1] == pytest.approx(20.0, abs=0.01)
+
+    @patch("ph_stocks_advisor.data.services.movement.get_today")
+    @patch("ph_stocks_advisor.data.services.movement._fetch_suspension")
+    @patch("ph_stocks_advisor.data.services.movement.fetch_tradingview_snapshot", return_value={})
+    @patch("ph_stocks_advisor.data.services.movement.fetch_stock_profile")
+    @patch("ph_stocks_advisor.data.services.movement.fetch_pse_edge_ohlcv")
+    def test_suspended_stock_pads_none_for_suspended_trading_days(
+        self, mock_pse, mock_profile, _tv, mock_susp, mock_today
+    ):
+        """A suspended stock pads ``None`` for business days after the last traded date."""
+        from datetime import date
+
+        mock_today.return_value = date(2026, 6, 15)
+        mock_profile.return_value = _DRAGONFI_PROFILE.copy()
+        mock_susp.return_value = SuspensionInfo(
+            symbol="VREIT",
+            trading_status="Suspended",
+            is_suspended=True,
+            execution_date="Jun 2, 2026",
+        )
+        # Traded through Jun 1, 2026 (10 business days)
+        dates = pd.bdate_range(end=pd.Timestamp("2026-06-01"), periods=10)
+        prices = np.linspace(1.35, 1.31, 10)
+        mock_pse.return_value = pd.DataFrame({"Close": prices}, index=dates)
+
+        result = fetch_price_movement("VREIT")
+        # 10 traded days + 10 suspended business days (Jun 2 .. Jun 15, 2026) = 20 points
+        assert len(result.monthly_prices) == 20
+        assert all(p is not None for p in result.monthly_prices[:10])
+        assert all(p is None for p in result.monthly_prices[10:])
+        assert any("TRADING SUSPENDED" in c for c in result.price_catalysts)
 
 
 class TestFetchFairValue:
@@ -340,9 +418,13 @@ class TestFetchFairValue:
 
 
 class TestFetchControversyInfo:
+    @patch("ph_stocks_advisor.data.services.controversy._fetch_suspension")
     @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news")
     @patch("ph_stocks_advisor.data.services.controversy._fetch_history")
-    def test_no_spikes_on_calm_data(self, mock_hist, mock_news):
+    def test_no_spikes_on_calm_data(self, mock_hist, mock_news, mock_susp):
+        from ph_stocks_advisor.data.models import SuspensionInfo
+
+        mock_susp.return_value = SuspensionInfo(symbol="SM")
         dates = pd.bdate_range(end=_BDATE_END, periods=100)
         prices = np.linspace(100, 105, 100)
         hist = pd.DataFrame({"Close": prices}, index=dates)
@@ -350,10 +432,15 @@ class TestFetchControversyInfo:
         mock_news.return_value = []
         result = fetch_controversy_info("SM")
         assert len(result.sudden_spikes) == 0
+        assert result.is_suspended is False
 
+    @patch("ph_stocks_advisor.data.services.controversy._fetch_suspension")
     @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news")
     @patch("ph_stocks_advisor.data.services.controversy._fetch_history")
-    def test_detects_spike(self, mock_hist, mock_news):
+    def test_detects_spike(self, mock_hist, mock_news, mock_susp):
+        from ph_stocks_advisor.data.models import SuspensionInfo
+
+        mock_susp.return_value = SuspensionInfo(symbol="ALI")
         dates = pd.bdate_range(end=_BDATE_END, periods=100)
         prices = np.full(100, 100.0)
         prices[50] = 115.0  # 15% jump
@@ -363,9 +450,13 @@ class TestFetchControversyInfo:
         result = fetch_controversy_info("ALI")
         assert len(result.sudden_spikes) > 0
 
+    @patch("ph_stocks_advisor.data.services.controversy._fetch_suspension")
     @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news")
     @patch("ph_stocks_advisor.data.services.controversy._fetch_history")
-    def test_news_from_dragonfi(self, mock_hist, mock_news):
+    def test_news_from_dragonfi(self, mock_hist, mock_news, mock_susp):
+        from ph_stocks_advisor.data.models import SuspensionInfo
+
+        mock_susp.return_value = SuspensionInfo(symbol="AREIT")
         mock_hist.return_value = pd.DataFrame()
         mock_news.return_value = [
             {"title": "AREIT posts strong earnings", "source": "Manila Times"},
@@ -375,13 +466,44 @@ class TestFetchControversyInfo:
         assert "AREIT posts strong earnings" in result.recent_news_summary
         assert "Manila Times" in result.recent_news_summary
 
+    @patch("ph_stocks_advisor.data.services.controversy._fetch_suspension")
     @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news", return_value=[])
     @patch("ph_stocks_advisor.data.services.controversy._fetch_history")
-    def test_tavily_no_longer_called_in_service(self, mock_hist, _dfnews):
+    def test_tavily_no_longer_called_in_service(self, mock_hist, _dfnews, mock_susp):
         """After the tool-calling migration, web_news is not populated by the service."""
+        from ph_stocks_advisor.data.models import SuspensionInfo
+
+        mock_susp.return_value = SuspensionInfo(symbol="AREIT")
         mock_hist.return_value = pd.DataFrame()
         result = fetch_controversy_info("AREIT")
         assert result.web_news == ""
+
+    @patch("ph_stocks_advisor.data.services.controversy._fetch_suspension")
+    @patch("ph_stocks_advisor.data.services.controversy.fetch_stock_news", return_value=[])
+    @patch("ph_stocks_advisor.data.services.controversy._fetch_history")
+    def test_suspended_stock_populates_controversy_fields(self, mock_hist, _dfnews, mock_susp):
+        from ph_stocks_advisor.data.models import SuspensionInfo
+
+        mock_hist.return_value = pd.DataFrame()
+        mock_susp.return_value = SuspensionInfo(
+            symbol="VREIT",
+            trading_status="Suspended",
+            is_suspended=True,
+            market_action="Suspension",
+            execution_date="Jun 2, 2026",
+            execution_time="9:00 a.m.",
+            lifting_date="TBA",
+            lifting_time="TBA",
+            notice_number="DN00081-2026",
+            reason="Non-filing of Quarterly Report (SEC Form 17-Q) for the period ended March 31, 2026.",
+        )
+        result = fetch_controversy_info("VREIT")
+        assert result.is_suspended is True
+        assert result.trading_status == "Suspended"
+        assert "DN00081-2026" in result.suspension_details
+        assert "SEC Form 17-Q" in result.suspension_details
+        assert any("TRADING SUSPENDED" in rf for rf in result.risk_factors)
+        assert "DN00081-2026" in result.recent_news_summary
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +813,72 @@ class TestPseEdge:
         df = fetch_pse_edge_ohlcv("DMC")
         assert df.empty
 
+    @patch("ph_stocks_advisor.data.clients.pse_edge.requests.get")
+    @patch("ph_stocks_advisor.data.clients.pse_edge._resolve_cmpy_id", return_value="695")
+    def test_fetch_trading_status_suspended(self, _cmpy, mock_get):
+        from ph_stocks_advisor.data.clients.pse_edge import fetch_trading_status
+
+        html = "<table><tr><th>Status</th><td>Suspended</td><th>Last Traded Price</th><td></td></tr></table>"
+        mock_get.return_value = MagicMock(status_code=200, text=html)
+        assert fetch_trading_status("VREIT") == "Suspended"
+
+    @patch("ph_stocks_advisor.data.clients.pse_edge_dividends._fetch_disclosure_content")
+    @patch("ph_stocks_advisor.data.clients.pse_edge.requests.get")
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_trading_status", return_value="Suspended")
+    def test_fetch_suspension_info_parses_notice_and_reason(self, _status, mock_get, mock_disc):
+        from ph_stocks_advisor.data.clients.pse_edge import fetch_suspension_info
+
+        suspensions_html = """
+        <table class="list">
+          <tbody>
+            <tr>
+              <td><a href="/companyInformation/form.do?cmpy_id=695">VREIT</a></td>
+              <td>Suspension</td>
+              <td class="alignC">Jun 2, 2026</td>
+              <td class="alignC">9:00 a.m.</td>
+              <td class="alignC">TBA</td>
+              <td class="alignC">TBA</td>
+              <td class="alignC">
+                <a href="#viewer" onclick="openPopup('bd51905ff0bf764e64d70b69f0a3140b');return false;">DN00081-2026</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        """
+        mock_get.return_value = MagicMock(status_code=200, text=suspensions_html)
+        mock_disc.return_value = """
+        <html><head><style>.foo { color: red; }</style></head>
+        <body>
+          <h4>NOTICE</h4>
+          <span>Subject</span><span>VREIT - Trading Suspension</span>
+          <span>Background</span>
+          <p>The Company has not yet filed its Quarterly Report (SEC Form 17-Q) for the period ended March 31, 2026.</p>
+          <span>Name of Listed Company</span><span>VistaREIT, Inc.</span>
+        </body></html>
+        """
+
+        info = fetch_suspension_info("VREIT")
+        assert info.symbol == "VREIT"
+        assert info.trading_status == "Suspended"
+        assert info.is_suspended is True
+        assert info.market_action == "Suspension"
+        assert info.execution_date == "Jun 2, 2026"
+        assert info.execution_time == "9:00 a.m."
+        assert info.lifting_date == "TBA"
+        assert info.notice_number == "DN00081-2026"
+        assert "SEC Form 17-Q" in info.reason
+        assert "DN00081-2026" in info.to_summary()
+
+    @patch("ph_stocks_advisor.data.clients.pse_edge.requests.get")
+    @patch("ph_stocks_advisor.data.clients.pse_edge.fetch_trading_status", return_value="Open")
+    def test_fetch_suspension_info_open_skips_list_scrape(self, _status, mock_get):
+        from ph_stocks_advisor.data.clients.pse_edge import fetch_suspension_info
+
+        info = fetch_suspension_info("AREIT")
+        assert info.is_suspended is False
+        assert info.trading_status == "Open"
+        mock_get.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # TradingView scanner module
@@ -929,3 +1117,199 @@ class TestTavilySearch:
         from ph_stocks_advisor.data.clients.tavily_search import search_global_events
 
         assert "No significant global events" in search_global_events("XYZ")
+
+
+# ---------------------------------------------------------------------------
+# BSP Key Rates client & façade
+# ---------------------------------------------------------------------------
+
+_SAMPLE_BSP_ITEMS = [
+    {
+        "Title": "US$ 1.00",
+        "Value": "63.5590",
+        "Order0": 1.0,
+        "Published_x0020_Date": "11/13/2026",
+        "Yields": None,
+        "URL": "/SitePages/Statistics/ExchangeRate.aspx",
+    },
+    {
+        "Title": "Inflation Rate (2018=100)",
+        "Value": "7.8%",
+        "Order0": 2.0,
+        "Published_x0020_Date": "October 2026",
+        "Yields": None,
+        "URL": "/Statistics/Prices/tab34_inf_2018.aspx",
+    },
+    {
+        "Title": "ON Lending Rate",
+        "Value": "6.00%",
+        "Order0": 3.0,
+        "Published_x0020_Date": "11/13/2026",
+        "Yields": None,
+        "URL": "/Statistics/Financial%20System%20Accounts/BSPrates_olf.aspx",
+    },
+    {
+        "Title": "Target RRP Rate",
+        "Value": "5.50%",
+        "Order0": 4.0,
+        "Published_x0020_Date": "11/13/2026",
+        "Yields": None,
+        "URL": "/Statistics/Financial%20System%20Accounts/BSPrates_rrp_data.aspx",
+    },
+    {
+        "Title": "ON Deposit Rate",
+        "Value": "5.00%",
+        "Order0": 5.0,
+        "Published_x0020_Date": "11/13/2026",
+        "Yields": None,
+        "URL": "/Statistics/Financial%20System%20Accounts/BSPrates_odf.aspx",
+    },
+    {
+        "Title": "ON RRP Rate",
+        "Value": "5.5013%",
+        "Order0": 6.0,
+        "Published_x0020_Date": "11/13/2026",
+        "Yields": "5.4300% - 5.7000%",
+        "URL": "/Price%20Stability/RRP_Auction_Results.xlsx",
+    },
+    {
+        "Title": "28-day BSP Securities (WAIR)",
+        "Value": "5.6983%",
+        "Order0": 7.0,
+        "Published_x0020_Date": "11/13/2026",
+        "Yields": None,
+        "URL": "/Price Stability/BS Auction Result/BS28day11132026.pdf",
+    },
+    {
+        "Title": "56-day BSP Securities (WAIR)",
+        "Value": "5.1156%",
+        "Order0": 8.0,
+        "Published_x0020_Date": "10/24/2025",
+        "Yields": None,
+        "URL": "/Price Stability/BS Auction Result/BS56day10242025.pdf",
+    },
+    {
+        "Title": "ON Reference Rate",
+        "Value": "****",
+        "Order0": 9.0,
+        "Published_x0020_Date": "9/8/2023",
+        "Yields": None,
+        "URL": "/Price Stability/ONResults/BSPrates_ONResults.aspx",
+    },
+    {
+        "Title": "7-day TDF (WAIR)",
+        "Value": "5.5484%",
+        "Order0": 10.0,
+        "Published_x0020_Date": "11/11/2026",
+        "Yields": None,
+        "URL": "/Lists/Auction%20Result/Attachments/550/tdf7day11112026.pdf",
+    },
+    {
+        "Title": "14-day TDF (WAIR)",
+        "Value": "4.8216%",
+        "Order0": 11.0,
+        "Published_x0020_Date": "10/29/2025",
+        "Yields": None,
+        "URL": "/Lists/Auction Result/Attachments/496/tdf14day10292025.pdf",
+    },
+    {
+        "Title": "28-day TDF (WAIR)",
+        "Value": "1.84%",
+        "Order0": 12.0,
+        "Published_x0020_Date": "10/7/2020",
+        "Yields": None,
+        "URL": "/Lists/Auction%20Result/Attachments/229/TDF28day10072020.pdf",
+    },
+]
+
+
+class TestBSPKeyRates:
+    """Tests for bsp.py key interest rates fetching and parsing."""
+
+    @patch("ph_stocks_advisor.data.clients.bsp.requests.get")
+    def test_fetch_bsp_key_rates_parses_all_fields(self, mock_get):
+        from ph_stocks_advisor.data.tools import fetch_bsp_rates
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"value": list(_SAMPLE_BSP_ITEMS)},
+        )
+
+        result = fetch_bsp_rates()
+        assert result.target_rrp_rate == pytest.approx(5.5)
+        assert result.overnight_lending_rate == pytest.approx(6.0)
+        assert result.overnight_deposit_rate == pytest.approx(5.0)
+        assert result.overnight_rrp_rate == pytest.approx(5.5013)
+        assert result.bsp_securities_28d_wair == pytest.approx(5.6983)
+        assert result.bsp_securities_56d_wair == pytest.approx(5.1156)
+        assert result.tdf_7d_wair == pytest.approx(5.5484)
+        assert result.tdf_14d_wair == pytest.approx(4.8216)
+        assert result.tdf_28d_wair == pytest.approx(1.84)
+        assert result.inflation_rate == pytest.approx(7.8)
+        assert result.usd_php_rate == pytest.approx(63.559)
+        assert result.as_of_date == "11/13/2026"
+        assert result.source_url.endswith("/SitePages/Statistics/KeyRates.aspx")
+        assert len(result.rates) == 12
+        assert "Target RRP Rate: 5.50%" in result.summary
+        assert "Accepted yields: 5.4300% - 5.7000%" in result.summary
+        assert "****" not in result.summary
+
+    @patch("ph_stocks_advisor.data.clients.bsp.requests.get")
+    def test_supports_odata_verbose_envelope_and_sorts_by_order(self, mock_get):
+        from ph_stocks_advisor.data.clients.bsp import fetch_bsp_key_rates
+
+        reversed_items = list(reversed(_SAMPLE_BSP_ITEMS[:5]))
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"d": {"results": reversed_items}},
+        )
+
+        result = fetch_bsp_key_rates()
+        assert [r.title for r in result.rates] == [
+            "US$ 1.00",
+            "Inflation Rate (2018=100)",
+            "ON Lending Rate",
+            "Target RRP Rate",
+            "ON Deposit Rate",
+        ]
+
+    @patch("ph_stocks_advisor.data.clients.bsp.requests.get")
+    def test_http_error_returns_empty_model(self, mock_get):
+        from ph_stocks_advisor.data.clients.bsp import fetch_bsp_key_rates
+
+        mock_get.return_value = MagicMock(status_code=503)
+        result = fetch_bsp_key_rates()
+        assert result.rates == []
+        assert result.target_rrp_rate is None
+        assert result.summary == ""
+
+    @patch("ph_stocks_advisor.data.clients.bsp.requests.get", side_effect=OSError("network down"))
+    def test_network_exception_returns_empty_model(self, _mock_get):
+        from ph_stocks_advisor.data.clients.bsp import fetch_bsp_key_rates
+
+        result = fetch_bsp_key_rates()
+        assert result.rates == []
+        assert result.target_rrp_rate is None
+
+    @patch("ph_stocks_advisor.data.clients.tavily_search.search_bsp_rate", return_value="10Y BVAL at 6.1%")
+    @patch("ph_stocks_advisor.data.clients.tavily_search.search_global_events", return_value="Global macro stable.")
+    @patch(
+        "ph_stocks_advisor.data.clients.dragonfi.fetch_stock_profile",
+        return_value={"sector": "Property", "isREIT": True},
+    )
+    @patch("ph_stocks_advisor.data.clients.bsp.requests.get")
+    def test_sentiment_service_uses_official_bsp_rates_and_usd_php(
+        self, mock_bsp_get, _mock_prof, _mock_events, _mock_tavily_bsp
+    ):
+        from ph_stocks_advisor.data.tools import fetch_sentiment_info
+
+        mock_bsp_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"value": list(_SAMPLE_BSP_ITEMS)},
+        )
+
+        info = fetch_sentiment_info("VREIT")
+        assert info.is_reit is True
+        assert "Target RRP Rate: 5.50%" in info.bsp_rate
+        assert "10Y BVAL at 6.1%" in info.bsp_rate
+        assert "63.5590" in info.peso_usd_rate

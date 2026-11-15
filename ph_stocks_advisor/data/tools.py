@@ -19,6 +19,7 @@ from ph_stocks_advisor.data.clients.dragonfi import (  # noqa: F401  re-exported
 )
 from ph_stocks_advisor.data.mcp_client import get_client
 from ph_stocks_advisor.data.models import (
+    BSPKeyRates,
     ControversyInfo,
     DividendInfo,
     FairValueEstimate,
@@ -90,6 +91,11 @@ def fetch_sentiment_info(symbol: str) -> SentimentInfo:
     return _model_call("get_sentiment_info", symbol, SentimentInfo)
 
 
+def fetch_bsp_rates() -> BSPKeyRates:
+    """Fetch Bangko Sentral ng Pilipinas (BSP) key interest rates and indicators."""
+    return BSPKeyRates.model_validate(get_client().call("get_bsp_rates", {}))
+
+
 __all__ = [
     "SymbolNotFoundError",
     "validate_symbol",
@@ -99,5 +105,6 @@ __all__ = [
     "fetch_fair_value",
     "fetch_controversy_info",
     "fetch_sentiment_info",
+    "fetch_bsp_rates",
     "_detect_price_catalysts",
 ]

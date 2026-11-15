@@ -14,6 +14,7 @@ Model Context Protocol (MCP) server package for the PH Stocks Advisor. It adapts
   - `get_fair_value(symbol: str) -> FairValueEstimate` (`[server.py:get_fair_value]`): Returns Graham-number fair-value estimate and PE/PB ratios via `fetch_fair_value`.
   - `get_controversy_info(symbol: str) -> ControversyInfo` (`[server.py:get_controversy_info]`): Returns detected price spikes, risk factors, and recent news headlines via `fetch_controversy_info`.
   - `get_sentiment_info(symbol: str) -> SentimentInfo` (`[server.py:get_sentiment_info]`): Returns macro and global-events sentiment context via `fetch_sentiment_info`.
+  - `get_bsp_rates() -> BSPKeyRates` (`[server.py:get_bsp_rates]`): Returns Bangko Sentral ng Pilipinas (BSP) key interest rates and indicators via `fetch_bsp_rates`.
 
 ## Invariants
 - **Thin Protocol Adapter** (`[__init__.py]`, `[server.py]`): Contains no domain or business logic of its own; every MCP tool delegates directly to existing services in [`ph_stocks_advisor/data/services`](../ph_stocks_advisor/data/services/README.md) and [`ph_stocks_advisor/data/clients`](../ph_stocks_advisor/data/clients/README.md) using `asyncio.to_thread`.

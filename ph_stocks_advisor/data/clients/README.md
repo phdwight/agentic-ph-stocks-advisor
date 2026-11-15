@@ -17,6 +17,8 @@ Provides third-party API and web-scraping clients for fetching Philippine Stock 
 - `[pse_edge.py:symbol_exists]` - Tri-state check (`True`/`False`/`None`) verifying whether an exact symbol match exists in PSE EDGE's autocomplete endpoint.
 - `[pse_edge.py:is_reit_from_edge]` - Tri-state check (`True`/`False`/`None`) determining REIT status from PSE EDGE company name and Company Description text.
 - `[pse_edge.py:fetch_stock_snapshot]` - Scrapes a market-data snapshot (`price`, `previous_close`, `week_high`, `week_low`, `shares_outstanding`) from the PSE EDGE `stockData` page.
+- `[pse_edge.py:fetch_trading_status]` - Scrapes the current trading status (e.g. `'Open'`, `'Suspended'`) from the PSE EDGE `stockData.do` page.
+- `[pse_edge.py:fetch_suspension_info]` - Returns a `SuspensionInfo` model containing PSE EDGE trading status, execution/lifting dates, disclosure notice number, and regulatory reason when a stock is suspended or halted.
 - `[pse_edge.py:fetch_annual_financials]` - Scrapes audited annual fundamentals (`fiscal_year`, `revenue`, `net_income`, `eps`, `eps_previous`, `book_value_per_share`, `bvps_previous`) from the PSE EDGE financial reports page.
 - `[pse_edge.py:fetch_pse_edge_ohlcv]` - Fetches daily OHLCV DataFrame (with PHP value as `Volume`) from PSE EDGE's `/common/DisclosureCht.ax` endpoint.
 - `[pse_edge_company_dividends.py:fetch_company_dividend_announcements]` - Scrapes up to `max_results` `DividendAnnouncement` objects from a company's PSE EDGE `dividends_and_rights_list.ax` table.
@@ -26,6 +28,8 @@ Provides third-party API and web-scraping clients for fetching Philippine Stock 
 - `[tavily_search.py:search_global_events]` - Queries Tavily for global geopolitical, economic, and climate events affecting the Philippine stock market, returning a formatted string.
 - `[tradingview.py:fetch_tradingview_snapshot]` - Fetches OHLCV, multi-period performance, volatility, and 52-week high/low metrics for a PSE stock from TradingView's public scanner API.
 - `[tradingview.py:format_tv_performance_summary]` - Formats a TradingView snapshot dict into a human/LLM-readable performance and monthly volatility summary string.
+- `[bsp.py:fetch_bsp_key_rates]` - Fetches current BSP policy and money-market interest rates from the BSP SharePoint `Key Rates` REST endpoint backing `KeyRates.aspx` into a `BSPKeyRates` model.
+- `[bsp.py:format_bsp_rates_summary]` - Formats a list of `BSPKeyRateItem` entries into a human/LLM-readable summary string.
 
 ## Invariants
 - `[dragonfi.py:_fetch_all_stock_codes]` - Only non-empty stock code sets are cached in `_STOCK_CODES_CACHE`; empty responses from DragonFi outages are never cached.

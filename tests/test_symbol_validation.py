@@ -248,6 +248,7 @@ def test_price_service_falls_back_to_edge_when_dragonfi_down():
     }
     with (
         patch.object(price_mod, "fetch_stock_profile", return_value={}),
+        patch.object(price_mod, "_fetch_trading_status", return_value=("Open", False)),
         patch(
             "ph_stocks_advisor.data.clients.pse_edge.fetch_stock_snapshot",
             return_value=snap,
@@ -490,10 +491,12 @@ def test_valuation_fallback_gets_reit_status_from_edge():
 
 
 def test_sentiment_outage_gets_reit_status_from_edge():
+    from ph_stocks_advisor.data.models import BSPKeyRates
     from ph_stocks_advisor.data.services import sentiment as sent_mod
 
     with (
         patch("ph_stocks_advisor.data.clients.dragonfi.fetch_stock_profile", return_value={}),
+        patch("ph_stocks_advisor.data.clients.bsp.fetch_bsp_key_rates", return_value=BSPKeyRates()),
         patch("ph_stocks_advisor.data.clients.tavily_search.search_global_events", return_value=""),
         patch("ph_stocks_advisor.data.clients.tavily_search.search_bsp_rate", return_value=""),
         _edge_reit(True),
