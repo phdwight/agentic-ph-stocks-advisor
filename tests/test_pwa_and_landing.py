@@ -160,3 +160,64 @@ class TestModernLandingPage:
         assert 'href="/report/BDO"' in html
         assert "Welcome," in html
         assert "Local Developer" in html
+
+
+class TestOptimisticNavigationUI:
+    @patch("ph_stocks_advisor.web.app.trading_calendar.is_market_open", return_value=False)
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_base_shell_includes_skeleton_templates_toast_and_nav_script(self, mock_repo, _mock_open, anon_client):
+        repo = MagicMock()
+        repo.list_recent_symbols.return_value = []
+        repo.list_user_symbols.return_value = []
+        mock_repo.return_value = repo
+
+        resp = anon_client.get("/")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+
+        assert "nav.js" in html
+        assert 'id="nav-toast"' in html
+        assert "data-nav-toast-msg" in html
+        assert "data-nav-toast-retry" in html
+        assert "data-nav-toast-close" in html
+        assert 'id="nav-status"' in html
+
+        for view in ("report", "history", "index", "page"):
+            assert f'data-skeleton-view="{view}"' in html
+        assert "data-skeleton-symbol" in html
+
+        # Strictly no inline <script> blocks (enforced by script-src 'self')
+        inline_scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>", html, flags=re.IGNORECASE)
+        assert inline_scripts == []
+
+    def test_nav_js_and_service_worker_handoff_are_served(self, anon_client):
+        nav_resp = anon_client.get("/static/nav.js")
+        assert nav_resp.status_code == 200
+        nav_js = nav_resp.get_data(as_text=True)
+        assert "window.OptimisticNav" in nav_js
+        assert "X-Optimistic-Nav" in nav_js
+        assert "captureSnapshot" in nav_js
+        assert "restoreSnapshot" in nav_js
+        assert "renderSkeleton" in nav_js
+        assert "rollback" in nav_js
+
+        sw_js = anon_client.get("/sw.js").get_data(as_text=True)
+        assert "ph-stocks-nav-handoff" in sw_js
+        assert "X-Optimistic-Nav" in sw_js
+        assert "confirmAndParkNavigation" in sw_js
+        assert "takeParkedNavigation" in sw_js
+
+        app_js = anon_client.get("/static/app.js").get_data(as_text=True)
+        assert "OptimisticNav.begin(" in app_js
+        assert "transition.commit(" in app_js
+        assert "transition.rollback(" in app_js
+
+        pwa_js = anon_client.get("/static/pwa.js").get_data(as_text=True)
+        assert "OptimisticNav.begin(" in pwa_js
+        assert "transition.commit(" in pwa_js
+        assert "transition.rollback(" in pwa_js
+
+        css = anon_client.get("/static/style.css").get_data(as_text=True)
+        assert ".skeleton-view" in css
+        assert ".nav-toast" in css
+        assert "@keyframes sk-shimmer" in css

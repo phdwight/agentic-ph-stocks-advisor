@@ -23,6 +23,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ asset_rev }}">
   <script src="{{ url_for('static', filename='pwa.js') }}?v={{ asset_rev }}" defer></script>
+  <script src="{{ url_for('static', filename='nav.js') }}?v={{ asset_rev }}" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}" data-authenticated="{{ 'true' if current_user else 'false' }}">
@@ -119,12 +120,22 @@
     </aside>
     {% endif %}
 
-    <main class="container" id="main-content">
+    <main class="container" id="main-content" tabindex="-1">
       {% block content %}{% endblock %}
     </main>
   </div>
 
   <div id="sidebar-backdrop" class="drawer-backdrop" hidden></div>
+
+  <!-- Optimistic navigation: live status for screen readers + rollback error toast (static/nav.js) -->
+  <p id="nav-status" class="sr-only" role="status" aria-live="polite"></p>
+  <div id="nav-toast" class="nav-toast" role="alert" hidden>
+    <svg class="nav-toast-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <p class="nav-toast-msg" data-nav-toast-msg></p>
+    <button type="button" class="nav-toast-retry" data-nav-toast-retry hidden>Retry</button>
+    <button type="button" class="nav-toast-close" data-nav-toast-close aria-label="Dismiss">&times;</button>
+  </div>
+  {% include "_skeletons.html" %}
 
   <footer class="footer">
     <div class="container footer-inner">

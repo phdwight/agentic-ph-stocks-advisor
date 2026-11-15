@@ -257,7 +257,11 @@
           const existing = existingTasks[symbol];
           if (existing && existing.status === "pending" && Date.now() - existing.ts <= TASK_STALE_MS) {
             sessionStorage.setItem(STALE_NOTICE_KEY, JSON.stringify({ symbol, status: "joined" }));
-            window.location.href = "/";
+            if (window.OptimisticNav) {
+              await window.OptimisticNav.navigate("/");
+            } else {
+              window.location.href = "/";
+            }
             return;
           }
         } catch { /* ignore */ }
@@ -265,6 +269,8 @@
         if (inflightSidebarClicks.has(symbol)) return;
         inflightSidebarClicks.add(symbol);
         link.classList.add("is-checking");
+
+        const transition = window.OptimisticNav ? window.OptimisticNav.begin(link.href) : null;
 
         try {
           const resp = await fetch("/analyse", {
@@ -274,22 +280,40 @@
               "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || "",
             },
             body: `symbol=${encodeURIComponent(symbol)}&refresh_stale=1`,
+            signal: transition ? transition.controller.signal : undefined,
           });
 
+          if (transition && transition.state !== "pending") return;
+
           if (resp.redirected && resp.url.includes("/auth/login")) {
-            window.location.href = resp.url;
+            if (transition) {
+              await transition.commit(resp.url);
+            } else {
+              window.location.href = resp.url;
+            }
             return;
           }
 
           const data = await resp.json();
+          if (transition && transition.state !== "pending") return;
 
           if (resp.status === 401 || data.status === "login_required" || data.login_url) {
-            window.location.href = data.login_url || "/auth/login";
+            const loginUrl = data.login_url || "/auth/login";
+            if (transition) {
+              await transition.commit(loginUrl);
+            } else {
+              window.location.href = loginUrl;
+            }
             return;
           }
 
           if (data.status === "cached") {
-            window.location.href = `/report/${encodeURIComponent(data.symbol || symbol)}`;
+            const targetUrl = `/report/${encodeURIComponent(data.symbol || symbol)}`;
+            if (transition) {
+              await transition.commit(targetUrl);
+            } else {
+              window.location.href = targetUrl;
+            }
             return;
           }
 
@@ -305,13 +329,35 @@
                 JSON.stringify({ symbol: data.symbol || symbol, status: data.status })
               );
             } catch { /* ignore */ }
-            window.location.href = "/";
+            if (transition) {
+              await transition.commit("/");
+            } else {
+              window.location.href = "/";
+            }
             return;
           }
 
-          window.location.href = link.href;
+          if (!resp.ok && data.error) {
+            if (transition) {
+              transition.rollback(data.error);
+            } else {
+              window.location.href = link.href;
+            }
+            return;
+          }
+
+          if (transition) {
+            await transition.commit(link.href);
+          } else {
+            window.location.href = link.href;
+          }
         } catch {
-          window.location.href = link.href;
+          if (transition && transition.state !== "pending") return;
+          if (transition) {
+            transition.rollback("Failed to connect to the server.", link.href);
+          } else {
+            window.location.href = link.href;
+          }
         } finally {
           inflightSidebarClicks.delete(symbol);
           link.classList.remove("is-checking");
