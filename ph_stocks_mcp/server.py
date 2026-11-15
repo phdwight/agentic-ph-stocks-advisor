@@ -1,9 +1,9 @@
 """
-FastMCP server wiring for the PH Stocks Advisor data tools.
+MCPServer wiring for the PH Stocks Advisor data tools.
 
 Tools are thin wrappers around the existing domain services in
 ``ph_stocks_advisor.data.services`` — no logic is duplicated. Returned
-objects are Pydantic models which FastMCP serialises to structured JSON.
+objects are Pydantic models which MCPServer serialises to structured JSON.
 
 Validation errors (``SymbolNotFoundError``) are surfaced as MCP tool errors
 with a structured payload so the client can re-raise the original exception
@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from ph_stocks_advisor.data.clients.dragonfi import (
     SymbolNotFoundError,
@@ -48,19 +48,14 @@ logger = logging.getLogger(__name__)
 _SYMBOL_NOT_FOUND_PREFIX = "SymbolNotFoundError: "
 
 
-def build_server() -> FastMCP:
-    """Construct the FastMCP server with all advisor data tools registered."""
-    host = os.getenv("MCP_HOST", "0.0.0.0")  # noqa: S104  bind-all is intended inside containers
-    port = int(os.getenv("MCP_PORT", "8000"))
-
-    mcp = FastMCP(
+def build_server() -> MCPServer:
+    """Construct the MCPServer with all advisor data tools registered."""
+    mcp = MCPServer(
         name="ph-stocks-advisor",
         instructions=(
             "Data tools for Philippine Stock Exchange (PSE) listed equities. "
             "Each tool returns a structured snapshot for one analysis dimension."
         ),
-        host=host,
-        port=port,
     )
 
     # ------------------------------------------------------------------
@@ -78,12 +73,12 @@ def build_server() -> FastMCP:
             result = await asyncio.to_thread(validate_pse_symbol, symbol)
         except SymbolNotFoundError as exc:
             logger.info("MCP tool validate_symbol rejected symbol=%r: %s", symbol, exc)
-            raise ValueError(f"{_SYMBOL_NOT_FOUND_PREFIX}{exc}") from exc
+            raise ToolError(f"{_SYMBOL_NOT_FOUND_PREFIX}{exc}") from exc
         except SymbolValidationUnavailableError as exc:
             # Transient upstream failure — NO not-found marker, so the client
             # surfaces a retryable error instead of "not listed".
             logger.warning("MCP tool validate_symbol unavailable for %r: %s", symbol, exc)
-            raise ValueError(str(exc)) from exc
+            raise ToolError(str(exc)) from exc
         logger.info("MCP tool validate_symbol resolved symbol=%r -> %s", symbol, result)
         return result
 
