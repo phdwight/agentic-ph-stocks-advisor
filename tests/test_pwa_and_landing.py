@@ -221,4 +221,3 @@ class TestOptimisticNavigationUI:
         assert ".skeleton-view" in css
         assert ".nav-toast" in css
         assert "@keyframes sk-shimmer" in css
-
