@@ -167,14 +167,11 @@ class _SyncMCPClient:
     async def _open_session(self) -> None:
         from contextlib import AsyncExitStack
 
-        from mcp import ClientSession
-        from mcp.client.streamable_http import streamablehttp_client
+        from mcp import Client
 
         try:
             self._stack = AsyncExitStack()
-            read, write, _ = await self._stack.enter_async_context(streamablehttp_client(self._url))
-            session = await self._stack.enter_async_context(ClientSession(read, write))
-            await session.initialize()
+            session = await self._stack.enter_async_context(Client(self._url))
             self._session = session
             logger.info("MCP client session initialised against %s", self._url)
         except BaseException as exc:
@@ -251,7 +248,8 @@ class _SyncMCPClient:
         assert self._session is not None
         result = await self._session.call_tool(tool_name, arguments)
 
-        if result.isError:
+        is_error = bool(getattr(result, "is_error", getattr(result, "isError", False)))
+        if is_error:
             message = _extract_text(result)
             # The marker may not be at position 0: the MCP framework wraps
             # tool errors (mcp>=1.28 prefixes "Error executing tool <name>: "),
@@ -263,10 +261,12 @@ class _SyncMCPClient:
                 raise SymbolNotFoundError(message.split(_SYMBOL_NOT_FOUND_PREFIX, 1)[1])
             raise MCPClientError(f"MCP tool {tool_name!r} failed: {message}")
 
-        # FastMCP returns Pydantic models / dicts as ``structuredContent``.
-        structured = getattr(result, "structuredContent", None)
+        # MCPServer returns Pydantic models / dicts as ``structured_content``.
+        structured = getattr(result, "structured_content", None)
+        if structured is None:
+            structured = getattr(result, "structuredContent", None)
         if structured is not None:
-            # FastMCP wraps non-object return types under a ``result`` key.
+            # MCPServer wraps non-object return types under a ``result`` key.
             if isinstance(structured, dict) and set(structured.keys()) == {"result"}:
                 return structured["result"]
             return structured

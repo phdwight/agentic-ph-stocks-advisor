@@ -1,11 +1,11 @@
 # ph_stocks_mcp
 
 ## Overview
-Model Context Protocol (MCP) server package for the PH Stocks Advisor. It adapts the advisor's Philippine Stock Exchange (PSE) symbol validation and data-fetching domain services into FastMCP tools served over Streamable HTTP, enabling consumption by the advisor application or any MCP-compatible client over the network without duplicating domain logic.
+Model Context Protocol (MCP) server package for the PH Stocks Advisor. It adapts the advisor's Philippine Stock Exchange (PSE) symbol validation and data-fetching domain services into `MCPServer` tools (`mcp>=2.3`) served over Streamable HTTP, enabling consumption by the advisor application or any MCP-compatible client over the network without duplicating domain logic.
 
 ## Interface
-- `build_server() -> FastMCP` (`[__init__.py:__all__]`, `[server.py:build_server]`): Constructs and returns the `ph-stocks-advisor` `FastMCP` server instance with all advisor data tools registered.
-- `main() -> None` (`[__main__.py:main]`): CLI entry point (`python -m ph_stocks_mcp`) that initializes logging via `configure_logging()` and runs the FastMCP server with `transport="streamable-http"`.
+- `build_server() -> MCPServer` (`[__init__.py:__all__]`, `[server.py:build_server]`): Constructs and returns the `ph-stocks-advisor` `MCPServer` instance with all advisor data tools registered.
+- `main() -> None` (`[__main__.py:main]`): CLI entry point (`python -m ph_stocks_mcp`) that initializes logging via `configure_logging()`, reads `MCP_HOST` and `MCP_PORT`, and runs the `MCPServer` with `transport="streamable-http"`.
 - Registered MCP Tools (`[server.py:build_server]`):
   - `validate_symbol(symbol: str) -> str` (`[server.py:validate_symbol]`): Validates a ticker via `validate_pse_symbol` and returns its canonical PSE stock code.
   - `get_stock_price(symbol: str) -> StockPrice` (`[server.py:get_stock_price]`): Returns current price snapshot vs. 52-week range via `fetch_stock_price`.

@@ -56,12 +56,12 @@ def _validate_stub(symbol: str) -> str:
 def mcp_in_memory_session():
     """Yield a callable that runs an async test against an in-memory MCP server.
 
-    Uses the official ``mcp`` SDK's in-memory transport so we don't need a
-    real network port. The fixture also patches the underlying domain
-    services with deterministic stubs so we can assert on returned values
-    without hitting real APIs.
+    Uses the official ``mcp`` SDK's in-memory ``Client(server)`` transport so
+    we don't need a real network port. The fixture also patches the underlying
+    domain services with deterministic stubs so we can assert on returned
+    values without hitting real APIs.
     """
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from mcp import Client
 
     sample_price = StockPrice(symbol="TEL", current_price=1250.0)
     sample_dividend = DividendInfo(symbol="TEL", dividend_yield=0.06)
@@ -101,7 +101,7 @@ def mcp_in_memory_session():
     server = build_server()
 
     async def _do(test):
-        async with create_connected_server_and_client_session(server._mcp_server) as session:  # type: ignore[attr-defined]
+        async with Client(server) as session:
             await test(session)
 
     yield _do
@@ -138,8 +138,8 @@ def test_mcp_server_lists_all_advisor_tools(mcp_in_memory_session):
 def test_mcp_server_returns_bsp_rates_payload(mcp_in_memory_session):
     async def _test(session):
         result = await session.call_tool("get_bsp_rates", {})
-        assert result.isError is False
-        data = result.structuredContent
+        assert result.is_error is False
+        data = result.structured_content
         assert data["target_rrp_rate"] == 5.5
         assert data["overnight_lending_rate"] == 6.0
         assert data["overnight_deposit_rate"] == 5.0
@@ -153,8 +153,8 @@ def test_mcp_server_returns_bsp_rates_payload(mcp_in_memory_session):
 def test_mcp_server_returns_stock_price_payload(mcp_in_memory_session):
     async def _test(session):
         result = await session.call_tool("get_stock_price", {"symbol": "TEL"})
-        assert result.isError is False
-        data = result.structuredContent
+        assert result.is_error is False
+        data = result.structured_content
         assert data["symbol"] == "TEL"
         assert data["current_price"] == 1250.0
 
@@ -164,7 +164,7 @@ def test_mcp_server_returns_stock_price_payload(mcp_in_memory_session):
 def test_mcp_server_signals_unknown_symbol(mcp_in_memory_session):
     async def _test(session):
         result = await session.call_tool("validate_symbol", {"symbol": "ZZZZZ"})
-        assert result.isError is True
+        assert result.is_error is True
         text = "\n".join(getattr(c, "text", "") for c in (result.content or []))
         assert "SymbolNotFoundError:" in text
 
@@ -174,9 +174,9 @@ def test_mcp_server_signals_unknown_symbol(mcp_in_memory_session):
 def test_mcp_server_validates_known_symbol(mcp_in_memory_session):
     async def _test(session):
         result = await session.call_tool("validate_symbol", {"symbol": "tel"})
-        assert result.isError is False
-        # FastMCP wraps scalar return types under {"result": value}.
-        assert result.structuredContent in ({"result": "TEL"}, "TEL")
+        assert result.is_error is False
+        # MCPServer wraps scalar return types under {"result": value}.
+        assert result.structured_content in ({"result": "TEL"}, "TEL")
 
     _run(mcp_in_memory_session(_test))
 

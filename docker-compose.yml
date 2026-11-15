@@ -26,7 +26,7 @@ services:
 
   # ── Redis (message broker + result backend) ────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     # Port is NOT exposed to the host by default (security best practice).
     # Uncomment the next two lines for local development debugging:
