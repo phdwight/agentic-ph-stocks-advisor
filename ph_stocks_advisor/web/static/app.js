@@ -553,8 +553,13 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (data.status === "cached") {
-        // Fresh report exists — navigate straight to it
-        window.location.href = `/report/${data.symbol}`;
+        // Fresh report exists — transition to its skeleton & navigate
+        const reportUrl = `/report/${encodeURIComponent(data.symbol || symbol)}`;
+        if (window.OptimisticNav) {
+          await window.OptimisticNav.navigate(reportUrl);
+        } else {
+          window.location.href = reportUrl;
+        }
         return;
       }
 
@@ -801,6 +806,11 @@ document.addEventListener("DOMContentLoaded", () => {
     inflightReportClicks.add(symbol);
     link.classList.add("is-checking");
 
+    // Optimistic UI: transition to the report skeleton immediately on click;
+    // commit if the report is cached, or roll back if a fresh run starts or
+    // the request fails.
+    const transition = window.OptimisticNav ? window.OptimisticNav.begin(link.href) : null;
+
     try {
       const resp = await fetch("/analyse", {
         method: "POST",
@@ -809,26 +819,45 @@ document.addEventListener("DOMContentLoaded", () => {
           "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || "",
         },
         body: `symbol=${encodeURIComponent(symbol)}&refresh_stale=1`,
+        signal: transition ? transition.controller.signal : undefined,
       });
 
+      if (transition && transition.state !== "pending") return;
+
       if (resp.redirected && resp.url.includes("/auth/login")) {
-        window.location.href = resp.url;
+        if (transition) {
+          await transition.commit(resp.url);
+        } else {
+          window.location.href = resp.url;
+        }
         return;
       }
 
       const data = await resp.json();
+      if (transition && transition.state !== "pending") return;
 
       if (resp.status === 401 || data.status === "login_required" || data.login_url) {
-        window.location.href = data.login_url || "/auth/login";
+        const loginUrl = data.login_url || "/auth/login";
+        if (transition) {
+          await transition.commit(loginUrl);
+        } else {
+          window.location.href = loginUrl;
+        }
         return;
       }
 
       if (data.status === "cached") {
-        window.location.href = `/report/${encodeURIComponent(data.symbol || symbol)}`;
+        const targetUrl = `/report/${encodeURIComponent(data.symbol || symbol)}`;
+        if (transition) {
+          await transition.commit(targetUrl);
+        } else {
+          window.location.href = targetUrl;
+        }
         return;
       }
 
       if (data.task_id) {
+        if (transition) transition.rollback();
         addTask(symbol, data.task_id);
         renderTracker();
         streamStatus(data.task_id, symbol);
@@ -838,13 +867,23 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (!resp.ok && data.error) {
+        if (transition) transition.rollback(data.error);
         flashError(data.error, data.symbol);
         return;
       }
 
-      window.location.href = link.href;
+      if (transition) {
+        await transition.commit(link.href);
+      } else {
+        window.location.href = link.href;
+      }
     } catch {
-      window.location.href = link.href;
+      if (transition && transition.state !== "pending") return;
+      if (transition) {
+        transition.rollback("Failed to connect to the server.", link.href);
+      } else {
+        window.location.href = link.href;
+      }
     } finally {
       inflightReportClicks.delete(symbol);
       link.classList.remove("is-checking");

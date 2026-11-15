@@ -1,0 +1,122 @@
+{#-
+  Optimistic-navigation skeleton layouts (consumed by static/nav.js).
+
+  Each <template> mirrors the real view's layout classes so the skeleton
+  occupies the same grid/columns/breakpoints as the page that replaces it.
+  Templates are inert (never rendered, no scripts run) and CSP-safe.
+
+  Hooks read by nav.js:
+    data-skeleton-view="<view>"   view name matched against nav.js routes
+    data-skeleton-body-class      body class the real view renders with
+    data-skeleton-symbol          filled with the ticker parsed from the URL
+-#}
+<template data-skeleton-view="report" data-skeleton-body-class="page-report">
+  <div class="report-console skeleton-view">
+    <aside class="report-rail">
+      <span class="rail-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        New search
+      </span>
+      <div class="rail-head">
+        <div class="rail-ident">
+          <span class="rail-sym" data-skeleton-symbol></span>
+          <span class="sk sk-price"></span>
+        </div>
+        <span class="sk sk-line sk-w-60"></span>
+      </div>
+      <section class="verdict-panel">
+        <span class="kicker">Verdict</span>
+        <div class="verdict-row">
+          <span class="sk sk-verdict"></span>
+          <span class="sk sk-score"></span>
+        </div>
+        <div class="verdict-meter">
+          <div class="meter-track sk-meter"></div>
+          <div class="meter-labels"><span>Avoid</span><span>Wait</span><span>Buy</span></div>
+        </div>
+        <span class="sk sk-line"></span>
+        <span class="sk sk-line sk-w-80"></span>
+      </section>
+      <div class="rail-actions">
+        <span class="sk sk-pill"></span>
+      </div>
+    </aside>
+    <section class="agent-grid">
+      {% for lead in [true, false, false, false, false, false, false] %}
+      <article class="agent-card{% if lead %} lead{% endif %}">
+        <div class="agent-hd">
+          <span class="sk sk-icon"></span>
+          <span class="agent-id">
+            <span class="sk sk-line sk-w-40"></span>
+            <span class="sk sk-line sk-thin sk-w-20"></span>
+          </span>
+        </div>
+        <div class="sk-stack">
+          <span class="sk sk-line"></span>
+          <span class="sk sk-line sk-w-90"></span>
+          <span class="sk sk-line sk-w-80"></span>
+          {% if lead %}<span class="sk sk-line sk-w-60"></span>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+  </div>
+</template>
+
+<template data-skeleton-view="history" data-skeleton-body-class="">
+  <div class="skeleton-view">
+    <div class="history-header">
+      <h1><span data-skeleton-symbol></span> — Report History</h1>
+      <span class="sk sk-pill"></span>
+    </div>
+    <table class="history-table">
+      <thead>
+        <tr><th>ID</th><th>Verdict</th><th>Date</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        {% for _ in range(5) %}
+        <tr>
+          <td><span class="sk sk-line sk-w-40"></span></td>
+          <td><span class="sk sk-badge"></span></td>
+          <td><span class="sk sk-line sk-w-80"></span></td>
+          <td><span class="sk sk-btn"></span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</template>
+
+<template data-skeleton-view="index" data-skeleton-body-class="">
+  <div class="skeleton-view">
+    <section class="hero">
+      <div class="hero-badges"><span class="sk sk-pill"></span><span class="sk sk-pill"></span></div>
+      <span class="sk sk-heading sk-center"></span>
+      <span class="sk sk-line sk-w-60 sk-center"></span>
+      <span class="sk sk-search"></span>
+    </section>
+    <section class="features">
+      <div class="feature-grid">
+        {% for _ in range(6) %}
+        <article class="feature-card">
+          <span class="sk sk-icon"></span>
+          <span class="sk sk-line sk-w-60"></span>
+          <span class="sk sk-line"></span>
+          <span class="sk sk-line sk-w-80"></span>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</template>
+
+<template data-skeleton-view="page" data-skeleton-body-class="">
+  <div class="skeleton-view skeleton-page">
+    <span class="sk sk-heading"></span>
+    <div class="sk-stack">
+      {% for w in ['', 'sk-w-90', 'sk-w-80', '', 'sk-w-60', 'sk-w-90', 'sk-w-40'] %}
+      <span class="sk sk-line {{ w }}"></span>
+      {% endfor %}
+    </div>
+  </div>
+</template>
