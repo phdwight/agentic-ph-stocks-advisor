@@ -22,8 +22,8 @@ Provides third-party API and web-scraping clients for fetching Philippine Stock 
 - `[pse_edge.py:fetch_annual_financials]` - Scrapes audited annual fundamentals (`fiscal_year`, `revenue`, `net_income`, `eps`, `eps_previous`, `book_value_per_share`, `bvps_previous`) from the PSE EDGE financial reports page.
 - `[pse_edge.py:fetch_pse_edge_ohlcv]` - Fetches daily OHLCV DataFrame (with PHP value as `Volume`) from PSE EDGE's `/common/DisclosureCht.ax` endpoint.
 - `[pse_edge_company_dividends.py:fetch_company_dividend_announcements]` - Scrapes up to `max_results` `DividendAnnouncement` objects from a company's PSE EDGE `dividends_and_rights_list.ax` table.
-- `[pse_edge_dividends.py:DeclaredDividend]` - Dataclass representing a single cash-dividend declaration scraped from PSE EDGE SEC Form 6-1 disclosures, with a `to_summary()` helper.
-- `[pse_edge_dividends.py:fetch_recent_dividend_declarations]` - Scans recent PSE-wide `'Declaration of Cash Dividends'` disclosures on PSE EDGE and returns up to `max_matches` `DeclaredDividend` items for a symbol.
+- `[pse_edge_dividends.py:DeclaredDividend]` - Dataclass representing a single cash-dividend declaration scraped from PSE EDGE SEC Form 6-1 or REIT-6-A disclosures, with a `to_summary()` helper.
+- `[pse_edge_dividends.py:fetch_recent_dividend_declarations]` - Resolves a symbol's `cmpy_id`, queries its `'Declaration of Cash Dividends'` disclosures on PSE EDGE (`keyword=<cmpy_id>`), and returns up to `max_matches` `DeclaredDividend` items.
 - `[tavily_search.py:search_bsp_rate]` - Queries Tavily for current BSP policy interest rate and PH 10-year bond yield context, returning a formatted string.
 - `[tavily_search.py:search_global_events]` - Queries Tavily for global geopolitical, economic, and climate events affecting the Philippine stock market, returning a formatted string.
 - `[tradingview.py:fetch_tradingview_snapshot]` - Fetches OHLCV, multi-period performance, volatility, and 52-week high/low metrics for a PSE stock from TradingView's public scanner API.
