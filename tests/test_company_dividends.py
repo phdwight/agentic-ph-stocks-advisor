@@ -380,4 +380,3 @@ class TestPseEdgeDividends:
         assert info.ex_dividend_date == "Nov 25, 2026"
         assert "Php0.679/share" in info.recent_declared_dividends
         mock_decl.assert_not_called()
-
