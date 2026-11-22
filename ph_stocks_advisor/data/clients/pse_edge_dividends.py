@@ -5,11 +5,12 @@ Fetches recent cash-dividend declarations from the PSE EDGE disclosure
 system (``https://edge.pse.com.ph``).  The approach mirrors what a human
 would do on the PSE EDGE website:
 
-1. POST to ``/companyDisclosures/search.ax`` with template
-   ``Declaration of Cash Dividends`` to get the latest filings.
-2. For each filing, GET the viewer page to discover the ``file_id``.
-3. GET ``/downloadHtml.do?file_id=…`` for the actual SEC Form 6-1 HTML.
-4. Parse the HTML for stock symbol, amount per share, ex-date,
+1. Resolve the company's ``cmpy_id`` via the PSE EDGE autocomplete API.
+2. POST to ``/companyDisclosures/search.ax`` with ``keyword=<cmpy_id>`` and
+   template ``Declaration of Cash Dividends`` to get the company's latest filings.
+3. For each filing, GET the viewer page to discover the ``file_id``.
+4. GET ``/downloadHtml.do?file_id=…`` for the actual SEC Form 6-1 / REIT-6-A HTML.
+5. Parse the HTML for stock symbol, amount per share, ex-date,
    record date, and payment date.
 
 No API key required — all endpoints are public.
@@ -77,14 +78,27 @@ class DeclaredDividend:
 _DATE_RE = re.compile(r"[A-Za-z]{3}\s+\d{1,2},\s*\d{4}")
 
 
+def _resolve_cmpy_id(symbol: str) -> str | None:
+    """Look up the PSE EDGE ``cmpy_id`` for a ticker symbol."""
+    from ph_stocks_advisor.data.clients.pse_edge import (
+        _resolve_cmpy_id as _edge_resolve_cmpy_id,
+    )
+
+    return _edge_resolve_cmpy_id(symbol)
+
+
 def _parse_disclosure_html(html: str) -> DeclaredDividend | None:
-    """Extract dividend fields from an SEC Form 6-1 HTML body."""
+    """Extract dividend fields from an SEC Form 6-1 or REIT-6-A HTML body."""
     # Flatten to searchable text
     text = re.sub(r"<[^>]+>", "\n", html)
     text = re.sub(r"\s+", " ", text).strip()
 
-    # Stock symbol — appears right before "PSE Disclosure Form 6-1"
-    sym_match = re.search(r"\b([A-Z0-9]{2,10})\s+PSE\s+Disclosure\s+Form\s+6-1", text)
+    # Stock symbol — appears right before "PSE Disclosure Form 6-1" (or
+    # "PSE Disclosure Form REIT-6-A" for Philippine REITs).
+    sym_match = re.search(
+        r"\b([A-Z0-9]{2,10})\s+PSE\s+Disclosure\s+Form\s+(?:6-1|REIT-\d+[A-Z-]*)",
+        text,
+    )
     if not sym_match:
         return None
     symbol = sym_match.group(1)
@@ -149,12 +163,13 @@ def _fetch_disclosure_content(edge_no: str) -> str | None:
 def fetch_recent_dividend_declarations(
     symbol: str,
     *,
-    max_disclosures: int = 50,
+    max_disclosures: int = 10,
     max_matches: int = 3,
 ) -> list[DeclaredDividend]:
     """Return recent cash-dividend declarations for *symbol* from PSE EDGE.
 
-    Scans the latest ``max_disclosures`` PSE-wide filings and returns up to
+    Resolves the company's ``cmpy_id`` and queries its latest
+    ``max_disclosures`` cash-dividend filings, returning up to
     ``max_matches`` that match the given stock symbol.
 
     Parameters
@@ -162,7 +177,7 @@ def fetch_recent_dividend_declarations(
     symbol : str
         PSE stock code (e.g. ``"TEL"``, ``"CREIT"``).
     max_disclosures : int
-        How many recent filings to scan (the latest 50 by default).
+        How many recent company filings to scan (10 by default).
     max_matches : int
         Stop after finding this many matching declarations.
 
@@ -172,13 +187,21 @@ def fetch_recent_dividend_declarations(
         Matching declarations, newest first.  Empty list on any error.
     """
     symbol = symbol.upper().replace(".PS", "")
+    cmpy_id = _resolve_cmpy_id(symbol)
+    if not cmpy_id:
+        logger.warning(
+            "Could not resolve cmpy_id for %s — skipping dividend disclosure search",
+            symbol,
+        )
+        return []
+
     base = _base_url()
 
     try:
         resp = requests.post(
             f"{base}/companyDisclosures/search.ax",
             data={
-                "keyword": "",
+                "keyword": cmpy_id,
                 "tmplNm": "Declaration of Cash Dividends",
                 "sortType": "date",
             },

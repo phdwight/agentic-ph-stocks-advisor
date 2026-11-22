@@ -145,22 +145,17 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
             fcf_trend=fcf_trend,
         )
 
-        # Fetch recent declared dividends from PSE EDGE (SEC Form 6-1)
+        # Primary PSE EDGE source: structured dividend history table from the
+        # company dividends page (dividends_and_rights_form.do?cmpy_id=…).
+        ex_dividend_date_str: str | None = None
         declared_dividends = ""
-        try:
-            declarations = fetch_recent_dividend_declarations(symbol)
-            if declarations:
-                declared_dividends = "; ".join(d.to_summary() for d in declarations)
-                # Use the most recent ex-date as the ex_dividend_date
-                if declarations[0].ex_date:
-                    ex_dividend_date_str = declarations[0].ex_date
-        except Exception as exc:
-            logger.warning("PSE EDGE dividend fetch failed for %s: %s", symbol, exc)
-
-        # Fetch structured dividend announcements from PSE EDGE company page
         dividend_announcements = []
         try:
             dividend_announcements = fetch_company_dividend_announcements(symbol)
+            if dividend_announcements:
+                declared_dividends = "; ".join(f"{symbol}, {a.to_summary()}" for a in dividend_announcements)
+                if dividend_announcements[0].ex_date:
+                    ex_dividend_date_str = dividend_announcements[0].ex_date
         except Exception as exc:
             logger.warning(
                 "PSE EDGE company dividend page fetch failed for %s: %s",
@@ -168,13 +163,25 @@ def fetch_dividend_info(symbol: str) -> DividendInfo:
                 exc,
             )
 
+        # Fallback: only scrape individual Form 6-1 / REIT-6-A disclosure
+        # popups when the company dividends table returned no announcements.
+        if not dividend_announcements:
+            try:
+                declarations = fetch_recent_dividend_declarations(symbol)
+                if declarations:
+                    declared_dividends = "; ".join(d.to_summary() for d in declarations)
+                    if declarations[0].ex_date:
+                        ex_dividend_date_str = declarations[0].ex_date
+            except Exception as exc:
+                logger.warning("PSE EDGE dividend fetch failed for %s: %s", symbol, exc)
+
         return DividendInfo(
             symbol=symbol,
             dividend_rate=dividend_rate,
             dividend_yield=div_yield,
             payout_ratio=payout_ratio,
             fcf_payout_ratio=fcf_payout_ratio,
-            ex_dividend_date=ex_dividend_date_str if "ex_dividend_date_str" in dir() else None,
+            ex_dividend_date=ex_dividend_date_str,
             five_year_avg_yield=0.0,
             is_reit=is_reit,
             annual_dividend_per_share=dividend_rate,

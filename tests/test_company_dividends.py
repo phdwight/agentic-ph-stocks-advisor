@@ -258,3 +258,127 @@ class TestFetchCompanyDividendAnnouncements:
 
         fetch_company_dividend_announcements("AREIT.PS")
         mock_resolve.assert_called_once_with("AREIT")
+
+
+# ---------------------------------------------------------------------------
+# PSE EDGE dividend disclosure scraper tests (pse_edge_dividends.py)
+# ---------------------------------------------------------------------------
+
+SAMPLE_DISCLOSURE_SEARCH_HTML = """
+<table class="list">
+<tbody>
+  <tr>
+    <td><a href="#viewer" onclick="openPopup('edge_1');return false;">Declaration of Cash Dividends</a></td>
+    <td class="alignC">Nov 12, 2026 02:10 PM</td>
+    <td class="alignC">REIT-6-A</td>
+    <td class="alignC">C08164-2026</td>
+  </tr>
+</tbody>
+</table>
+"""
+
+SAMPLE_FORM_6_1_HTML = """
+<html><body>
+  <div>TEL PSE Disclosure Form 6-1 - Declaration of Cash Dividends</div>
+  <div>Amount of Cash Dividend Per Share : P46.00</div>
+  <div>Ex-Date : Aug 27, 2026</div>
+  <div>Record Date Aug 28, 2026</div>
+  <div>Payment Date Sep 11, 2026</div>
+</body></html>
+"""
+
+SAMPLE_FORM_REIT_6_A_HTML = """
+<html><body>
+  <div>AREIT, Inc. AREIT PSE Disclosure Form REIT-6-A - Declaration of Cash Dividends</div>
+  <div>Amount of Cash Dividend Per Share Php0.679</div>
+  <div>Ex-Date : Nov 25, 2026</div>
+  <div>Record Date Nov 26, 2026</div>
+  <div>Payment Date Dec 11, 2026</div>
+</body></html>
+"""
+
+
+class TestPseEdgeDividends:
+    def test_parse_disclosure_html_supports_form_6_1_and_reit_6_a(self):
+        from ph_stocks_advisor.data.clients.pse_edge_dividends import (
+            _parse_disclosure_html,
+        )
+
+        tel = _parse_disclosure_html(SAMPLE_FORM_6_1_HTML)
+        assert tel is not None
+        assert tel.symbol == "TEL"
+        assert tel.amount_per_share == "P46.00"
+        assert tel.ex_date == "Aug 27, 2026"
+        assert tel.record_date == "Aug 28, 2026"
+        assert tel.payment_date == "Sep 11, 2026"
+
+        areit = _parse_disclosure_html(SAMPLE_FORM_REIT_6_A_HTML)
+        assert areit is not None
+        assert areit.symbol == "AREIT"
+        assert areit.amount_per_share == "Php0.679"
+        assert areit.ex_date == "Nov 25, 2026"
+        assert areit.record_date == "Nov 26, 2026"
+        assert areit.payment_date == "Dec 11, 2026"
+
+    @patch("ph_stocks_advisor.data.clients.pse_edge_dividends._fetch_disclosure_content")
+    @patch("ph_stocks_advisor.data.clients.pse_edge_dividends.requests.post")
+    @patch("ph_stocks_advisor.data.clients.pse_edge_dividends._resolve_cmpy_id", return_value="679")
+    def test_fetch_recent_dividend_declarations_filters_by_cmpy_id(self, mock_resolve, mock_post, mock_fetch_content):
+        from ph_stocks_advisor.data.clients.pse_edge_dividends import (
+            fetch_recent_dividend_declarations,
+        )
+
+        mock_post.return_value = MagicMock(status_code=200, text=SAMPLE_DISCLOSURE_SEARCH_HTML)
+        mock_fetch_content.return_value = SAMPLE_FORM_REIT_6_A_HTML
+
+        results = fetch_recent_dividend_declarations("AREIT.PS")
+
+        mock_resolve.assert_called_once_with("AREIT")
+        assert mock_post.call_args.kwargs["data"]["keyword"] == "679"
+        assert len(results) == 1
+        assert results[0].symbol == "AREIT"
+        assert results[0].amount_per_share == "Php0.679"
+        assert results[0].ex_date == "Nov 25, 2026"
+        assert results[0].announce_date == "Nov 12, 2026"
+
+    @patch("ph_stocks_advisor.data.clients.pse_edge_dividends.requests.post")
+    @patch("ph_stocks_advisor.data.clients.pse_edge_dividends._resolve_cmpy_id", return_value=None)
+    def test_fetch_recent_dividend_declarations_skips_when_cmpy_id_unresolved(self, _mock_resolve, mock_post):
+        from ph_stocks_advisor.data.clients.pse_edge_dividends import (
+            fetch_recent_dividend_declarations,
+        )
+
+        assert fetch_recent_dividend_declarations("UNKNOWN") == []
+        mock_post.assert_not_called()
+
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_recent_dividend_declarations")
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_company_dividend_announcements")
+    @patch("ph_stocks_advisor.data.services.dividend.fetch_annual_cashflow_trends", return_value={"fcf": {}})
+    @patch(
+        "ph_stocks_advisor.data.services.dividend.fetch_annual_income_trends",
+        return_value={"net_income": {}, "revenue": {}},
+    )
+    @patch(
+        "ph_stocks_advisor.data.services.dividend.fetch_stock_profile",
+        return_value={"price": 37.25, "dividendYield": 5.5, "sharesOutstanding": 1_000_000, "isREIT": True},
+    )
+    def test_company_dividends_table_is_primary_and_skips_popup_scrape(self, _prof, _inc, _cf, mock_ann, mock_decl):
+        from ph_stocks_advisor.data.services.dividend import fetch_dividend_info
+
+        mock_ann.return_value = [
+            DividendAnnouncement(
+                dividend_rate="Php0.679",
+                ex_date="Nov 25, 2026",
+                record_date="Nov 26, 2026",
+                payment_date="Dec 11, 2026",
+            )
+        ]
+
+        info = fetch_dividend_info("AREIT")
+
+        assert len(info.dividend_announcements) == 1
+        assert info.ex_dividend_date == "Nov 25, 2026"
+        assert "Php0.679/share" in info.recent_declared_dividends
+        mock_decl.assert_not_called()
+
+
