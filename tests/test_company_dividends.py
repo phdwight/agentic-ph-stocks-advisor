@@ -381,4 +381,3 @@ class TestPseEdgeDividends:
         assert "Php0.679/share" in info.recent_declared_dividends
         mock_decl.assert_not_called()
 
-
