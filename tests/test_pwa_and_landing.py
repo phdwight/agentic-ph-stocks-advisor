@@ -245,8 +245,7 @@ class TestModernWebGuidance:
         # Native top-layer <dialog> without redundant role="dialog" / aria-modal
         assert '<dialog id="ios-install-sheet" class="ios-sheet-dialog" closedby="any"' in html
         assert (
-            'id="ios-install-sheet" class="ios-sheet-dialog" closedby="any" aria-labelledby="ios-sheet-title"'
-            in html
+            'id="ios-install-sheet" class="ios-sheet-dialog" closedby="any" aria-labelledby="ios-sheet-title"' in html
         )
 
     @patch("ph_stocks_advisor.data.services.price.fetch_stock_price", return_value=None)
