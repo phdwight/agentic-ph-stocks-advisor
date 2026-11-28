@@ -68,86 +68,47 @@ function enhance52WeekRange(section) {
 
 function create52WeekBar(low, high, current) {
   const container = document.createElement("div");
-  container.style.cssText = `
-    margin: 1rem 0 1.2rem;
-    padding: 1rem 1.2rem;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px;
-  `;
+  container.className = "range-bar-card";
 
   const label = document.createElement("div");
-  label.style.cssText = `
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: #a0a6be;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  `;
-  label.innerHTML = `
-    <span>52-Week Range</span>
-    ${current ? `<span style="color:#2E4A56;">Current: ₱${current.toLocaleString()}</span>` : ""}
-  `;
+  label.className = "range-bar-label";
+  const labelTitle = document.createElement("span");
+  labelTitle.textContent = "52-Week Range";
+  label.appendChild(labelTitle);
+  if (current) {
+    const curSpan = document.createElement("span");
+    curSpan.className = "range-bar-current";
+    curSpan.textContent = `Current: ₱${current.toLocaleString()}`;
+    label.appendChild(curSpan);
+  }
 
   const track = document.createElement("div");
-  track.style.cssText = `
-    position: relative;
-    height: 6px;
-    background: rgba(255,255,255,0.06);
-    border-radius: 3px;
-    overflow: visible;
-  `;
+  track.className = "range-bar-track";
 
   // Gradient fill
   const fill = document.createElement("div");
+  fill.className = "range-bar-fill";
   const range = high - low;
   const fillPct = current ? Math.min(100, Math.max(0, ((current - low) / range) * 100)) : 50;
-  fill.style.cssText = `
-    height: 100%;
-    width: ${fillPct}%;
-    background: linear-gradient(90deg, #D85E52, #C4A050, #3D8A7E);
-    border-radius: 3px;
-    transition: width 1s ease-out;
-  `;
+  fill.style.width = `${fillPct}%`;
 
   // Current position marker
   if (current) {
     const marker = document.createElement("div");
-    marker.style.cssText = `
-      position: absolute;
-      top: -5px;
-      left: ${fillPct}%;
-      transform: translateX(-50%);
-      width: 16px;
-      height: 16px;
-      background: #2E4A56;
-      border: 2px solid #F5F1ED;
-      border-radius: 50%;
-      box-shadow: 0 0 8px rgba(61,138,126,0.3);
-      z-index: 2;
-    `;
+    marker.className = "range-bar-marker";
+    marker.style.left = `${fillPct}%`;
     track.appendChild(marker);
   }
 
   track.insertBefore(fill, track.firstChild);
 
   const ends = document.createElement("div");
-  ends.style.cssText = `
-    display: flex;
-    justify-content: space-between;
-    margin-top: 0.4rem;
-    font-size: 0.72rem;
-    color: #6b7088;
-    font-variant-numeric: tabular-nums;
-  `;
-  ends.innerHTML = `
-    <span>₱${low.toLocaleString()}</span>
-    <span>₱${high.toLocaleString()}</span>
-  `;
+  ends.className = "range-bar-ends";
+  const lowSpan = document.createElement("span");
+  lowSpan.textContent = `₱${low.toLocaleString()}`;
+  const highSpan = document.createElement("span");
+  highSpan.textContent = `₱${high.toLocaleString()}`;
+  ends.replaceChildren(lowSpan, highSpan);
 
   container.appendChild(label);
   container.appendChild(track);
@@ -213,26 +174,14 @@ function enhancePercentages(section) {
           sentiment = null;
         }
 
-        const color = sentiment === true
-          ? "#3D8A7E"
+        const cls = sentiment === true
+          ? "pct-badge-pos"
           : sentiment === false
-          ? "#D85E52"
-          : "#7A8E98";
-        const bgColor = sentiment === true
-          ? "rgba(61,138,126,0.10)"
-          : sentiment === false
-          ? "rgba(216,94,82,0.10)"
-          : "rgba(122,142,152,0.08)";
+          ? "pct-badge-neg"
+          : "pct-badge-neutral";
         const arrow = sentiment === true ? "↑" : sentiment === false ? "↓" : "";
 
-        return `<span class="pct-badge" style="
-          display:inline-flex;align-items:center;gap:0.2rem;
-          padding:0.1rem 0.45rem;border-radius:4px;
-          background:${bgColor};color:${color};
-          font-size:0.8rem;font-weight:600;
-          font-variant-numeric:tabular-nums;
-          white-space:nowrap;
-        ">${arrow}${match}</span>`;
+        return `<span class="pct-badge ${cls}">${arrow}${match}</span>`;
       }
     );
 
@@ -257,16 +206,7 @@ function enhanceRatioValues(section) {
     const enhanced = html.replace(
       /\b(P\/?E|P\/?B|PEG|Forward\s+P\/?E)\s*(?:Ratio)?[:\s]+(\d+\.?\d*)/gi,
       (match, label, value) => {
-        return `<strong>${label}</strong>: <span class="ratio-value" style="
-          display:inline-block;
-          padding:0.1rem 0.4rem;
-          background:rgba(74,128,160,0.10);
-          color:#4A80A0;
-          border-radius:4px;
-          font-weight:600;
-          font-size:0.82rem;
-          font-variant-numeric:tabular-nums;
-        ">${value}</span>`;
+        return `<strong>${label}</strong>: <span class="ratio-value">${value}</span>`;
       }
     );
 
@@ -291,12 +231,7 @@ function enhancePriceValues(section) {
     const enhanced = html.replace(
       /((?:current\s+price|fair\s+value|estimated\s+fair\s+value|graham\s+number)[:\s]*)((?:PHP|₱|PhP)\s*[\d,]+\.?\d*)/gi,
       (match, prefix, price) => {
-        return `${prefix}<span class="price-highlight" style="
-          font-weight:700;
-          color:#2E4A56;
-          font-size:1.05em;
-          font-variant-numeric:tabular-nums;
-        ">${price}</span>`;
+        return `${prefix}<span class="price-highlight">${price}</span>`;
       }
     );
 
@@ -431,8 +366,15 @@ function createTrendline(prices, reportDate) {
   const lastValidY = yAt(lastPrice);
 
   const up = lastPrice >= firstPrice;
-  const stroke = up ? "#3D8A7E" : "#D85E52";
-  const fillTop = up ? "rgba(61,138,126,0.16)" : "rgba(216,94,82,0.16)";
+  const rootStyles = getComputedStyle(document.documentElement);
+  const stroke = up
+    ? (rootStyles.getPropertyValue("--buy").trim() || "#059669")
+    : (rootStyles.getPropertyValue("--sell").trim() || "#dc2626");
+  const fillTop = up
+    ? (rootStyles.getPropertyValue("--buy-tint").trim() || "rgba(5,150,105,0.16)")
+    : (rootStyles.getPropertyValue("--sell-tint").trim() || "rgba(220,38,38,0.16)");
+  const sellColor = rootStyles.getPropertyValue("--sell").trim() || "#dc2626";
+  const cardBg = rootStyles.getPropertyValue("--card").trim() || "#ffffff";
   const changePct = firstPrice ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
   const money = (v) => "₱" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -503,15 +445,15 @@ function createTrendline(prices, reportDate) {
 
       svgParts.push(`
         <rect x="${startX.toFixed(1)}" y="2" width="${rectW.toFixed(1)}" height="${h - 4}"
-              rx="3" fill="rgba(216,94,82,0.08)"/>
+              rx="3" fill="rgba(220,38,38,0.08)"/>
         <rect x="${startX.toFixed(1)}" y="2" width="${rectW.toFixed(1)}" height="${h - 4}"
-              rx="3" fill="url(#suspended-hatch)" stroke="rgba(216,94,82,0.28)" stroke-width="1"/>
+              rx="3" fill="url(#suspended-hatch)" stroke="rgba(220,38,38,0.28)" stroke-width="1"/>
         <line x1="${startX.toFixed(1)}" y1="2" x2="${startX.toFixed(1)}" y2="${h - 2}"
-              stroke="#D85E52" stroke-width="1.5" stroke-dasharray="3 2"/>
+              stroke="${sellColor}" stroke-width="1.5" stroke-dasharray="3 2"/>
         <line x1="${startX.toFixed(1)}" y1="${frozenY.toFixed(1)}" x2="${endX.toFixed(1)}" y2="${frozenY.toFixed(1)}"
-              stroke="#D85E52" stroke-width="1.75" stroke-dasharray="4 3"/>
+              stroke="${sellColor}" stroke-width="1.75" stroke-dasharray="4 3"/>
         <circle cx="${endX.toFixed(1)}" cy="${frozenY.toFixed(1)}" r="3"
-                fill="#fff" stroke="#D85E52" stroke-width="1.75"/>
+                fill="${cardBg}" stroke="${sellColor}" stroke-width="1.75"/>
       `);
 
       const startPct = (anchorIdx / Math.max(1, prices.length - 1)) * 100;
@@ -533,14 +475,9 @@ function createTrendline(prices, reportDate) {
 
       if (widthPct >= 14) {
         overlayParts.push(`
-          <div style="position:absolute;top:50%;left:${centerPct.toFixed(1)}%;
-            transform:translate(-50%,-50%);background:rgba(255,250,249,0.94);
-            border:1px solid rgba(216,94,82,0.45);border-radius:6px;
-            padding:0.16rem 0.45rem;font-size:0.6rem;font-weight:700;color:#B83B2E;
-            letter-spacing:0.03em;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.06);
-            pointer-events:none;text-align:center;line-height:1.25;">
+          <div class="trendline-suspended-overlay" style="left:${centerPct.toFixed(1)}%;">
             <div>⏸ SUSPENDED · NO TRADING</div>
-            <div style="font-size:0.55rem;font-weight:600;color:#8c3b32;letter-spacing:0.01em;">${rangeSubtext}</div>
+            <div class="trendline-suspended-sub">${rangeSubtext}</div>
           </div>
         `);
       }
@@ -562,15 +499,13 @@ function createTrendline(prices, reportDate) {
       : `Last traded at ${money(lastPrice)}`;
 
     legendHtml = `
-      <div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center;
-        margin-top:0.55rem;padding-top:0.45rem;border-top:1px dashed rgba(46,74,86,0.12);
-        font-size:0.65rem;color:#5a6075;">
-        <span style="display:inline-flex;align-items:center;gap:0.35rem;">
-          <span style="display:inline-block;width:14px;height:2.5px;background:${stroke};border-radius:2px;"></span>
+      <div class="trendline-legend">
+        <span class="trendline-legend-item">
+          <span class="trendline-legend-line" style="background:${stroke};"></span>
           <span>Active trading (${lastTradeText})</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:0.35rem;color:#B83B2E;font-weight:600;">
-          <span style="display:inline-block;width:14px;height:8px;background:repeating-linear-gradient(45deg,rgba(216,94,82,0.35),rgba(216,94,82,0.35) 2px,rgba(216,94,82,0.1) 2px,rgba(216,94,82,0.1) 4px);border:1px solid rgba(216,94,82,0.55);border-radius:2px;"></span>
+        <span class="trendline-legend-suspended">
+          <span class="trendline-legend-swatch"></span>
           <span>Suspended — no trading (${suspWindowText} · ${totalSuspendedDays} trading days)</span>
         </span>
       </div>
@@ -578,65 +513,51 @@ function createTrendline(prices, reportDate) {
   }
 
   const container = document.createElement("div");
-  container.className = "trendline-card";
-  container.style.cssText = `
-    margin: 0 0 1.2rem;
-    padding: 0.85rem 1rem;
-    background: rgba(46,74,86,0.03);
-    border: 1px solid ${totalSuspendedDays > 0 ? "rgba(216,94,82,0.28)" : "rgba(46,74,86,0.08)"};
-    border-radius: 10px;
-  `;
+  container.className = totalSuspendedDays > 0 ? "trendline-card trendline-card-suspended" : "trendline-card";
 
   const sign = changePct >= 0 ? "+" : "";
   const ticks = buildMonthTicks(prices.length, reportDate);
   const xAxisHtml = ticks
     .map((t) => {
       const shift = t.pct <= 0 ? "0" : t.pct >= 100 ? "-100%" : "-50%";
-      return `<span style="position:absolute;left:${t.pct}%;transform:translateX(${shift});white-space:nowrap;">${t.text}</span>`;
+      return `<span class="trendline-xtick" style="left:${t.pct}%;transform:translateX(${shift});">${t.text}</span>`;
     })
     .join("");
 
   const headerBadgeHtml =
     totalSuspendedDays > 0
-      ? `<span style="background:rgba(216,94,82,0.12);color:#B83B2E;border:1px solid rgba(216,94,82,0.35);
-           border-radius:999px;padding:0.1rem 0.48rem;font-size:0.64rem;font-weight:700;
-           letter-spacing:0.02em;text-transform:none;">⏸ Trading Suspended (${totalSuspendedDays}d no trades)</span>`
+      ? `<span class="trendline-suspended-pill">⏸ Trading Suspended (${totalSuspendedDays}d no trades)</span>`
       : "";
 
   container.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;
-      margin-bottom:0.5rem;font-size:0.72rem;font-weight:600;color:#6b7088;
-      text-transform:uppercase;letter-spacing:0.04em;">
-      <span style="display:inline-flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+    <div class="trendline-header">
+      <span class="trendline-title-group">
         <span>1-Year Trend</span>
         ${headerBadgeHtml}
       </span>
-      <span style="color:${stroke};font-variant-numeric:tabular-nums;">${up ? "↑" : "↓"} ${sign}${changePct.toFixed(1)}%</span>
+      <span class="trendline-change ${up ? "is-up" : "is-down"}">${up ? "↑" : "↓"} ${sign}${changePct.toFixed(1)}%</span>
     </div>
-    <div style="display:flex;align-items:stretch;gap:0.4rem;">
-      <div style="display:flex;flex-direction:column;justify-content:space-between;
-        height:72px;font-size:0.66rem;color:#8a8f9c;text-align:right;
-        font-variant-numeric:tabular-nums;min-width:3.4em;">
+    <div class="trendline-body">
+      <div class="trendline-yaxis">
         <span>${money(max)}</span>
         <span>${money(min)}</span>
       </div>
-      <div style="flex:1;min-width:0;">
-        <div style="position:relative;height:72px;">
+      <div class="trendline-plot-col">
+        <div class="trendline-plot">
           <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="72"
                role="img" aria-label="1-year price trend, ${sign}${changePct.toFixed(1)} percent${totalSuspendedDays > 0 ? `, ${totalSuspendedDays} suspended trading days with no trading` : ""}">
             <defs>
               <pattern id="suspended-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(216,94,82,0.22)" stroke-width="2.5"/>
+                <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(220,38,38,0.22)" stroke-width="2.5"/>
               </pattern>
             </defs>
             ${tradedSvg}
             ${suspendedSvg}
-            <circle cx="${lastValidX.toFixed(1)}" cy="${lastValidY.toFixed(1)}" r="3.2" fill="${stroke}" stroke="#fff" stroke-width="1"/>
+            <circle cx="${lastValidX.toFixed(1)}" cy="${lastValidY.toFixed(1)}" r="3.2" fill="${stroke}" stroke="${cardBg}" stroke-width="1"/>
           </svg>
           ${suspendedOverlaysHtml}
         </div>
-        <div style="position:relative;height:1em;margin-top:0.35rem;font-size:0.66rem;
-          color:#8a8f9c;font-variant-numeric:tabular-nums;">${xAxisHtml}</div>
+        <div class="trendline-xaxis">${xAxisHtml}</div>
       </div>
     </div>
     ${legendHtml}

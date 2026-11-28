@@ -221,3 +221,88 @@ class TestOptimisticNavigationUI:
         assert ".skeleton-view" in css
         assert ".nav-toast" in css
         assert "@keyframes sk-shimmer" in css
+
+
+class TestModernWebGuidance:
+    @patch("ph_stocks_advisor.web.app.trading_calendar.is_market_open", return_value=False)
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_base_shell_native_dialog_popover_and_meta(self, mock_repo, _mock_open, anon_client):
+        repo = MagicMock()
+        repo.list_recent_symbols.return_value = []
+        repo.list_user_symbols.return_value = []
+        mock_repo.return_value = repo
+
+        resp = anon_client.get("/")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+
+        assert '<meta name="color-scheme" content="light dark">' in html
+        assert '<meta name="text-scale" content="scale">' in html
+        assert 'role="region" aria-label="Notifications"' in html
+        assert 'id="nav-toast" class="nav-toast" popover="manual"' in html
+        assert 'popovertarget="nav-toast" popovertargetaction="hide"' in html
+
+        # Native top-layer <dialog> without redundant role="dialog" / aria-modal
+        assert '<dialog id="ios-install-sheet" class="ios-sheet-dialog" closedby="any"' in html
+        assert (
+            'id="ios-install-sheet" class="ios-sheet-dialog" closedby="any" aria-labelledby="ios-sheet-title"' in html
+        )
+
+    @patch("ph_stocks_advisor.data.services.price.fetch_stock_price", return_value=None)
+    @patch("ph_stocks_advisor.web.app.trading_calendar.is_market_open", return_value=False)
+    @patch("ph_stocks_advisor.web.app.get_repository")
+    def test_report_page_uses_native_holdings_dialog_and_progress_spinner(
+        self, mock_repo, _mock_open, _mock_price, anon_client
+    ):
+        with anon_client.session_transaction() as sess:
+            sess["user"] = {
+                "name": "Test Elevated",
+                "email": "elevated@test.com",
+                "oid": "test-elevated-oid",
+                "provider": "local",
+                "user_type": 1,
+            }
+        record = ReportRecord(
+            id=1,
+            symbol="BDO",
+            verdict="BUY",
+            summary="Good bank.",
+            price_section="Price ok.",
+            dividend_section="Dividend ok.",
+            movement_section="Movement ok.",
+            valuation_section="Valuation ok.",
+            controversy_section="No risks.",
+            created_at=datetime.now(tz=UTC),
+            score=75,
+        )
+        repo = MagicMock()
+        repo.get_latest_by_symbol.return_value = record
+        repo.list_user_symbols.return_value = [record]
+        repo.list_recent_symbols.return_value = [record]
+        repo.list_by_symbol.return_value = [record]
+        repo.get_holding.return_value = None
+        repo.get_portfolio_report.return_value = None
+        mock_repo.return_value = repo
+
+        resp = anon_client.get("/report/BDO")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert '<dialog id="holdings-modal" class="modal-dialog" closedby="any"' in html
+        assert 'aria-labelledby="holdings-modal-title"' in html
+        assert 'class="loading-spinner inline-spinner"' in html
+
+        hist_resp = anon_client.get("/history/BDO")
+        assert hist_resp.status_code == 200
+        hist_html = hist_resp.get_data(as_text=True)
+        assert 'tabindex="0" role="region" aria-labelledby="history-heading" class="table-wrapper"' in hist_html
+
+    def test_modern_css_features_present_and_root_font_size_unpinned(self, anon_client):
+        css = anon_client.get("/static/style.css").get_data(as_text=True)
+        assert "overscroll-behavior: contain;" in css
+        assert "@view-transition" in css
+        assert "text-wrap: balance;" in css
+        assert "text-wrap: pretty;" in css
+        assert "transition-behavior: allow-discrete;" in css
+        assert "@starting-style" in css
+        assert "@container (width < 520px)" in css
+        assert not re.search(r"html\s*\{[^}]*font-size\s*:\s*16px", css, flags=re.DOTALL)

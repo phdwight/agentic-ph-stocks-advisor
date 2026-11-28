@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="history-header">
-  <h1>{{ symbol }} — Report History</h1>
+  <h1 id="history-heading">{{ symbol }} — Report History</h1>
   <a href="/" class="btn btn-secondary">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
     New Analysis
@@ -12,30 +12,32 @@
 </div>
 
 {% if reports %}
-<table class="history-table">
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>Verdict</th>
-      <th>Date</th>
-      <th>Action</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for r in reports %}
-    <tr>
-      <td>{{ r.id }}</td>
-      <td>
-        {% set chip = verdict_chip(r) %}<span class="badge-sm {{ chip.cls }}">
-          {{ chip.label }}
-        </span>
-      </td>
-      <td>{{ r.created_at }}</td>
-      <td><a href="/report-by-id/{{ r.id }}" class="btn btn-small">View</a></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div tabindex="0" role="region" aria-labelledby="history-heading" class="table-wrapper">
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Verdict</th>
+        <th>Date</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>
+          {% set chip = verdict_chip(r) %}<span class="badge-sm {{ chip.cls }}">
+            {{ chip.label }}
+          </span>
+        </td>
+        <td>{{ r.created_at }}</td>
+        <td><a href="/report-by-id/{{ r.id }}" class="btn btn-small">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
 <p class="no-data">No reports found for {{ symbol }}.</p>
 {% endif %}

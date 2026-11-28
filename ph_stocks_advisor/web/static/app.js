@@ -373,7 +373,7 @@ document.addEventListener("DOMContentLoaded", () => {
       trackerCount.className = "tracker-count";
     }
 
-    trackerList.innerHTML = "";
+    trackerList.replaceChildren();
 
     // Show newest first
     remaining.sort((a, b) => (tasks[b].ts || 0) - (tasks[a].ts || 0));
@@ -701,9 +701,11 @@ document.addEventListener("DOMContentLoaded", () => {
     errorArea.classList.remove("is-fading");
     errorArea.style.display = "block";
     if (symbol) {
-      errorText.innerHTML =
-        msg +
-        ` <a href="/report/${encodeURIComponent(symbol)}" class="error-report-link">View last report &rarr;</a>`;
+      const link = document.createElement("a");
+      link.href = `/report/${encodeURIComponent(symbol)}`;
+      link.className = "error-report-link";
+      link.textContent = "View last report →";
+      errorText.replaceChildren(document.createTextNode(`${msg} `), link);
     } else {
       errorText.textContent = msg;
     }

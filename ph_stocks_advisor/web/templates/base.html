@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="text-scale" content="scale">
   <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" data-dynamic-theme>
   <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)" data-dynamic-theme>
   <meta name="description" content="Multi-agent AI equity research, valuation, dividend, and risk verdicts for Philippine Stock Exchange (PSE) stocks.">
@@ -27,6 +29,7 @@
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}" data-authenticated="{{ 'true' if current_user else 'false' }}">
+  <a href="#main-content" class="sr-only skip-link">Skip to main content</a>
   <div id="network-status-banner" class="network-banner" role="status" aria-live="polite" hidden>
     <span class="network-banner-dot"></span>
     <span>You’re offline — live analyses pause until reconnected.</span>
@@ -129,11 +132,13 @@
 
   <!-- Optimistic navigation: live status for screen readers + rollback error toast (static/nav.js) -->
   <p id="nav-status" class="sr-only" role="status" aria-live="polite"></p>
-  <div id="nav-toast" class="nav-toast" role="alert" hidden>
-    <svg class="nav-toast-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-    <p class="nav-toast-msg" data-nav-toast-msg></p>
-    <button type="button" class="nav-toast-retry" data-nav-toast-retry hidden>Retry</button>
-    <button type="button" class="nav-toast-close" data-nav-toast-close aria-label="Dismiss">&times;</button>
+  <div class="toast-region" role="region" aria-label="Notifications">
+    <div id="nav-toast" class="nav-toast" popover="manual" role="alert" hidden>
+      <svg class="nav-toast-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <p class="nav-toast-msg" data-nav-toast-msg></p>
+      <button type="button" class="nav-toast-retry" data-nav-toast-retry hidden>Retry</button>
+      <button type="button" class="nav-toast-close" data-nav-toast-close popovertarget="nav-toast" popovertargetaction="hide" aria-label="Dismiss">&times;</button>
+    </div>
   </div>
   {% include "_skeletons.html" %}
 
@@ -188,11 +193,11 @@
   </nav>
 
   <!-- iOS Safari Add-to-Home-Screen guide sheet -->
-  <div id="ios-install-sheet" class="ios-sheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="ios-sheet-title" hidden>
+  <dialog id="ios-install-sheet" class="ios-sheet-dialog" closedby="any" aria-labelledby="ios-sheet-title">
     <div class="ios-sheet">
       <div class="ios-sheet-head">
-        <h3 id="ios-sheet-title">Install PH Stocks Advisor</h3>
-        <button type="button" id="ios-sheet-close" class="sidebar-close" aria-label="Close">&times;</button>
+        <h1 id="ios-sheet-title" class="dialog-title">Install PH Stocks Advisor</h1>
+        <button type="button" id="ios-sheet-close" class="sidebar-close" aria-label="Close" autofocus>&times;</button>
       </div>
       <p class="ios-sheet-desc">Add this app to your Home Screen for full-screen launch and instant PSE stock lookups:</p>
       <ol class="ios-sheet-steps">
@@ -200,7 +205,7 @@
         <li>Scroll down and choose <strong>Add to Home Screen</strong>.</li>
       </ol>
     </div>
-  </div>
+  </dialog>
 
   {% block scripts %}{% endblock %}
 </body>
