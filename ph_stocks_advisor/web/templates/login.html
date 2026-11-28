@@ -29,10 +29,12 @@
 
     {% if passkey_enabled %}
     <form id="passkey-form" class="passkey-form" autocomplete="on" novalidate>
+      <label for="pk-email" class="sr-only">Email address</label>
       <input type="email" id="pk-email" name="email" placeholder="you@email.com"
-             autocomplete="username webauthn" autocapitalize="off" spellcheck="false" required>
+             autocomplete="username webauthn" autocapitalize="off" spellcheck="false" aria-invalid="false" required>
+      <label for="pk-name" class="sr-only">Your name</label>
       <input type="text" id="pk-name" name="name" placeholder="Your name (for a new account)"
-             autocomplete="name" style="display:none;">
+             autocomplete="name" aria-invalid="false" style="display:none;">
       {# Registration consent — the FULL disclaimer, shown before sign-up.
          Hidden in login mode; passkey.js reveals it in register mode and
          blocks submission until the box is ticked. It sits ABOVE the submit
@@ -73,9 +75,10 @@
         <p class="code-hint"><span id="pk-code-lead">We emailed a 6-digit code to</span>
           <strong id="pk-code-email"></strong>.
           <span id="pk-code-tail">Enter it below to confirm your email.</span></p>
+        <label for="pk-code" class="sr-only">6-digit verification code</label>
         <input type="text" id="pk-code" name="code" placeholder="6-digit code"
                inputmode="numeric" autocomplete="one-time-code" maxlength="6"
-               autocapitalize="off" spellcheck="false">
+               autocapitalize="off" spellcheck="false" aria-invalid="false">
         <button type="button" id="pk-resend" class="passkey-link">Didn't get it? Resend the code</button>
       </div>
 
@@ -86,7 +89,7 @@
       </button>
       <button type="button" id="pk-register" class="passkey-link">New here? Create an account with a passkey</button>
 
-      <p id="pk-error" class="login-error" style="display:none;"><span></span></p>
+      <p id="pk-error" class="login-error" role="alert" style="display:none;"><span></span></p>
     </form>
 
     <div class="login-divider"><span>or use a recovery sign-in</span></div>

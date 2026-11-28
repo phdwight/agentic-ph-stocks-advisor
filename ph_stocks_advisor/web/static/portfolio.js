@@ -46,28 +46,28 @@ document.addEventListener("DOMContentLoaded", () => {
   /*  Modal open / close                                              */
   /* ================================================================ */
 
+  const sharesInput = document.getElementById("holding-shares");
+  const avgCostInput = document.getElementById("holding-avg-cost");
+  const closeModal = () => {
+    if (!modal.open) return;
+    if (window.ModernDialog) {
+      window.ModernDialog.closeTopLayer(modal);
+    } else {
+      modal.close();
+    }
+  };
+  if (window.ModernDialog) window.ModernDialog.wireLightDismiss(modal);
+
   portfolioBtn.addEventListener("click", () => {
-    modal.style.display = "flex";
     modalError.style.display = "none";
     form.style.display = "";
     modalProgress.style.display = "none";
+    sharesInput?.setAttribute("aria-invalid", "false");
+    avgCostInput?.setAttribute("aria-invalid", "false");
+    if (!modal.open) modal.showModal();
   });
 
-  modalClose.addEventListener("click", () => {
-    modal.style.display = "none";
-  });
-
-  // Close on overlay click.
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.style.display = "none";
-  });
-
-  // Close on Escape.
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && modal.style.display !== "none") {
-      modal.style.display = "none";
-    }
-  });
+  modalClose.addEventListener("click", closeModal);
 
   /* ================================================================ */
   /*  Delete holding                                                  */
@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
         // Close modal and hide portfolio section.
-        modal.style.display = "none";
+        closeModal();
         if (portfolioSection) portfolioSection.style.display = "none";
         // Remove the delete button (no holding left).
         deleteBtn.remove();
@@ -120,11 +120,17 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     modalError.style.display = "none";
 
-    const shares = parseFloat(document.getElementById("holding-shares").value);
-    const avgCost = parseFloat(document.getElementById("holding-avg-cost").value);
+    const shares = parseFloat(sharesInput.value);
+    const avgCost = parseFloat(avgCostInput.value);
+    const sharesBad = !shares || shares <= 0;
+    const costBad = !avgCost || avgCost <= 0;
 
-    if (!shares || shares <= 0 || !avgCost || avgCost <= 0) {
+    sharesInput?.setAttribute("aria-invalid", sharesBad ? "true" : "false");
+    avgCostInput?.setAttribute("aria-invalid", costBad ? "true" : "false");
+
+    if (sharesBad || costBad) {
       showError("Please enter valid positive numbers for shares and average cost.");
+      (sharesBad ? sharesInput : avgCostInput)?.focus();
       return;
     }
 
@@ -149,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // If user only clicked "Save", close modal and stop here.
       if (submitAction === "save") {
-        modal.style.display = "none";
+        closeModal();
         return;
       }
 
@@ -165,7 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const data = await analyseResp.json().catch(() => ({}));
         // On cooldown (429): save succeeded, close modal, show info inline.
         if (analyseResp.status === 429) {
-          modal.style.display = "none";
+          closeModal();
           return;
         }
         showError(data.error || "Failed to start portfolio analysis.");
@@ -177,7 +183,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const portfolioTaskId = analyseData.portfolio_task_id || null;
 
       // 3. Close the modal and show inline progress on the page.
-      modal.style.display = "none";
+      closeModal();
       showInlineProgress();
 
       // 4. Poll for completion.
@@ -275,7 +281,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!portfolioSection || !portfolioBody) return;
     portfolioBody.innerHTML = `
       <div class="portfolio-inline-progress">
-        <div class="spinner"></div>
+        <progress aria-label="Running personalised analysis" class="loading-spinner inline-spinner"></progress>
         <p>Running personalised analysis…</p>
       </div>`;
     portfolioSection.style.display = "";

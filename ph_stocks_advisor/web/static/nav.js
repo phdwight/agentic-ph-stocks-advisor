@@ -217,24 +217,65 @@
   /*  Error toast                                                       */
   /* ================================================================== */
 
+  const hasPopover =
+    typeof HTMLElement !== "undefined" &&
+    Object.hasOwn(HTMLElement.prototype, "popover");
   let toastTimer = null;
+  let priorFocus = null;
+
+  function armToastTimer() {
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      const toast = document.getElementById("nav-toast");
+      if (toast && toast.matches(":focus-within")) return;
+      hideToast(false);
+    }, TOAST_MS);
+  }
 
   function showToast(message, retryUrl) {
+    // Do not surface background toasts while a modal dialog makes the page inert.
+    if (document.querySelector("dialog:modal")) return;
     const toast = document.getElementById("nav-toast");
     if (!toast) return;
+    priorFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     toast.querySelector("[data-nav-toast-msg]").textContent = message;
     const retry = toast.querySelector("[data-nav-toast-retry]");
     retry.hidden = !retryUrl;
     retry.dataset.url = retryUrl || "";
     toast.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(hideToast, TOAST_MS);
+    if (hasPopover && !toast.matches(":popover-open")) {
+      try {
+        toast.showPopover();
+      } catch {
+        /* ignore if already open or unsupported state */
+      }
+    }
+    const spoken = retryUrl ? `${message} Actions available` : message;
+    if (typeof document.ariaNotify === "function") {
+      document.ariaNotify(spoken);
+    } else {
+      announce(spoken);
+    }
+    armToastTimer();
   }
 
-  function hideToast() {
+  function hideToast(restoreFocus = false) {
     const toast = document.getElementById("nav-toast");
     clearTimeout(toastTimer);
-    if (toast) toast.hidden = true;
+    if (!toast) return;
+    const hadFocus = toast.contains(document.activeElement);
+    if (hasPopover && toast.matches(":popover-open")) {
+      try {
+        toast.hidePopover();
+      } catch {
+        /* ignore */
+      }
+    }
+    toast.hidden = true;
+    if ((restoreFocus || hadFocus) && priorFocus && priorFocus.isConnected && typeof priorFocus.focus === "function") {
+      priorFocus.focus({ preventScroll: true });
+    }
+    priorFocus = null;
   }
 
   /* ================================================================== */
@@ -318,10 +359,19 @@
   async function confirm(t) {
     t.state = "confirming";
     const { route, controller } = t;
-    const timer = setTimeout(() => {
-      t.timedOut = true;
-      controller.abort();
-    }, CONFIRM_TIMEOUT_MS);
+    const canCompositeSignal =
+      typeof AbortSignal !== "undefined" &&
+      typeof AbortSignal.timeout === "function" &&
+      typeof AbortSignal.any === "function";
+    const timer = canCompositeSignal
+      ? null
+      : setTimeout(() => {
+          t.timedOut = true;
+          controller.abort();
+        }, CONFIRM_TIMEOUT_MS);
+    const signal = canCompositeSignal
+      ? AbortSignal.any([controller.signal, AbortSignal.timeout(CONFIRM_TIMEOUT_MS)])
+      : controller.signal;
 
     let resp;
     try {
@@ -330,19 +380,20 @@
         credentials: "same-origin",
         cache: "no-store",
         headers: { [NAV_HEADER]: "1", Accept: "text/html" },
-        signal: controller.signal,
+        signal,
       });
-    } catch {
-      clearTimeout(timer);
+    } catch (err) {
+      if (timer) clearTimeout(timer);
       if (current !== t || t.route !== route) return false; // superseded or cancelled
+      const isTimeout = t.timedOut || (err && err.name === "TimeoutError");
       let msg;
-      if (t.timedOut) msg = `The server took too long to load ${describe(route)}. Try again.`;
+      if (isTimeout) msg = `The server took too long to load ${describe(route)}. Try again.`;
       else if (navigator.onLine === false) msg = "You're offline. Reconnect, then try again.";
       else msg = `Couldn't reach the server to load ${describe(route)}. Try again.`;
       t.rollback(msg, route.url);
       return false;
     }
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     if (resp.body) resp.body.cancel().catch(() => {});
     if (current !== t || t.route !== route) return false;
 
@@ -409,11 +460,21 @@
 
   document.addEventListener("click", (e) => {
     if (!(e.target instanceof Element)) return;
-    if (e.target.closest("[data-nav-toast-close]")) hideToast();
+    if (e.target.closest("[data-nav-toast-close]")) hideToast(true);
     const retry = e.target.closest("[data-nav-toast-retry]");
     if (retry && retry.dataset.url) {
-      hideToast();
+      hideToast(false);
       navigate(retry.dataset.url);
     }
   });
+
+  const navToast = document.getElementById("nav-toast");
+  if (navToast) {
+    navToast.addEventListener("focusout", () => {
+      if (!navToast.hidden && !navToast.matches(":focus-within")) armToastTimer();
+    });
+    navToast.addEventListener("toggle", (e) => {
+      if (e.newState === "closed" && !navToast.hidden) hideToast(true);
+    });
+  }
 })();

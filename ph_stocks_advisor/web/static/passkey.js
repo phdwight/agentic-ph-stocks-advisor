@@ -70,7 +70,36 @@
   }
   function clearError() {
     if (errorEl) errorEl.style.display = "none";
+    [emailInput, nameInput, codeInput].forEach((el) => {
+      if (el && el.getAttribute("aria-invalid") === "true" && el.validity?.valid !== false) {
+        el.setAttribute("aria-invalid", "false");
+      }
+    });
   }
+
+  // Sync aria-invalid with native :user-invalid post-interaction state.
+  const flaggedInputs = new WeakSet();
+  function syncInputAria(el) {
+    if (!el || !el.matches?.("input")) return;
+    let isUserInvalid = false;
+    try {
+      isUserInvalid = el.matches(":user-invalid");
+    } catch {
+      isUserInvalid = false;
+    }
+    if (isUserInvalid) {
+      el.setAttribute("aria-invalid", "true");
+      flaggedInputs.add(el);
+    } else if (flaggedInputs.has(el) || el.getAttribute("aria-invalid") !== "true") {
+      el.setAttribute("aria-invalid", "false");
+      flaggedInputs.delete(el);
+    }
+  }
+  form.querySelectorAll("input").forEach((el) => syncInputAria(el));
+  form.addEventListener("blur", (e) => syncInputAria(e.target), true);
+  form.addEventListener("input", (e) => syncInputAria(e.target));
+  form.addEventListener("change", (e) => syncInputAria(e.target), true);
+  form.addEventListener("invalid", (e) => syncInputAria(e.target), true);
   function idleLabel() {
     if (mode === "register") {
       return regStage === "code" ? "Verify code & create account" : "Email me a verification code";
@@ -296,9 +325,12 @@
     clearError();
     const email = (emailInput.value || "").trim();
     if (!EMAIL_RE.test(email) || email.length > 254) {
+      emailInput.setAttribute("aria-invalid", "true");
       showError("Enter a valid email address.");
+      emailInput.focus();
       return;
     }
+    emailInput.setAttribute("aria-invalid", "false");
     const name = (nameInput.value || "").trim();
 
     // Registration step 1: no ceremony yet — just get the code emailed.
@@ -321,9 +353,14 @@
     if (mode === "register" || loginByCode) {
       code = (codeInput && codeInput.value ? codeInput.value : "").replace(/\s+/g, "");
       if (!/^\d{6}$/.test(code)) {
+        if (codeInput) {
+          codeInput.setAttribute("aria-invalid", "true");
+          codeInput.focus();
+        }
         showError("Enter the 6-digit code from the email.");
         return;
       }
+      codeInput?.setAttribute("aria-invalid", "false");
     }
 
     let redirecting = false;

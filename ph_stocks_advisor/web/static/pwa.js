@@ -34,10 +34,13 @@
   }
 
   function applyTheme(theme) {
+    const colorSchemeMeta = document.querySelector('meta[name="color-scheme"]');
     if (theme === "light" || theme === "dark") {
       root.setAttribute("data-theme", theme);
+      if (colorSchemeMeta) colorSchemeMeta.setAttribute("content", theme);
     } else {
       root.removeAttribute("data-theme");
+      if (colorSchemeMeta) colorSchemeMeta.setAttribute("content", "light dark");
     }
     syncThemeColorMeta();
     const isDark = effectiveTheme() === "dark";
@@ -55,6 +58,75 @@
       if (!getSavedTheme()) applyTheme(null);
     });
   }
+
+  // Keep color scheme synchronized across tabs without overriding user intent.
+  window.addEventListener("storage", (e) => {
+    if (e.key === THEME_KEY) applyTheme(getSavedTheme());
+  });
+
+  // Shared native <dialog> top-layer exit & light-dismiss fallback helpers
+  let supportsDisplayTransition;
+  function canTransitionDisplay() {
+    if (supportsDisplayTransition !== undefined) return supportsDisplayTransition;
+    if (!window.CSS?.supports?.("transition-behavior", "allow-discrete") || !document.body) {
+      return false;
+    }
+    const probe = document.createElement("div");
+    probe.style.cssText = "transition: display 1s allow-discrete !important; display: block;";
+    document.body.appendChild(probe);
+    getComputedStyle(probe).display;
+    probe.style.display = "none";
+    supportsDisplayTransition = getComputedStyle(probe).display === "block";
+    probe.remove();
+    return supportsDisplayTransition;
+  }
+
+  function supportsTopLayerExit() {
+    return Boolean(window.CSS?.supports?.("overlay", "auto") && canTransitionDisplay());
+  }
+
+  async function closeTopLayer(dialog) {
+    if (!dialog || !dialog.open) return;
+    if (!supportsTopLayerExit()) {
+      dialog.setAttribute("data-closing", "");
+      const animations = typeof dialog.getAnimations === "function" ? dialog.getAnimations({ subtree: true }) : [];
+      if (animations.length > 0) {
+        await Promise.race([
+          Promise.allSettled(animations.map((a) => a.finished)),
+          new Promise((r) => setTimeout(r, 500)),
+        ]);
+      }
+      if (!dialog.hasAttribute("data-closing")) return;
+      dialog.removeAttribute("data-closing");
+    }
+    dialog.close();
+  }
+
+  function wireLightDismiss(dialog) {
+    if (!dialog || dialog.dataset.modernDialogWired) return;
+    dialog.dataset.modernDialogWired = "1";
+    dialog.addEventListener("cancel", (e) => {
+      if (e.cancelable && !supportsTopLayerExit()) {
+        e.preventDefault();
+        closeTopLayer(dialog);
+      }
+    });
+    if (typeof HTMLDialogElement !== "undefined" && !("closedBy" in HTMLDialogElement.prototype)) {
+      const outside = (e) => {
+        const r = dialog.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      };
+      let pressedOutside = false;
+      dialog.addEventListener("pointerdown", (e) => {
+        pressedOutside = outside(e);
+      });
+      dialog.addEventListener("pointerup", (e) => {
+        if (pressedOutside && outside(e)) closeTopLayer(dialog);
+      });
+    }
+  }
+
+  window.ModernDialog = { closeTopLayer, wireLightDismiss };
 
   let deferredInstallPrompt = null;
 
@@ -116,14 +188,22 @@
       });
     }
 
-    // 2. Theme toggle buttons
+    // 2. Theme toggle buttons (two-state: toggle against current view, revert to system when matching)
     document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const next = effectiveTheme() === "dark" ? "light" : "dark";
-        try {
-          localStorage.setItem(THEME_KEY, next);
-        } catch { /* ignore */ }
-        applyTheme(next);
+        const system = darkMedia && darkMedia.matches ? "dark" : "light";
+        if (next === system) {
+          try {
+            localStorage.removeItem(THEME_KEY);
+          } catch { /* ignore */ }
+          applyTheme(null);
+        } else {
+          try {
+            localStorage.setItem(THEME_KEY, next);
+          } catch { /* ignore */ }
+          applyTheme(next);
+        }
       });
     });
 
@@ -134,8 +214,9 @@
 
     const iosModal = document.getElementById("ios-install-sheet");
     const closeIosSheet = () => {
-      if (iosModal) iosModal.hidden = true;
+      if (iosModal) closeTopLayer(iosModal);
     };
+    if (iosModal) wireLightDismiss(iosModal);
 
     document.querySelectorAll("[data-pwa-install]").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -148,16 +229,13 @@
             }
           } catch { /* user cancelled */ }
           deferredInstallPrompt = null;
-        } else if (iosModal) {
-          iosModal.hidden = false;
+        } else if (iosModal && !iosModal.open) {
+          iosModal.showModal();
         }
       });
     });
 
     document.getElementById("ios-sheet-close")?.addEventListener("click", closeIosSheet);
-    iosModal?.addEventListener("click", (e) => {
-      if (e.target === iosModal) closeIosSheet();
-    });
 
     document.getElementById("pwa-banner-dismiss")?.addEventListener("click", () => {
       const banner = document.getElementById("pwa-install-banner");
@@ -368,7 +446,6 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeDrawer();
-        closeIosSheet();
       }
       // "/" shortcut focuses ticker search when not typing in an input
       if (
